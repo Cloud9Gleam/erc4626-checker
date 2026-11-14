@@ -163,10 +163,11 @@ def check_donation(v: Vault, victim_deposit: int = 100_000_000_000,
             w.donate(d)
             vic_shares = w.deposit(victim_deposit)
         except ValueError as e:
-            # Victim's deposit mints zero shares: total loss, the classic
-            # unprotected-vault outcome. Record it, do not crash.
+            # The victim's deposit reverts (below minimum, or mints zero
+            # shares), so no loss is measured: the funds never enter the
+            # vault. Record no loss figure rather than inventing one.
             rows.append({"donation": d, "attacker_net": None,
-                         "victim_loss": victim_deposit, "error": str(e)})
+                         "victim_loss": None, "error": str(e)})
             ok = False
             continue
         atk_out = w.redeem(atk_shares)
