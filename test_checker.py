@@ -382,6 +382,28 @@ class TestChecker(unittest.TestCase):
             shares = v.deposit(victim)
             self.assertEqual(shares, preview)
             self.assertTrue(shares >= same_tx_floor)
+    def test_failed_donation_notice_links_slippage_bounds(self):
+        # The checker page's failure notice is the funnel entry for a
+        # depositor, not just a deployer: when the donation check fails
+        # it must link the slippage-bounds guide (the one defense a
+        # depositor controls). A passing preset must not show it. The
+        # Worker JS renderer carries the same sentence; it is verified
+        # by the /tmp slip-link harness (node), not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        link = "/guides/erc4626-slippage-bounds/"
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn(link, failed)
+        self.assertIn("offset 6", failed)
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertNotIn(link, passed)
 
 
 if __name__ == "__main__":
