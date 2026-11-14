@@ -32,6 +32,18 @@ def _mul_div_up(a: int, b: int, c: int) -> int:
     return -((-a * b) // c)
 
 
+def _fmt_usdc(n: int) -> str:
+    """Base units (USDC, 6 decimals) as a readable amount: '10,000.000000'."""
+    neg = n < 0
+    a = -n if neg else n
+    return ("-" if neg else "") + f"{a // 1_000_000:,}.{a % 1_000_000:06d}"
+
+
+def _fmt_int(n: int) -> str:
+    """Plain integer with thousand separators: '10,000,000,000,000,000'."""
+    return f"{n:,}"
+
+
 @dataclass
 class Vault:
     """Minimal ERC-4626 state machine. Amounts are base units."""
@@ -192,8 +204,12 @@ def check_preview_consistency(v: Vault) -> dict:
     red = w.preview_redeem(1_000_000)
     out = w.redeem(1_000_000)
     ok = dep == got and mint_assets == paid and red == out
+    # dep/got are shares; mint/paid/red/out are base-unit assets. Label
+    # each, or the reader cannot tell which number is which unit.
     return {"name": "preview_consistency", "pass": ok,
-            "detail": [f"deposit {dep}=={got}, mint {mint_assets}=={paid}, redeem {red}=={out}"]}
+            "detail": [f"deposit {_fmt_int(dep)} shares == {_fmt_int(got)} shares, "
+                       f"mint {_fmt_usdc(mint_assets)} USDC == {_fmt_usdc(paid)} USDC, "
+                       f"redeem {_fmt_usdc(red)} USDC == {_fmt_usdc(out)} USDC"]}
 
 
 def check_fee_conservation(v: Vault) -> dict:
@@ -207,7 +223,8 @@ def check_fee_conservation(v: Vault) -> dict:
     holder_gain = (w.total_assets - before) - fee
     ok = holder_gain == 10_000_000_000 - fee and fee == 10_000_000_000 * v.perf_fee_bps // 10_000
     return {"name": "fee_conservation", "pass": ok,
-            "detail": [f"yield 10,000,000,000, fee {fee}, holder gain {holder_gain}"]}
+            "detail": [f"yield {_fmt_usdc(10_000_000_000)} USDC, fee {_fmt_usdc(fee)} USDC, "
+                       f"holder gain {_fmt_usdc(holder_gain)} USDC"]}
 
 
 def check_share_price_sanity(v: Vault) -> dict:
@@ -218,7 +235,8 @@ def check_share_price_sanity(v: Vault) -> dict:
     price_after = w.convert_to_assets(1_000_000)
     ok = price_before >= 0 and price_after >= price_before - 1
     return {"name": "share_price_sanity", "pass": ok,
-            "detail": [f"price per 1,000,000 shares {price_before} -> {price_after}"]}
+            "detail": [f"price per 1,000,000 shares {_fmt_usdc(price_before)} USDC -> "
+                       f"{_fmt_usdc(price_after)} USDC"]}
 
 
 def run_all(v: Vault) -> list[dict]:
