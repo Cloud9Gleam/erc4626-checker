@@ -23,6 +23,18 @@ class TestChecker(unittest.TestCase):
         shares = v.deposit(1_000_000)
         self.assertGreater(shares, 0)
 
+    def test_donation_error_row_reports_no_loss(self):
+        # A minimum deposit above the victim deposit makes the victim's
+        # deposit revert: no loss is measured, so the row must not claim
+        # the full deposit as lost.
+        v = Vault(decimals_offset=6, min_deposit=200_000_000_000, perf_fee_bps=1000)
+        r = check_donation(v)
+        self.assertFalse(r["pass"])
+        for row in r["detail"]:
+            self.assertIn("error", row)
+            self.assertIsNone(row["victim_loss"])
+            self.assertIsNone(row["attacker_net"])
+
 
 if __name__ == "__main__":
     unittest.main()
