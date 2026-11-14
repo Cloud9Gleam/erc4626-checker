@@ -153,6 +153,41 @@ class TestChecker(unittest.TestCase):
                 self.assertEqual(row["victim_loss"], vic_loss)
                 self.assertEqual(row["attacker_net"], atk_net)
 
+    def test_checklist_donation_and_share_price_numbers(self):
+        # Pins the two last unreviewed pages to the model:
+        # /guides/erc4626-audit-checklist/ §2 and §5, and
+        # /guides/vault-share-price-manipulation/ "What to check".
+        # Checklist scenario: attacker seeds the minimum, donates
+        # 1 / 1,000 / 1,000,000 / 1,000,000,000 USDC, victim deposits
+        # 100,000 USDC, both redeem. Worst victim loss: offset 0
+        # 0.909091 USDC (FAIL), offset 6 0.000900 USDC (PASS),
+        # offset 18 zero (PASS); attacker never profits.
+        worst = {0: 909091, 6: 900, 18: 0}
+        for off, expected_worst in worst.items():
+            mn = 0 if off == 0 else 1_000_000
+            r = check_donation(Vault(decimals_offset=off, min_deposit=mn))
+            losses = [row["victim_loss"] for row in r["detail"]]
+            self.assertEqual(max(losses), expected_worst)
+            self.assertTrue(all(row["attacker_net"] <= 0
+                                for row in r["detail"]))
+        # Share-price sanity as the guides state it: on a plain
+        # deposit the price is never negative and never below its
+        # pre-deposit value. The model's check tolerates a 1-base-unit
+        # dip; the sweep below shows the dip is never exercised.
+        for off in (0, 6, 18, 30):
+            for seed in (1_000_000, 100_000_000_000, 10_000_000_000_000):
+                for dep in (1, 1_000_000, 100_000_000_000, 1_000_000_000_000):
+                    v = Vault(decimals_offset=off, min_deposit=0)
+                    v.deposit(seed)
+                    before = v.convert_to_assets(1_000_000)
+                    try:
+                        v.deposit(dep)
+                    except ValueError:
+                        continue
+                    after = v.convert_to_assets(1_000_000)
+                    self.assertGreaterEqual(before, 0)
+                    self.assertGreaterEqual(after, before)
+
 
 if __name__ == "__main__":
     unittest.main()
