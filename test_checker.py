@@ -187,6 +187,38 @@ class TestChecker(unittest.TestCase):
                     after = v.convert_to_assets(1_000_000)
                     self.assertGreaterEqual(before, 0)
                     self.assertGreaterEqual(after, before)
+    def test_how_to_guide_numbers(self):
+        # Pins /guides/how-to-use-the-erc4626-checker/ Step 3 to the
+        # model: four donations 1 / 1,000 / 1,000,000 / 1,000,000,000
+        # USDC against a 100,000 USDC victim deposit; pass bound is
+        # victim loss <= 1000 base units (0.001 USDC) AND <= 0.1% of
+        # the victim deposit, attacker never profits. Unprotected
+        # preset loses 0.909091 USDC to the 1,000,000 USDC donation;
+        # offset-6 preset loses at most 0.0009 USDC.
+        victim = 100_000_000_000
+        donations = [1_000_000, 1_000_000_000, 1_000_000_000_000,
+                     1_000_000_000_000_000]
+        noprot = check_donation(Vault(decimals_offset=0, min_deposit=0),
+                                victim_deposit=victim)
+        self.assertEqual([r["donation"] for r in noprot["detail"]], donations)
+        self.assertFalse(noprot["pass"])
+        row_1m = noprot["detail"][2]
+        self.assertEqual(row_1m["donation"], 1_000_000_000_000)
+        self.assertEqual(row_1m["victim_loss"], 909091)
+        self.assertTrue(all(r["attacker_net"] <= 0 for r in noprot["detail"]))
+        primer = check_donation(Vault(decimals_offset=6, min_deposit=1_000_000,
+                                      perf_fee_bps=1000),
+                                victim_deposit=victim)
+        self.assertTrue(primer["pass"])
+        losses = [r["victim_loss"] for r in primer["detail"]]
+        self.assertEqual(max(losses), 900)
+        # The bound as the guide states it: 1000 base units is
+        # 0.001 USDC, and 0.1% of the 100,000 USDC victim deposit is
+        # 100 USDC -- the absolute bound binds first here.
+        self.assertEqual(1000, 1_000_000 // 1000)  # 0.001 USDC in base units
+        self.assertEqual(victim // 1000, 100_000_000)  # 0.1% = 100 USDC
+        self.assertLessEqual(max(losses), 1000)
+        self.assertLessEqual(max(losses), victim // 1000)
 
 
 if __name__ == "__main__":
