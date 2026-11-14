@@ -474,6 +474,47 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(model.holder_claim(H, A0, S0 + 10_000 * USDC),
                          9_900_990_099)
 
+    def test_fee_down_year_guide_numbers(self):
+        # Pins /guides/erc4626-fee-in-down-year/ to its model: a management
+        # fee is a fraction of supply, so in a loss year the fee is still
+        # charged -- and its USDC cost shrinks with the vault, never to zero.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fee-down-year-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fee_down_year_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        A0 = 1_000_000 * USDC
+        S0 = 1_000_000 * USDC
+        H = 10_000 * USDC
+
+        # 2%/1y/-10%: assets 900,000; fee shares 20,000; claim 8,823.529411.
+        a1 = A0 * 9000 // model.BPS
+        self.assertEqual(model.fee_shares_minted(S0, 200), 20_000 * USDC)
+        self.assertEqual(model.holder_claim(H, a1, S0 + 20_000 * USDC),
+                         8_823_529_411)
+        self.assertEqual(model.holder_claim(H, a1, S0), 9_000 * USDC)
+        self.assertEqual(
+            model.holder_claim(20_000 * USDC, a1, S0 + 20_000 * USDC),
+            17_647_058_823)
+        # 2%/1y/-50%: assets 500,000; claim 4,901.960784; fee cost 98.04.
+        a2 = A0 * 5000 // model.BPS
+        self.assertEqual(model.holder_claim(H, a2, S0 + 20_000 * USDC),
+                         4_901_960_784)
+        self.assertEqual(model.holder_claim(H, a2, S0), 5_000 * USDC)
+        # 5%/1y/-10%: fee shares 50,000; claim 8,571.428571.
+        self.assertEqual(model.fee_shares_minted(S0, 500), 50_000 * USDC)
+        self.assertEqual(model.holder_claim(H, a1, S0 + 50_000 * USDC),
+                         8_571_428_571)
+        self.assertEqual(
+            model.holder_claim(50_000 * USDC, a1, S0 + 50_000 * USDC),
+            42_857_142_857)
+        # Control: zero fee leaves the holder with exactly the post-loss share.
+        self.assertEqual(model.holder_claim(H, a1, S0), 9_000 * USDC)
+
     def test_failed_donation_notice_links_slippage_bounds(self):
         # The checker page's failure notice is the funnel entry for a
         # depositor, not just a deployer: when the donation check fails
