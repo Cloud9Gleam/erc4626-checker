@@ -44,6 +44,21 @@ class TestChecker(unittest.TestCase):
         shares = v.deposit(1_000_000)
         self.assertGreater(shares, 0)
 
+    def test_run_all_threads_victim_deposit(self):
+        # The victim deposit is a scenario parameter, not a vault constant:
+        # run_all must pass it to the donation check, and the three presets'
+        # verdicts must not depend on it (offset 6 passes at every size
+        # 1–10,000,000 USDC, offset 0 fails at every size).
+        noprot = Vault(decimals_offset=0, min_deposit=0)
+        default_rows = {r["name"]: r for r in run_all(noprot)}["donation_inflation"]["detail"]
+        self.assertEqual(max(r["victim_loss"] for r in default_rows), 909091)
+        small_rows = {r["name"]: r for r in run_all(noprot, victim_deposit=1_000_000_000)}["donation_inflation"]["detail"]
+        self.assertEqual(max(r["victim_loss"] for r in small_rows), 999001)
+        self.assertFalse(all(r["pass"] for r in run_all(noprot, victim_deposit=1_000_000_000)))
+        alpha = Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)
+        self.assertTrue(all(r["pass"] for r in run_all(alpha, victim_deposit=1_000_000)))
+        self.assertTrue(all(r["pass"] for r in run_all(alpha, victim_deposit=1_000_000_000_000)))
+
     def test_donation_error_row_reports_no_loss(self):
         # A minimum deposit above the victim deposit makes the victim's
         # deposit revert: no loss is measured, so the row must not claim
