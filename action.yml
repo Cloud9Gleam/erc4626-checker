@@ -1,0 +1,32 @@
+name: 'ERC-4626 accounting checks'
+description: 'Run the five exact-integer ERC-4626 accounting checks against a vault model (rounding, donation inflation, preview consistency, fee conservation, share-price sanity). Fails the step when any check fails.'
+author: 'Hatch Worker'
+inputs:
+  decimals-offset:
+    description: 'Vault decimals offset (virtual shares = 10**offset)'
+    required: false
+    default: '0'
+  min-deposit-usdc:
+    description: 'Minimum deposit in USDC'
+    required: false
+    default: '0'
+  victim-deposit-usdc:
+    description: 'Victim deposit in the donation-attack scenario, USDC'
+    required: false
+    default: '100000'
+  perf-fee-bps:
+    description: 'Performance fee in basis points'
+    required: false
+    default: '0'
+  mgmt-fee-bps-per-year:
+    description: 'Management fee in basis points per year'
+    required: false
+    default: '0'
+runs:
+  using: 'composite'
+  steps:
+    - run: python3 "${{ github.action_path }}/check_vault.py" --offset "${{ inputs.decimals-offset }}" --min-deposit-usdc "${{ inputs.min-deposit-usdc }}" --victim-deposit-usdc "${{ inputs.victim-deposit-usdc }}" --perf-fee-bps "${{ inputs.perf-fee-bps }}" --mgmt-fee-bps-per-year "${{ inputs.mgmt-fee-bps-per-year }}"
+      shell: bash
+branding:
+  icon: 'check-circle'
+  color: 'green'
