@@ -436,6 +436,44 @@ class TestChecker(unittest.TestCase):
                           (r3, 1_000_000 * USDC), (r4, 100_000 * USDC)):
             self.assertEqual(r["honest"], min(r["naive"], liquid))
             self.assertEqual(r["honest"], r["paid"])
+
+    def test_fee_accrual_guide_numbers(self):
+        # Pins /guides/erc4626-fee-accrual/ to its model: a management
+        # fee is paid by minting fee shares, so the holder's cost is
+        # their share of the dilution, not the rate times their deposit.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fee-accrual-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fee_accrual_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        A0 = 1_000_000 * USDC
+        S0 = 1_000_000 * USDC
+        H = 10_000 * USDC
+
+        # 2%/1y/no yield: 20,000 fee shares; claim 9,803.921568 USDC.
+        self.assertEqual(model.fee_shares_minted(S0, 200, 1),
+                         20_000 * USDC)
+        self.assertEqual(model.holder_claim(H, A0, S0 + 20_000 * USDC),
+                         9_803_921_568)
+        # 2%/5y/no yield: 100,000 fee shares; claim 9,090.909090 USDC.
+        self.assertEqual(model.fee_shares_minted(S0, 200, 5),
+                         100_000 * USDC)
+        self.assertEqual(model.holder_claim(H, A0, S0 + 100_000 * USDC),
+                         9_090_909_090)
+        # 2%/1y/+10% yield: assets 1,100,000; claim 10,784.313725 USDC.
+        self.assertEqual(
+            model.holder_claim(H, 1_100_000 * USDC, S0 + 20_000 * USDC),
+            10_784_313_725)
+        # Control: zero fee leaves the holder whole.
+        self.assertEqual(model.holder_claim(H, A0, S0), H)
+        # 1%/1y/no yield: 10,000 fee shares; claim 9,900.990099 USDC.
+        self.assertEqual(model.holder_claim(H, A0, S0 + 10_000 * USDC),
+                         9_900_990_099)
+
     def test_failed_donation_notice_links_slippage_bounds(self):
         # The checker page's failure notice is the funnel entry for a
         # depositor, not just a deployer: when the donation check fails
