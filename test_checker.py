@@ -123,6 +123,36 @@ class TestChecker(unittest.TestCase):
             victim_deposit=1_000_000_000,
             donations=(1_000_000_000_000,))["pass"])
 
+    def test_defense_measured_scan(self):
+        # Pins the worked examples in
+        # /guides/erc4626-inflation-defense-measured/ to the model:
+        # attacker 1 USDC, donate 1,000,000 USDC, victim V, both
+        # redeem, offsets 0/6/18 x victims 1k/10k/100k/1M/10M USDC.
+        # (victim_loss, attacker_net) in base units. The pattern the
+        # guide reports: at offset 0 the loss falls as the victim
+        # grows (999001 -> 90909) and victim + attacker loss is
+        # exactly 1,000,000 base units in every row; at offset 6 the
+        # loss is 1 base unit or zero; at offset 18 it is zero.
+        expected = {
+            0: {1_000: (999001, -999), 10_000: (990100, -9900),
+                100_000: (909091, -90909), 1_000_000: (500000, -500000),
+                10_000_000: (90909, -909091)},
+            6: {1_000: (1, -999999), 10_000: (1, -999999),
+                100_000: (1, -999999), 1_000_000: (0, -1000000),
+                10_000_000: (0, -1000000)},
+            18: {1_000: (0, -1000000), 10_000: (0, -1000000),
+                 100_000: (0, -1000000), 1_000_000: (0, -1000000),
+                 10_000_000: (0, -1000000)},
+        }
+        for off, rows in expected.items():
+            for vic_usdc, (vic_loss, atk_net) in rows.items():
+                r = check_donation(Vault(decimals_offset=off, min_deposit=1_000_000),
+                                   victim_deposit=vic_usdc * 1_000_000,
+                                   donations=(1_000_000_000_000,))
+                row = r["detail"][0]
+                self.assertEqual(row["victim_loss"], vic_loss)
+                self.assertEqual(row["attacker_net"], atk_net)
+
 
 if __name__ == "__main__":
     unittest.main()
