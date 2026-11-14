@@ -276,6 +276,47 @@ class TestChecker(unittest.TestCase):
             self.assertEqual(max(losses), worst_loss)
             self.assertTrue(all(r["attacker_net"] <= 0
                                 for r in res["detail"]))
+    def test_quote_sources_guide_numbers(self):
+        # Pins /guides/erc4626-quote-sources/ to the model: victim
+        # 100,000 USDC, unprotected vault, attacker seed 1 USDC,
+        # donations 1 / 1,000 / 1,000,000 / 1,000,000,000 USDC.
+        # A bound built on the same-block preview (taken after the
+        # donation) passes every attack; a bound built on the clean
+        # pre-donation quote reverts every one. A stale clean quote
+        # after 1% legitimate yield still passes the 99% bound, with
+        # only 0.0099% of headroom left.
+        victim = 100_000_000_000
+        donations = [1_000_000, 1_000_000_000, 1_000_000_000_000,
+                     1_000_000_000_000_000]
+
+        clean = Vault(decimals_offset=0, min_deposit=0).deposit(victim)
+        self.assertEqual(clean, 100_000_000_000)
+        bound_clean = clean * 99 // 100
+        self.assertEqual(bound_clean, 99_000_000_000)
+
+        previews = []
+        for d in donations:
+            v = Vault(decimals_offset=0, min_deposit=0)
+            v.deposit(1_000_000)
+            v.donate(d)
+            previews.append(v.preview_deposit(victim))
+        self.assertEqual(previews,
+                         [50_000_024_999, 99_900_199, 99_999, 100])
+        # Bound from the same-block preview always passes (attack wins).
+        for preview in previews:
+            bound_preview = preview * 99 // 100
+            self.assertTrue(preview >= bound_preview)
+        # Bound from the clean quote reverts every attacked deposit.
+        self.assertTrue(all(p < bound_clean for p in previews))
+
+        # Stale clean quote: 1% yield accrues after the quote, no attack.
+        v = Vault(decimals_offset=0, min_deposit=0)
+        v.deposit(victim)
+        v.donate(1_000_000_000)  # 1,000 USDC yield on a 100,000 USDC vault
+        stale_mint = v.preview_deposit(victim)
+        self.assertEqual(stale_mint, 99_009_900_990)
+        self.assertTrue(stale_mint >= bound_clean)
+        self.assertEqual(clean - stale_mint, 990_099_010)
 
 
 if __name__ == "__main__":
