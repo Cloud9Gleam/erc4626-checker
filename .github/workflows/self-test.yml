@@ -1,0 +1,29 @@
+name: self-test
+on:
+  push:
+    paths:
+      - 'erc4626_checker.py'
+      - 'check_vault.py'
+      - 'test_checker.py'
+      - 'action.yml'
+      - '.github/workflows/self-test.yml'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: unit tests
+        run: python3 -m unittest test_checker -v
+      - name: action gates a protected vault (must pass)
+        uses: ./
+        with:
+          decimals-offset: 6
+          min-deposit-usdc: 1
+          perf-fee-bps: 1000
+          mgmt-fee-bps-per-year: 100
+      - name: action catches an unprotected vault (must fail)
+        uses: ./
+        continue-on-error: true
+        with:
+          decimals-offset: 0
+          min-deposit-usdc: 0
