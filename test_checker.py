@@ -570,6 +570,60 @@ class TestChecker(unittest.TestCase):
         # Control: zero fee leaves the holder with exactly the post-loss share.
         self.assertEqual(model.holder_claim(H, a1, S0), 9_000 * USDC)
 
+    def test_combined_fee_guide_numbers(self):
+        # Pins /guides/erc4626-combined-fee/ to its model: a 2% management
+        # fee plus a 20% performance fee do NOT add up to the naive 400 --
+        # the performance fee mints more shares on the management-diluted
+        # supply, so the combined cost (408.26) sits between the naive sum
+        # (400) and the sum of the two separate costs (412.11); in a loss
+        # year the performance fee is 0 and the combined cost is the
+        # management fee alone.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "combined-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "combined_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        A0 = 1_000_000 * USDC
+        S0 = 1_000_000 * USDC
+        H = 10_000 * USDC
+
+        # A: +10% year, both fees. Mgmt 20,000 shares; perf fee 20,000 USDC
+        # minted as 18,545.454545 shares on the diluted supply (vs
+        # 18,181.818181 perf-only); claim 10,591.736694, cost 408.26.
+        a1 = 1_100_000 * USDC
+        mg = model.mgmt_shares(S0, 200)
+        self.assertEqual(mg, 20_000 * USDC)
+        fa, fs = model.perf_fee(a1, A0, S0 + mg, 2000)
+        self.assertEqual(fa, 20_000 * USDC)
+        self.assertEqual(fs, 18_545_454_545)
+        self.assertEqual(model.holder_claim(H, a1, S0 + mg + fs),
+                         10_591_736_694)
+        self.assertEqual(model.holder_claim(mg, a1, S0 + mg + fs),
+                         21_183_473_389)
+        self.assertEqual(model.holder_claim(fs, a1, S0 + mg + fs),
+                         19_642_857_142)
+        # B: mgmt only, +10%: claim 10,784.313725, cost 215.69.
+        self.assertEqual(model.holder_claim(H, a1, S0 + mg), 10_784_313_725)
+        # C: perf only, +10%: fee shares 18,181.818181, claim 10,803.571428.
+        fc, fsc = model.perf_fee(a1, A0, S0, 2000)
+        self.assertEqual((fc, fsc), (20_000 * USDC, 18_181_818_181))
+        self.assertEqual(model.holder_claim(H, a1, S0 + fsc), 10_803_571_428)
+        # D: -10% year, both fees: perf is 0, claim 8,823.529411.
+        a2 = 900_000 * USDC
+        fd, fsd = model.perf_fee(a2, A0, S0 + mg, 2000)
+        self.assertEqual((fd, fsd), (0, 0))
+        self.assertEqual(model.holder_claim(H, a2, S0 + mg), 8_823_529_411)
+        self.assertEqual(model.holder_claim(mg, a2, S0 + mg), 17_647_058_823)
+        # Interaction: 400 < combined 408.26 < separate sum 412.11.
+        cost_a = 11_000 * USDC - model.holder_claim(H, a1, S0 + mg + fs)
+        cost_b = 11_000 * USDC - model.holder_claim(H, a1, S0 + mg)
+        cost_c = 11_000 * USDC - model.holder_claim(H, a1, S0 + fsc)
+        self.assertTrue(400 * USDC < cost_a < cost_b + cost_c)
+
     def test_failed_donation_notice_links_slippage_bounds(self):
         # The checker page's failure notice is the funnel entry for a
         # depositor, not just a deployer: when the donation check fails
