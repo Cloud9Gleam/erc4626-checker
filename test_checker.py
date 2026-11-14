@@ -382,6 +382,60 @@ class TestChecker(unittest.TestCase):
             shares = v.deposit(victim)
             self.assertEqual(shares, preview)
             self.assertTrue(shares >= same_tx_floor)
+    def test_maxwithdraw_guide_numbers(self):
+        # Pins /guides/erc4626-maxwithdraw/ to its model: a vault's
+        # totalAssets counts assets locked in a strategy, but a
+        # withdrawal only pays out of liquid assets on hand. One
+        # holder, 1,000,000 shares = 1,000,000 USDC paper value.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "withdrawal-liquidity-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "withdrawal_liquidity_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        SUPPLY = 1_000_000 * USDC
+
+        def scenario(total, liquid, shares):
+            # Same four quantities the guide prints, computed from the
+            # model's Vault directly (scenario() prints, so not used).
+            v = model.Vault(total, liquid, SUPPLY)
+            naive = v.max_withdraw_naive(shares)
+            honest = v.max_withdraw_honest(shares)
+            paid = v.redeemable(naive)
+            return {"naive": naive, "honest": honest, "paid": paid,
+                    "shortfall": naive - paid}
+
+        # Strategy holds 90%: naive promises 1,000,000, settles
+        # 100,000, shortfall 900,000; honest cap is 100,000.
+        r1 = scenario(1_000_000 * USDC, 100_000 * USDC, SUPPLY)
+        self.assertEqual(r1["naive"], 1_000_000 * USDC)
+        self.assertEqual(r1["paid"], 100_000 * USDC)
+        self.assertEqual(r1["shortfall"], 900_000 * USDC)
+        self.assertEqual(r1["honest"], 100_000 * USDC)
+        # Half the strategy harvested: shortfall halves to 500,000.
+        r2 = scenario(1_000_000 * USDC, 500_000 * USDC, SUPPLY)
+        self.assertEqual(r2["paid"], 500_000 * USDC)
+        self.assertEqual(r2["shortfall"], 500_000 * USDC)
+        self.assertEqual(r2["honest"], 500_000 * USDC)
+        # Fully liquid: the naive promise finally settles in full.
+        r3 = scenario(1_000_000 * USDC, 1_000_000 * USDC, SUPPLY)
+        self.assertEqual(r3["shortfall"], 0)
+        self.assertEqual(r3["honest"], 1_000_000 * USDC)
+        # Half-holder in the 90%-in-strategy vault: paper value
+        # 500,000, settles 100,000, shortfall 400,000.
+        r4 = scenario(1_000_000 * USDC, 100_000 * USDC, 500_000 * USDC)
+        self.assertEqual(r4["naive"], 500_000 * USDC)
+        self.assertEqual(r4["paid"], 100_000 * USDC)
+        self.assertEqual(r4["shortfall"], 400_000 * USDC)
+        # Honest cap is min(balance value, liquid) in every scenario,
+        # and the capped amount always settles in full.
+        for r, liquid in ((r1, 100_000 * USDC), (r2, 500_000 * USDC),
+                          (r3, 1_000_000 * USDC), (r4, 100_000 * USDC)):
+            self.assertEqual(r["honest"], min(r["naive"], liquid))
+            self.assertEqual(r["honest"], r["paid"])
     def test_failed_donation_notice_links_slippage_bounds(self):
         # The checker page's failure notice is the funnel entry for a
         # depositor, not just a deployer: when the donation check fails
