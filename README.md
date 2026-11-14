@@ -24,6 +24,30 @@ python3 example_alphaprimer.py   # worked example, AlphaPrimer parameters
 python3 -m unittest test_checker -v
 ```
 
+## Use in CI
+
+Gate a vault's parameters on every push — the action runs the same
+five checks and fails the step when any check fails:
+
+```yaml
+- uses: Cloud9Gleam/erc4626-checker@main
+  with:
+    decimals-offset: 6
+    min-deposit-usdc: 1
+    perf-fee-bps: 1000
+    mgmt-fee-bps-per-year: 100
+```
+
+Or run the CLI directly (no GitHub Actions needed):
+
+```sh
+python3 check_vault.py --offset 6 --min-deposit-usdc 1 \
+    --perf-fee-bps 1000 --mgmt-fee-bps-per-year 100
+# exit 0 = ALL PASS, exit 1 = SOME FAILED
+```
+
+Try it in the browser instead: https://check.n1netw3n.live/checker/
+
 ## Worked example
 
 AlphaPrimerVault parameters (audited 2026-11-03, clean negative):
