@@ -71,6 +71,32 @@ class TestChecker(unittest.TestCase):
             self.assertIsNone(row["victim_loss"])
             self.assertIsNone(row["attacker_net"])
 
+    def test_inflation_guide_numbers(self):
+        # Pins the worked example in /guides/erc4626-inflation-attack/,
+        # /guides/erc4626-donation-attack/ and
+        # /research/erc4626-donation-inflation/ to the model: attacker
+        # 1 USDC, donate 1,000,000 USDC, victim 100,000 USDC, both
+        # redeem, offset 0. Earlier versions of all three pages told
+        # the textbook story — victim "receives a handful of shares",
+        # "most of their deposit stays in the vault", attacker "redeems
+        # for the inflated remainder" — but the model says the victim
+        # loses 0.909091 USDC, the attacker nets -0.090909, and the
+        # missing 1 USDC stays in the vault as rounding dust.
+        w = Vault(decimals_offset=0, min_deposit=0)
+        atk_shares = w.deposit(1_000_000)
+        self.assertEqual(atk_shares, 1_000_000)
+        w.donate(1_000_000_000_000)
+        vic_shares = w.deposit(100_000_000_000)
+        self.assertEqual(vic_shares, 99_999)
+        atk_out = w.redeem(atk_shares)
+        self.assertEqual(atk_out, 1_000_000_909_091)
+        self.assertEqual(atk_out - (1_000_000 + 1_000_000_000_000), -90_909)
+        vic_out = w.redeem(vic_shares)
+        self.assertEqual(vic_out, 99_999_090_909)
+        self.assertEqual(100_000_000_000 - vic_out, 909_091)
+        self.assertEqual(w.total_assets, 1_000_000)
+        self.assertEqual(w.total_supply, 0)
+
     def test_virtual_shares_guide_numbers(self):
         # Pins the worked example in /guides/erc4626-virtual-shares/ to
         # the model: attacker 1 USDC, donate 1,000,000 USDC, victim
