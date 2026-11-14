@@ -382,6 +382,61 @@ class TestChecker(unittest.TestCase):
             shares = v.deposit(victim)
             self.assertEqual(shares, preview)
             self.assertTrue(shares >= same_tx_floor)
+    def test_perf_fee_guide_numbers(self):
+        # Pins /guides/erc4626-performance-fee/ to its model: a performance
+        # fee is 20% of yield above the high-water mark, paid in shares
+        # minted at the current price; the mark is what stops the manager
+        # charging twice for the same gain.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "perf-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "perf_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        S0 = 1_000_000 * USDC
+        H = 10_000 * USDC
+
+        # A: +10% year, 20% fee: fee 20,000, shares 18,181.818181, claim
+        # 10,803.571428, recipient 19,642.857141 (mint dilutes the fee).
+        a1 = 1_100_000 * USDC
+        fa, fs, hwm1 = model.harvest(a1, 1_000_000 * USDC, S0, 2000)
+        self.assertEqual(fa, 20_000 * USDC)
+        self.assertEqual(fs, 18_181_818_181)
+        self.assertEqual(model.holder_claim(H, a1, S0 + fs), 10_803_571_428)
+        self.assertEqual(model.holder_claim(fs, a1, S0 + fs), 19_642_857_141)
+        # B: recover to 1,050,000, below the 1,100,000 mark: fee 0.
+        fb, fsb, hwm2b = model.harvest(1_050_000 * USDC, hwm1, S0 + fs, 2000)
+        self.assertEqual((fb, fsb), (0, 0))
+        self.assertEqual(hwm2b, hwm1)
+        self.assertEqual(model.holder_claim(H, 1_050_000 * USDC, S0 + fs),
+                         10_312_500_000)
+        # C: recover to 1,200,000: fee only on the 100,000 excess.
+        fc, fsc, _ = model.harvest(1_200_000 * USDC, hwm1, S0 + fs, 2000)
+        self.assertEqual(fc, 20_000 * USDC)
+        self.assertEqual(fsc, 16_969_696_969)
+        self.assertEqual(
+            model.holder_claim(H, 1_200_000 * USDC, S0 + fs + fsc),
+            11_592_505_854)
+        self.assertEqual(
+            model.holder_claim(fs + fsc, 1_200_000 * USDC, S0 + fs + fsc),
+            40_749_414_518)
+        # D: no HWM, second +10% swing: fee again on the same 100,000.
+        fd, fsd, _ = model.harvest(a1, 1_000_000 * USDC, S0 + fs, 2000)
+        self.assertEqual(fd, 20_000 * USDC)
+        self.assertEqual(fsd, 18_512_396_694)
+        self.assertEqual(
+            model.holder_claim(H, a1, S0 + fs + fsd), 10_610_650_510)
+        self.assertEqual(
+            model.holder_claim(fs + fsd, a1, S0 + fs + fsd), 38_934_948_978)
+        # E: 10% fee control: fee 10,000, claim 10,900.900900.
+        fe, fse, _ = model.harvest(a1, 1_000_000 * USDC, S0, 1000)
+        self.assertEqual(fe, 10_000 * USDC)
+        self.assertEqual(fse, 9_090_909_090)
+        self.assertEqual(model.holder_claim(H, a1, S0 + fse), 10_900_900_900)
+
     def test_maxwithdraw_guide_numbers(self):
         # Pins /guides/erc4626-maxwithdraw/ to its model: a vault's
         # totalAssets counts assets locked in a strategy, but a
