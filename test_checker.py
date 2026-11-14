@@ -318,6 +318,71 @@ class TestChecker(unittest.TestCase):
         self.assertTrue(stale_mint >= bound_clean)
         self.assertEqual(clean - stale_mint, 990_099_010)
 
+    def test_wrapper_guide_numbers(self):
+        # Pins /guides/erc4626-minshares-wrapper/ to the model: a wrapper
+        # enforces minShares by depositing, then reverting unless the
+        # shares received are >= the user-supplied floor (computed
+        # off-chain from a pre-donation quote). The wrapper does not change
+        # the mint math — it only refuses a bad result. Same victim and
+        # donations as the slippage-bounds guide.
+        victim = 100_000_000_000
+        donations = [1_000_000, 1_000_000_000, 1_000_000_000_000,
+                     1_000_000_000_000_000]
+
+        clean = Vault(decimals_offset=0, min_deposit=0).deposit(victim)
+        self.assertEqual(clean, 100_000_000_000)
+        floor = clean * 99 // 100
+        self.assertEqual(floor, 99_000_000_000)
+        # floor() costs less than one share of strictness, by construction.
+        self.assertTrue(0 <= clean * 99 - floor * 100 < 100)
+
+        def wrapper_deposit(donation):
+            v = Vault(decimals_offset=0, min_deposit=0)
+            v.deposit(1_000_000)  # attacker seed
+            v.donate(donation)
+            shares = v.deposit(victim)
+            return shares if shares >= floor else None
+
+        # All four attacked deposits revert under the wrapper.
+        self.assertEqual([wrapper_deposit(d) for d in donations],
+                         [None, None, None, None])
+
+        # Stale-but-clean quote still passes, headroom 9,900,990 shares.
+        v = Vault(decimals_offset=0, min_deposit=0)
+        v.deposit(victim)
+        v.donate(1_000_000_000)  # 1,000 USDC yield on a 100,000 USDC vault
+        stale_mint = v.preview_deposit(victim)
+        self.assertEqual(stale_mint, 99_009_900_990)
+        self.assertEqual(stale_mint - floor, 9_900_990)
+
+        # Small victim: floor rounding is exact here too, and the attacked
+        # mint (9 shares) sits 1,100,000x below the floor.
+        small = 10_000_000
+        small_clean = Vault(decimals_offset=0, min_deposit=0).deposit(small)
+        self.assertEqual(small_clean, 10_000_000)
+        small_floor = small_clean * 99 // 100
+        self.assertEqual(small_floor, 9_900_000)
+        v = Vault(decimals_offset=0, min_deposit=0)
+        v.deposit(1_000_000)
+        v.donate(1_000_000_000_000)
+        small_attacked = v.preview_deposit(small)
+        self.assertEqual(small_attacked, 9)
+        self.assertTrue(small_attacked < small_floor)
+        self.assertEqual(small_floor // small_attacked, 1_100_000)
+
+        # A wrapper that previews in the SAME transaction reads the
+        # already-inflated price and passes every attack — no better
+        # than a same-block frontend preview.
+        for d in donations:
+            v = Vault(decimals_offset=0, min_deposit=0)
+            v.deposit(1_000_000)
+            v.donate(d)
+            preview = v.preview_deposit(victim)
+            same_tx_floor = preview * 99 // 100
+            shares = v.deposit(victim)
+            self.assertEqual(shares, preview)
+            self.assertTrue(shares >= same_tx_floor)
+
 
 if __name__ == "__main__":
     unittest.main()
