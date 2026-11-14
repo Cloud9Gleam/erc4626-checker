@@ -221,5 +221,62 @@ class TestChecker(unittest.TestCase):
         self.assertLessEqual(max(losses), victim // 1000)
 
 
+    def test_slippage_bounds_guide_numbers(self):
+        # Pins /guides/erc4626-slippage-bounds/ to the model: victim
+        # 100,000 USDC, bound 99% of the clean (pre-attack) quote,
+        # attacker seed max(min, 1 USDC), donations 1 / 1,000 /
+        # 1,000,000 / 1,000,000,000 USDC, offsets 0 / 6 / 18. The
+        # bound must revert every attacked deposit at every offset;
+        # the attacker must never profit.
+        victim = 100_000_000_000
+        donations = [1_000_000, 1_000_000_000, 1_000_000_000_000,
+                     1_000_000_000_000_000]
+
+        def attacked_mint(offset, min_dep, donation):
+            v = Vault(decimals_offset=offset, min_deposit=min_dep)
+            seed = max(min_dep, 1_000_000)
+            v.deposit(seed)
+            v.donate(donation)
+            return v.deposit(victim)
+
+        # Unprotected vault: clean quote and the four attacked mints.
+        clean0 = Vault(decimals_offset=0, min_deposit=0).deposit(victim)
+        self.assertEqual(clean0, 100_000_000_000)
+        bound0 = clean0 * 99 // 100
+        self.assertEqual(bound0, 99_000_000_000)
+        mints0 = [attacked_mint(0, 0, d) for d in donations]
+        self.assertEqual(mints0, [50_000_024_999, 99_900_199, 99_999, 100])
+        self.assertTrue(all(m < bound0 for m in mints0))
+        # The 1 USDC donation halves the quote yet costs the victim
+        # nothing: the bound still reverts a harmless deposit.
+        self.assertEqual(mints0[0] * 2, clean0 + 49_998)
+
+        # Losses and attacker nets from check_donation, same victim.
+        noprot = check_donation(Vault(decimals_offset=0, min_deposit=0),
+                                victim_deposit=victim)
+        self.assertEqual([r["victim_loss"] for r in noprot["detail"]],
+                         [0, 6, 909091, 99890])
+        self.assertEqual([r["attacker_net"] for r in noprot["detail"]],
+                         [-1, -994, -90909, -999899111])
+
+        # Offset 6 caps the worst loss at 900 base units (0.0009 USDC,
+        # at the 1,000,000,000 USDC donation); offset 18 loses nothing.
+        # The bound still reverts every row at both offsets.
+        for offset, min_dep, worst_loss in ((6, 1_000_000, 900),
+                                            (18, 1_000_000, 0)):
+            clean = Vault(decimals_offset=offset,
+                          min_deposit=min_dep).deposit(victim)
+            bound = clean * 99 // 100
+            mints = [attacked_mint(offset, min_dep, d) for d in donations]
+            self.assertTrue(all(m < bound for m in mints))
+            res = check_donation(
+                Vault(decimals_offset=offset, min_deposit=min_dep),
+                victim_deposit=victim)
+            losses = [r["victim_loss"] for r in res["detail"]]
+            self.assertEqual(max(losses), worst_loss)
+            self.assertTrue(all(r["attacker_net"] <= 0
+                                for r in res["detail"]))
+
+
 if __name__ == "__main__":
     unittest.main()
