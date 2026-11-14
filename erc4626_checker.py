@@ -239,6 +239,10 @@ def check_share_price_sanity(v: Vault) -> dict:
                        f"{_fmt_usdc(price_after)} USDC"]}
 
 
-def run_all(v: Vault) -> list[dict]:
-    return [check_rounding(v), check_donation(v), check_preview_consistency(v),
+def run_all(v: Vault, victim_deposit: int = 100_000_000_000) -> list[dict]:
+    """Run all five checks. victim_deposit is the donation-check scenario
+    size (base units, default 100,000 USDC): the vault a user is testing
+    may expect much smaller or larger typical deposits than the default."""
+    return [check_rounding(v), check_donation(v, victim_deposit=victim_deposit),
+            check_preview_consistency(v),
             check_fee_conservation(v), check_share_price_sanity(v)]
