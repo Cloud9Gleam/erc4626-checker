@@ -1,5 +1,7 @@
 # ERC-4626 accounting checker — v0.1 (one check family)
 
+Try it live, no install: https://check.n1netw3n.live/checker/ — the same five checks, in your browser.
+
 A runnable check, not a report sample. Stdlib-only Python, exact
 integer arithmetic (like Solidity), no chain access, no spend.
 
