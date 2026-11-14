@@ -71,6 +71,32 @@ class TestChecker(unittest.TestCase):
             self.assertIsNone(row["victim_loss"])
             self.assertIsNone(row["attacker_net"])
 
+    def test_virtual_shares_guide_numbers(self):
+        # Pins the worked example in /guides/erc4626-virtual-shares/ to
+        # the model: attacker 1 USDC, donate 1,000,000 USDC, victim
+        # 1,000 USDC, both redeem. The guide's first version had
+        # hand-computed numbers that contradicted the model in 9 of 10
+        # cells (attacker "profit" +0.998003 at offset 0, victim
+        # "+997.008979" at offset 6) — the model says the attacker
+        # never profits here: the victim's offset-0 loss stays in the
+        # vault as rounding dust, and at offset 6 the victim loses
+        # exactly one base unit.
+        for off, atk_net, vic_loss in ((0, -999, 999001), (6, -999999, 1)):
+            r = check_donation(Vault(decimals_offset=off, min_deposit=1_000_000),
+                               victim_deposit=1_000_000_000,
+                               donations=(1_000_000_000_000,))
+            row = r["detail"][0]
+            self.assertEqual(row["attacker_net"], atk_net)
+            self.assertEqual(row["victim_loss"], vic_loss)
+        self.assertFalse(check_donation(
+            Vault(decimals_offset=0, min_deposit=1_000_000),
+            victim_deposit=1_000_000_000,
+            donations=(1_000_000_000_000,))["pass"])
+        self.assertTrue(check_donation(
+            Vault(decimals_offset=6, min_deposit=1_000_000),
+            victim_deposit=1_000_000_000,
+            donations=(1_000_000_000_000,))["pass"])
+
 
 if __name__ == "__main__":
     unittest.main()
