@@ -2101,5 +2101,83 @@ class TestChecker(unittest.TestCase):
                          - alice * Fraction(equity2_down, supply),
                          2_850 * USDC)
 
+    def test_pausable_vault_guide_numbers(self):
+        # Guide #52: pausable vault -- the pause stops the exits, not
+        # the losses. Vault 1,000,000 USDC / 1,000,000 shares, price
+        # 1.00; Alice holds 100,000 shares. Re-derived here with plain
+        # integer / Fraction arithmetic, independent of the model file
+        # (site/pause-vault-model.py).
+        USDC = 1_000_000
+        # 1: deposits-only pause. Alice redeems 100,000 shares at
+        # 1.00 and leaves whole; Bob's deposit reverts, 0 shares.
+        self.assertEqual(100_000 * USDC * Fraction(1_000_000 * USDC,
+                                                   1_000_000 * USDC),
+                         100_000 * USDC)
+        self.assertEqual(0, 0)
+        # 2: full pause, flat strategy. Alice still exits whole, but
+        # the lock costs forgone yield at 10%/yr: 7d = 14,000/73,
+        # 30d = 60,000/73, 90d = 180,000/73 USDC.
+        self.assertEqual(Fraction(100_000) * Fraction(1, 10)
+                         * Fraction(7, 365), Fraction(14_000, 73))
+        self.assertEqual(Fraction(100_000) * Fraction(1, 10)
+                         * Fraction(30, 365), Fraction(60_000, 73))
+        self.assertEqual(Fraction(100_000) * Fraction(1, 10)
+                         * Fraction(90, 365), Fraction(180_000, 73))
+        self.assertEqual(f"{float(Fraction(14_000, 73)):,.6f}",
+                         "191.780822")
+        self.assertEqual(f"{float(Fraction(60_000, 73)):,.6f}",
+                         "821.917808")
+        self.assertEqual(f"{float(Fraction(180_000, 73)):,.6f}",
+                         "2,465.753425")
+        # 3: full pause + strategy -20%. True price 800,000 /
+        # 1,000,000 = 0.80; Alice's 100,000 shares redeem for 80,000,
+        # a 20,000 loss the pause locked her into.
+        self.assertEqual(Fraction(800_000 * USDC, 1_000_000 * USDC),
+                         Fraction(4, 5))
+        self.assertEqual(100_000 * USDC * Fraction(4, 5),
+                         80_000 * USDC)
+        self.assertEqual(100_000 * USDC - 80_000 * USDC,
+                         20_000 * USDC)
+        # 4: a 1,000,000 USDC donation during the pause, established
+        # vault. Price doubles to exactly 2.00; Alice's 100,000
+        # shares redeem for 199,999,999,999 base units (one base unit
+        # short of 200,000, from the +1 virtual terms), a gain of
+        # 99,999,999,999. The next 100,000 USDC depositor after
+        # unpause mints 50,000,000,000 base-unit shares and redeems
+        # them for 99,999,999,999 -- a loss of one base unit.
+        A_don, S0 = 2_000_000 * USDC, 1_000_000 * USDC
+        self.assertEqual(Fraction(A_don, S0), 2)
+        alice_back = 100_000 * USDC * (A_don + 1) // (S0 + 1)
+        self.assertEqual(alice_back, 199_999_999_999)
+        self.assertEqual(alice_back - 100_000 * USDC, 99_999_999_999)
+        dep = 100_000 * USDC
+        new_shares = dep * (S0 + 1) // (A_don + 1)
+        self.assertEqual(new_shares, 50_000_000_000)
+        A2, S2 = A_don + dep, S0 + new_shares
+        new_back = new_shares * (A2 + 1) // (S2 + 1)
+        self.assertEqual(new_back, 99_999_999_999)
+        self.assertEqual(dep - new_back, 1)
+        # 5: contrast -- the same 1,000,000 donation against a NEW
+        # vault, attacker first depositor with a 1 USDC seed.
+        # Reproduces the checker's no-protection preset exactly:
+        # victim loss 909,091 base units (0.909091 USDC), attacker
+        # net -90,909 (-0.090909 USDC).
+        A, S = 0, 0
+        atk_in = 1 * USDC
+        atk_shares = atk_in * (S + 1) // (A + 1)
+        A += atk_in
+        S += atk_shares
+        A += 1_000_000 * USDC
+        vic_shares = dep * (S + 1) // (A + 1)
+        A += dep
+        S += vic_shares
+        atk_out = atk_shares * (A + 1) // (S + 1)
+        A -= atk_out
+        S -= atk_shares
+        vic_out = vic_shares * (A + 1) // (S + 1)
+        self.assertEqual(dep - vic_out, 909_091)
+        self.assertEqual(atk_out - (atk_in + 1_000_000 * USDC),
+                         -90_909)
+
 if __name__ == "__main__":
     unittest.main()
