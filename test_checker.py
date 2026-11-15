@@ -24,9 +24,10 @@ class TestChecker(unittest.TestCase):
         # no bare 10+ digit runs a reader has to count zeros in.
         v = Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)
         results = {r["name"]: r for r in run_all(v)}
-        prev = results["preview_consistency"]["detail"][0]
+        prev = " ".join(results["preview_consistency"]["detail"])
         self.assertIn("10,000,000,000,000,000 shares", prev)
         self.assertIn("0.000001 USDC", prev)
+        self.assertEqual(len(results["preview_consistency"]["detail"]), 3)
         fee = results["fee_conservation"]["detail"][0]
         self.assertEqual(
             fee, "yield 10,000.000000 USDC, fee 1,000.000000 USDC, "
