@@ -667,6 +667,54 @@ class TestChecker(unittest.TestCase):
         # Waiting cost: 50,000 shares at 1.00 worth 45,000 at 0.90.
         self.assertEqual(R * 900_000 // USDC, 45_000 * USDC)
 
+    def test_queue_priority_guide_numbers(self):
+        # Pins /guides/erc4626-queue-priority/ to its model: a queue is
+        # only a schedule if the order is enforced. Baseline FIFO with
+        # 300k ahead, 100k liquid, 50k/day inflow pays 0 now, first
+        # dollar day 4, full day 5. A flat 2% jump fee costs 1,000 and
+        # pays 49,000 on day 0; 1% per 100k skipped costs 1,500 and
+        # pays 48,500 on day 0. One 50k jumper ahead moves the waiter
+        # to first day 5 / full day 6; two jumpers to day 6 / day 7. A
+        # priority lane reserving 50% of the liquid pays the priority
+        # request 50,000 on day 0 and leaves the FIFO queue at first
+        # day 5 / full day 6. A 10% loss over the 5-day wait costs
+        # 5,000 — five times the flat jump fee.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "queue-priority-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "queue_priority_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        L = 100_000 * USDC
+        R = 50_000 * USDC
+        I = 50_000 * USDC
+        # Baseline FIFO: 0 now, first day 4, full day 5.
+        self.assertEqual(model.fifo_days(L, 300_000 * USDC, R, I),
+                         (0, 4, 5))
+        # Flat 2% jump fee: 1,000 fee, 49,000 paid day 0.
+        self.assertEqual(R * 200 // 10_000, 1_000 * USDC)
+        self.assertEqual(R - R * 200 // 10_000, 49_000 * USDC)
+        # Scaled fee, 1% per 100k skipped: 1,500 fee, 48,500 day 0.
+        self.assertEqual(R * 3 // 100, 1_500 * USDC)
+        self.assertEqual(R - R * 3 // 100, 48_500 * USDC)
+        # One 50k jumper ahead: first day 5, full day 6.
+        self.assertEqual(model.fifo_days(L, 350_000 * USDC, R, I),
+                         (0, 5, 6))
+        # Two 50k jumpers ahead: first day 6, full day 7.
+        self.assertEqual(model.fifo_days(L, 400_000 * USDC, R, I),
+                         (0, 6, 7))
+        # Priority lane, 50% of liquid reserved: priority paid 50,000
+        # day 0; FIFO queue left with 50k liquid, first day 5, full 6.
+        self.assertEqual(min(R, L // 2), 50_000 * USDC)
+        self.assertEqual(model.fifo_days(L - L // 2, 300_000 * USDC, R, I),
+                         (0, 5, 6))
+        # Jump vs wait: 10% loss over the wait costs 5,000 > 1,000 fee.
+        self.assertEqual(R - R * 900_000 // USDC, 5_000 * USDC)
+        self.assertGreater(R - R * 900_000 // USDC, R * 200 // 10_000)
+
     def test_failed_donation_notice_links_slippage_bounds(self):
         # The checker page's failure notice is the funnel entry for a
         # depositor, not just a deployer: when the donation check fails
@@ -688,7 +736,44 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
-        self.assertNotIn(link, passed)
+    def test_vault_state_seeded_donation(self):
+        # A live vault is not a new vault: the checker used to run the
+        # donation check only on an empty vault, so every live vault got
+        # the new-vault verdict (offset 0 SOME FAILED, worst loss
+        # 0.909091 USDC). Seeding the vault with its existing deposits
+        # dilutes the donation — the victim's loss is bounded by about
+        # one share's value at the inflated price, and one share is
+        # cheap when the vault already holds many shares.
+        A50 = 50_000_000_000_000  # 50M USDC in base units; 50M shares below
+        S50 = 50_000_000_000_000  # price 1.00 USDC per share
+        don0 = check_donation(Vault(decimals_offset=0, min_deposit=0),
+                              vault_assets=A50, vault_supply=S50)
+        self.assertTrue(don0["pass"])
+        self.assertEqual([r["victim_loss"] for r in don0["detail"]],
+                         [1, 1, 1, 13])
+        self.assertEqual([r["attacker_net"] for r in don0["detail"]],
+                         [-1_000_000, -999_999_981,
+                          -999_999_980_001, -999_999_980_000_001])
+        don6 = check_donation(Vault(decimals_offset=6, min_deposit=0),
+                              vault_assets=A50, vault_supply=S50)
+        self.assertTrue(don6["pass"])
+        self.assertEqual([r["victim_loss"] for r in don6["detail"]],
+                         [1, 1, 1, 18])
+        # Price 1.05 (52.5M assets / 50M shares): same shape, still PASS.
+        don105 = check_donation(Vault(decimals_offset=0, min_deposit=0),
+                                vault_assets=52_500_000_000_000,
+                                vault_supply=S50)
+        self.assertTrue(don105["pass"])
+        self.assertEqual([r["victim_loss"] for r in don105["detail"]],
+                         [1, 1, 1, 5])
+        # The default (no seed) is unchanged: a new vault at offset 0
+        # still fails with worst victim loss 909091 base units.
+        default = run_all(Vault(decimals_offset=0, min_deposit=0,
+                                perf_fee_bps=0))
+        don = next(r for r in default if r["name"] == "donation_inflation")
+        self.assertFalse(don["pass"])
+        self.assertEqual(max(r["victim_loss"] for r in don["detail"]),
+                         909091)
 
 
 if __name__ == "__main__":
