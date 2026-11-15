@@ -2505,5 +2505,79 @@ class TestChecker(unittest.TestCase):
         self.assertAlmostEqual(float(vic_cost), 1.0, places=5)
         self.assertGreater(att_cost, vic_cost)
 
+    def test_deposit_cap_griefing_guide_numbers(self):
+        # Pins /guides/erc4626-deposit-cap-griefing/ to its model: a
+        # 1,000,000 USDC / 1,000,000 share vault, price $1.00, capped by
+        # totalAssets. The cap is a threshold, not a price: a dust
+        # donation 1 base unit over the cap freezes every deposit, and
+        # the sunk cost is 1 base unit whenever the attacker can front
+        # the headroom. A supply cap is donation-proof because a
+        # donation mints no shares.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "deposit-cap-griefing-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "deposit_cap_griefing_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+
+        def mul_div_down(a, b, c):
+            return (a * b) // c
+
+        def allowed(total_assets, assets, cap):
+            return total_assets + assets <= cap
+
+        # Setup: 1,000,000 USDC / 1,000,000 shares, price $1.00.
+        self.assertEqual(model.A0, 1_000_000 * USDC)
+        self.assertEqual(model.S0, 1_000_000)
+        # Tight cap: 1 USDC headroom. Fill 1 USDC -> 1 share, assets
+        # land exactly on the cap; even a 1-base-unit deposit reverts,
+        # and a 100,000 USDC victim deposit reverts after 1 bu of dust.
+        self.assertEqual(model.cap_tight, 1_000_001 * USDC)
+        self.assertEqual(model.shares1, 1)
+        self.assertFalse(allowed(model.cap_tight, 1, model.cap_tight))
+        self.assertFalse(allowed(model.cap_tight + 1,
+                                100_000 * USDC, model.cap_tight))
+        # Attacker redeems the 1 share for exactly 1 USDC back;
+        # net grief cost is 1 base unit = $0.000001.
+        self.assertEqual(model.redeem1, 1 * USDC)
+        self.assertEqual(model.cost1, 1)
+        self.assertEqual(Fraction(model.cost1, USDC), Fraction(1, USDC))
+        # Unblock thresholds: 1.000001 USDC of net withdrawals before a
+        # 1 USDC deposit is accepted again; 2 base units before even a
+        # 1-bu deposit is accepted.
+        self.assertEqual(model.withdraw_to_unblock_1usdc, 1_000_001)
+        self.assertEqual(model.withdraw_to_unblock_1bu, 2)
+        # Mid cap: 100 USDC headroom, same 1-bu sunk cost.
+        self.assertEqual(model.shares2, 100)
+        self.assertEqual(model.redeem2, 100 * USDC)
+        self.assertEqual(model.cost2, 1)
+        # Loose cap: donate-through needs 999,999.000001 USDC, costs
+        # 999,998.000003 USDC; the 1 share redeems for 1.999998 USDC.
+        self.assertEqual(model.donation3, 999_999_000_001)
+        self.assertEqual(model.redeem3, 1_999_998)
+        self.assertEqual(model.cost3, 999_998_000_003)
+        self.assertEqual(Fraction(model.cost3, USDC),
+                         Fraction(999_998_000_003, USDC))
+        # Fill-then-dust on the loose cap: 1,000,000 USDC of temporary
+        # capital, redeemed whole, net cost 1 base unit (recomputed
+        # here, not read from the model).
+        a_fill = model.A0 + 1_000_000 * USDC + 1
+        s_fill = model.S0 + 1_000_000
+        self.assertEqual(a_fill, model.cap_loose + 1)
+        self.assertEqual(mul_div_down(1_000_000, a_fill, s_fill),
+                         1_000_000 * USDC)
+        # Supply cap: a dust donation mints no shares, so with no fill
+        # deposit the boundary is unmoved and deposits still pass.
+        self.assertEqual(model.supply_cap, 1_000_001)
+        self.assertLess(model.S0, model.supply_cap)
+        # Classic donation attack needs a 1,000,000 USDC donation to
+        # double the price; cap griefing needs 1 base unit of sunk cost.
+        self.assertEqual(model.classic_donation, 1_000_000 * USDC)
+        self.assertEqual(model.cost1, 1)
+
 if __name__ == "__main__":
     unittest.main()
