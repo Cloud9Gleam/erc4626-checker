@@ -1756,7 +1756,14 @@ class TestChecker(unittest.TestCase):
         hero_end = home.index('Run the free ERC-4626 checker')
         hero = home[hero_start:hero_end]
         self.assertIn('<div class="flow"', hero)
-        self.assertEqual(hero.count('<div class="flow-step">'), 3)
+        self.assertEqual(hero.count('<div class="flow-step'), 3)
+        # The victim step is the red one: numbered badges on all three,
+        # and only the loss step carries the loss class.
+        self.assertEqual(hero.count('class="flow-num"'), 3)
+        self.assertIn('<span class="flow-num">1</span>', hero)
+        self.assertIn('<span class="flow-num">2</span>', hero)
+        self.assertIn('<span class="flow-num">3</span>', hero)
+        self.assertEqual(hero.count('<div class="flow-step loss">'), 1)
         self.assertEqual(hero.count('class="flow-arrow"'), 2)
         self.assertIn("Attacker donates", hero)
         self.assertIn("Share price inflates", hero)
