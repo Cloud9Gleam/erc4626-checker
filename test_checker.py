@@ -4250,18 +4250,116 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(waited, 88_000 * USDC)
         self.assertEqual(early - waited, 16_500 * USDC)
 
+    def test_yield_vesting_guide_numbers(self):
+        # Pins /guides/erc4626-yield-vesting/ to its model: a vault
+        # harvests +100,000 USDC but vests it linearly over 10 days, so
+        # only the vested part counts in totalAssets and the price
+        # climbs 0.01 a day instead of jumping 0.10 at harvest. An
+        # early exit forfeits the unvested share to whoever stays; a
+        # mid-vesting buyer collects part of it; a harvest sniper
+        # captures exactly 0 on day 0. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers the guide quotes, on the model's own Vault
+        # (exact integer arithmetic).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "yield-vesting-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "yield_vesting_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+        Vault = model.Vault
+
+        # Case 1: baseline, no vesting — harvest +100,000 lands at
+        # once, price 1.10, Alice redeems 100,000 shares for
+        # 110,000.000000, Carol's 900,000 shares are worth 990,000.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.set_assets(1_100_000 * USDC)
+        self.assertEqual(v.price(), 1_100_000)
+        self.assertEqual(v.redeem(100_000 * USDC), 110_000 * USDC)
+        self.assertEqual(v.redeem(900_000 * USDC), 990_000 * USDC)
+
+        # Case 2: vesting, Alice exits day 0 — nothing vested, price
+        # still 1.00, she takes 100,000.000000. All 100,000 then vests
+        # to the 900,000 remaining shares: price 1.111111, Carol ends
+        # with 1,000,000.000000 — 10,000.000000 more than baseline,
+        # exactly Alice's forfeited yield share.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        self.assertEqual(v.price(), USDC)
+        self.assertEqual(v.redeem(100_000 * USDC), 100_000 * USDC)
+        v.set_assets(1_000_000 * USDC)
+        self.assertEqual(v.price(), 1_111_111)
+        self.assertEqual(v.redeem(900_000 * USDC), 1_000_000 * USDC)
+        self.assertEqual(1_000_000 * USDC - 990_000 * USDC,
+                         10_000 * USDC)
+
+        # Case 3: vesting, Alice exits day 5 — 50,000 vested, price
+        # 1.05, she takes 105,000.000000. The other 50,000 vests to
+        # Carol's 900,000 shares: price 1.105555, she ends with
+        # 995,000.000000 — 5,000.000000 more than baseline, exactly
+        # Alice's forfeited half.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.set_assets(1_050_000 * USDC)
+        self.assertEqual(v.price(), 1_050_000)
+        self.assertEqual(v.redeem(100_000 * USDC), 105_000 * USDC)
+        v.set_assets(995_000 * USDC)
+        self.assertEqual(v.price(), 1_105_555)
+        self.assertEqual(v.redeem(900_000 * USDC), 995_000 * USDC)
+        self.assertEqual(995_000 * USDC - 990_000 * USDC, 5_000 * USDC)
+
+        # Case 4: Bob deposits mid-vesting — day 5, price 1.05, he
+        # deposits 105,000 and mints 100,000 shares; at full vesting
+        # (price 1.095454) he redeems 109,545.454545, gaining
+        # 4,545.454545. The incumbents together keep 1,095,454.545455,
+        # not 1,100,000: the same 4,545.454545 comes out of them.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.set_assets(1_050_000 * USDC)
+        bob_shares = v.deposit(105_000 * USDC)
+        self.assertEqual(bob_shares, 100_000 * USDC)
+        v.set_assets(1_205_000 * USDC)
+        self.assertEqual(v.price(), 1_095_454)
+        bob_out = v.redeem(bob_shares)
+        self.assertEqual(bob_out, 109_545_454_545)
+        incumbent_out = v.redeem(1_000_000 * USDC)
+        self.assertEqual(incumbent_out, 1_095_454_545_455)
+        self.assertEqual(bob_out + incumbent_out, 1_205_000 * USDC)
+        self.assertEqual(1_100_000 * USDC - incumbent_out,
+                         4_545_454_545)
+        self.assertEqual(bob_out - 105_000 * USDC, 4_545_454_545)
+
+        # Case 5: harvest sniper, killed by vesting — same setup as
+        # the harvest-timing guide, +50,000 harvest. Without vesting
+        # the sniper redeems 104,545.454545 and captures 4,545.454545.
+        # With a 10-day vest, redeeming on day 0 pays exactly
+        # 100,000.000000 (capture 0.000000); waiting the full 10 days
+        # pays the same 104,545.454545.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        sniper_shares = v.deposit(100_000 * USDC)
+        self.assertEqual(sniper_shares, 100_000 * USDC)
+        self.assertEqual(v.price(), USDC)
+        self.assertEqual(v.redeem(sniper_shares), 100_000 * USDC)
+        v2 = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        sniper_shares = v2.deposit(100_000 * USDC)
+        v2.set_assets(1_150_000 * USDC)
+        self.assertEqual(v2.price(), 1_045_454)
+        self.assertEqual(v2.redeem(sniper_shares), 104_545_454_545)
+
         # Cross-check against the checker's own Vault (OZ virtual-share
         # convention: supply + 1, assets + 1 at offset 0). The checker
-        # dusts by at most a few base units; the lockup prices must
+        # dusts by at most a few base units; the vesting prices must
         # match to that.
         cv = ec.Vault()
-        cv.total_assets = 880_000 * USDC
+        cv.total_assets = 1_050_000 * USDC
         cv.total_supply = 1_000_000 * USDC
         self.assertLessEqual(
-            abs(cv.convert_to_assets(100_000 * USDC) - 88_000 * USDC), 2)
-        cv.total_assets = 900_000 * USDC
+            abs(cv.convert_to_assets(100_000 * USDC) - 105_000 * USDC), 2)
+        cv.total_assets = 1_100_000 * USDC
         self.assertLessEqual(
-            abs(cv.convert_to_assets(100_000 * USDC) - 90_000 * USDC), 2)
+            abs(cv.convert_to_assets(100_000 * USDC) - 110_000 * USDC), 2)
 
 if __name__ == "__main__":
     unittest.main()
