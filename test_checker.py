@@ -1681,5 +1681,49 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(Fraction(10_000 * USDC, Fraction(47, 40) * USDC),
                          Fraction(400_000, 47))
 
+    def test_tiered_fee_guide_numbers(self):
+        # Guide #48: tiered deposit fee -- 5% below 10,000, 2% from
+        # 10,000, 1% from 100,000 (per deposit call, on gross).
+        # Re-derived here with plain integer / Fraction arithmetic,
+        # independent of the model file.
+        USDC = 1_000_000
+        # A: 5,000 at 5% -> fee 250, net 4,750.
+        self.assertEqual(5_000 * USDC * 5 // 100, 250 * USDC)
+        # B/C: the 10,000 cliff -- 1 more USDC in, 300.95 more net out.
+        self.assertEqual(9_999 * USDC * 5 // 100, Fraction(9999, 20) * USDC)
+        self.assertEqual(9_999 * USDC - Fraction(9999, 20) * USDC,
+                         Fraction(189981, 20) * USDC)
+        self.assertEqual(10_000 * USDC * 2 // 100, 200 * USDC)
+        self.assertEqual(Fraction(9_800) - Fraction(189981, 20),
+                         Fraction(6019, 20))
+        # D/E: the 100,000 cliff -- 1 more USDC in, 1,000.98 more net out.
+        self.assertEqual(99_999 * USDC * 2 // 100, Fraction(99999, 50) * USDC)
+        self.assertEqual(99_999 * USDC - Fraction(99999, 50) * USDC,
+                         Fraction(4899951, 50) * USDC)
+        self.assertEqual(100_000 * USDC * 1 // 100, 1_000 * USDC)
+        self.assertEqual(Fraction(99_000) - Fraction(4899951, 50),
+                         Fraction(50049, 50))
+        # F: 200,000 at 1% -> fee 2,000, net 198,000.
+        self.assertEqual(200_000 * USDC // 100, 2_000 * USDC)
+        # Tiering vs flat 5%: saves 300 on 10,000, 4,000 on 100,000.
+        self.assertEqual(10_000 * USDC * 5 // 100 - 200 * USDC, 300 * USDC)
+        self.assertEqual(100_000 * USDC * 5 // 100 - 1_000 * USDC, 4_000 * USDC)
+        # G: splitting 10,000 into 2x5,000 costs 300 extra in fees;
+        # splitting inside one tier (2x10,000 vs 20,000) costs nothing.
+        self.assertEqual(2 * (5_000 * USDC * 5 // 100) - 200 * USDC, 300 * USDC)
+        self.assertEqual(2 * (10_000 * USDC * 2 // 100),
+                         20_000 * USDC * 2 // 100)
+        # H: cliff in shares at price 1.10: 9,999 -> 8,635.50 shares,
+        # 10,000 -> 8,909.090909... shares, cliff 6,019/22 shares.
+        self.assertEqual(Fraction(9_499_05, 100) / Fraction(11, 10),
+                         Fraction(17_271, 2))
+        self.assertEqual(Fraction(9_800) / Fraction(11, 10),
+                         Fraction(98_000, 11))
+        self.assertEqual(Fraction(98_000, 11) - Fraction(17_271, 2),
+                         Fraction(6_019, 22))
+        # Boundary exactness: exactly 10,000 / 100,000 get the lower rate.
+        self.assertEqual(10_000 * USDC * 2 // 100, 200 * USDC)
+        self.assertEqual(100_000 * USDC * 1 // 100, 1_000 * USDC)
+
 if __name__ == "__main__":
     unittest.main()
