@@ -3936,5 +3936,115 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(fa + fa4, 20_000 * USDC)
         self.assertEqual(fa + 20_000 * USDC, 40_000 * USDC)
 
+    def test_bridge_minted_shares_guide_numbers(self):
+        # Pins /guides/erc4626-bridge-minted-shares/ to its model: a
+        # vault on chain B mints shares when a bridge message lands,
+        # the underlying USDC arriving later. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers the guide quotes.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "bridge-minted-shares-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "bridge_minted_shares_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+
+        # Case 1: clean settlement-first — 1,000,000 settles, then
+        # 1,000,000 shares are minted; price $1.00; Alice's 100,000
+        # shares worth 100,000, Carol's 900,000 worth 900,000.
+        v = model.Vault(0, 0)
+        self.assertEqual(model.mint_on_settlement(v, 1_000_000 * USDC),
+                         1_000_000 * USDC)
+        self.assertEqual((v.total_assets, v.supply),
+                         (1_000_000 * USDC, 1_000_000 * USDC))
+        self.assertEqual(v.price(), USDC)
+        self.assertEqual(v.worth(100_000 * USDC), 100_000 * USDC)
+        self.assertEqual(v.worth(900_000 * USDC), 900_000 * USDC)
+
+        # Case 2: the gap — 1,000,000 shares minted on the messages,
+        # assets still 0; price $0.00, both holders worth 0. Alice
+        # redeems 100,000 shares in the gap and receives 0 USDC; the
+        # redeem succeeds and pays nothing; supply falls to 900,000.
+        v = model.Vault(0, 0)
+        self.assertEqual(model.mint_on_message(v, 900_000 * USDC),
+                         900_000 * USDC)
+        self.assertEqual(model.mint_on_message(v, 100_000 * USDC),
+                         100_000 * USDC)
+        self.assertEqual(v.total_assets, 0)
+        self.assertEqual(v.supply, 1_000_000 * USDC)
+        self.assertEqual(v.price(), 0)
+        self.assertEqual(v.worth(900_000 * USDC), 0)
+        self.assertEqual(v.worth(100_000 * USDC), 0)
+        self.assertEqual(v.redeem(100_000 * USDC), 0)
+        self.assertEqual(v.supply, 900_000 * USDC)
+
+        # Case 3: the bridge fails — 1,000,000 shares exist, assets
+        # 0; both holders worth 0; the whole 1,000,000 of promised
+        # value evaporates.
+        v = model.Vault(0, 0)
+        model.mint_on_message(v, 900_000 * USDC)
+        model.mint_on_message(v, 100_000 * USDC)
+        self.assertEqual(v.worth(900_000 * USDC), 0)
+        self.assertEqual(v.worth(100_000 * USDC), 0)
+
+        # Case 4: 10% haircut — only 900,000 of 1,000,000 settles;
+        # price $0.90; Carol's 900,000 worth 810,000 (loses 90,000),
+        # Alice's 100,000 worth 90,000 (loses 10,000); the two
+        # losses sum exactly to the assets that arrived.
+        v = model.Vault(0, 0)
+        model.mint_on_message(v, 900_000 * USDC)
+        model.mint_on_message(v, 100_000 * USDC)
+        self.assertEqual(model.settle(v, 900_000 * USDC),
+                         900_000 * USDC)
+        self.assertEqual(v.price(), 900_000)
+        carol = v.worth(900_000 * USDC)
+        alice = v.worth(100_000 * USDC)
+        self.assertEqual(carol, 810_000 * USDC)
+        self.assertEqual(alice, 90_000 * USDC)
+        self.assertEqual(900_000 * USDC - carol, 90_000 * USDC)
+        self.assertEqual(100_000 * USDC - alice, 10_000 * USDC)
+        self.assertEqual(carol + alice, v.total_assets)
+
+        # Case 5: a real deposit during the gap reverts —
+        # convertToShares divides by total_assets = 0.
+        v = model.Vault(0, 0)
+        model.mint_on_message(v, 1_000_000 * USDC)
+        with self.assertRaises(ZeroDivisionError):
+            v.deposit(100_000 * USDC)
+        self.assertEqual((v.total_assets, v.supply),
+                         (0, 1_000_000 * USDC))
+
+        # Case 6: the fix, mint on settlement — Carol settles 900,000
+        # and mints 900,000; Alice's arrival is short 10,000, so she
+        # mints 90,000 at the live $1.00 price; Carol keeps 900,000,
+        # Alice holds 90,000; the haircut lands on the depositor.
+        v = model.Vault(0, 0)
+        self.assertEqual(model.mint_on_settlement(v, 900_000 * USDC),
+                         900_000 * USDC)
+        self.assertEqual(model.mint_on_settlement(v, 90_000 * USDC),
+                         90_000 * USDC)
+        self.assertEqual((v.total_assets, v.supply),
+                         (990_000 * USDC, 990_000 * USDC))
+        self.assertEqual(v.price(), USDC)
+        self.assertEqual(v.worth(900_000 * USDC), 900_000 * USDC)
+        self.assertEqual(v.worth(90_000 * USDC), 90_000 * USDC)
+
+        # Cross-check against the checker's own Vault (OZ virtual
+        # shares): the haircut must match to a few base units of dust.
+        import erc4626_checker as ec
+        cv = ec.Vault()
+        cv.total_assets = 900_000 * USDC
+        cv.total_supply = 1_000_000 * USDC
+        self.assertLessEqual(
+            abs(cv.convert_to_assets(900_000 * USDC)
+                - 810_000 * USDC), 2)
+        self.assertLessEqual(
+            abs(cv.convert_to_assets(100_000 * USDC)
+                - 90_000 * USDC), 2)
+
 if __name__ == "__main__":
     unittest.main()
