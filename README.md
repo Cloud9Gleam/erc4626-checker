@@ -1,6 +1,6 @@
 # ERC-4626 accounting checker — v0.1 (one check family)
 
-Try it live, no install: https://check.n1netw3n.live/checker/ — the same five checks, in your browser.
+Try it live, no install: https://check.n1netw3n.live/checker/ — the same six checks, in your browser.
 
 A runnable check, not a report sample. Stdlib-only Python, exact
 integer arithmetic (like Solidity), no chain access, no spend.
@@ -13,9 +13,13 @@ integer arithmetic (like Solidity), no chain access, no spend.
    directly to the vault, victim deposits, both redeem. PASS = attacker
    never profits and victim loss stays <= 1000 base units (0.001 USDC
    at 6 decimals, the bound the 2026-11-03 audit observed).
-3. **Preview consistency** — `preview*()` equals the executed amount.
-4. **Fee conservation** — yield = holder gain + fee accrued, to 1 unit.
-5. **Share-price sanity** — price never negative, never drops on deposit.
+3. **Minimum viable deposit** — the smallest deposit that mints at least
+   one share at the vault's live price. Deposit rounds down, so below a
+   threshold a deposit mints zero shares. PASS = a 1 USDC deposit mints
+   at least one share after the vault's own minimum-deposit floor.
+4. **Preview consistency** — `preview*()` equals the executed amount.
+5. **Fee conservation** — yield = holder gain + fee accrued, to 1 unit.
+6. **Share-price sanity** — price never negative, never drops on deposit.
 
 ## Run it
 
@@ -27,7 +31,7 @@ python3 -m unittest test_checker -v
 ## Use in CI
 
 Gate a vault's parameters on every push — the action runs the same
-five checks and fails the step when any check fails:
+six checks and fails the step when any check fails:
 
 ```yaml
 - uses: Cloud9Gleam/erc4626-checker@main
