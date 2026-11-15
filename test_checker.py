@@ -5303,5 +5303,84 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(v.deposit(1_000_000 * USDC), 10)
         self.assertEqual(v.redeem(10), 952_380_952_386)
 
+    def test_donation_performance_fee_guide_numbers(self):
+        # Pins /guides/erc4626-donation-performance-fee/ to its model:
+        # a 20% performance fee above a 1,000,000 high-water mark, vault
+        # 1,000,000 USDC / 1,000,000 shares at $1.00, Alice the sole
+        # holder. A donation that pushes totalAssets above the mark
+        # accrues the identical fee as real yield — the vault cannot
+        # tell a gift from yield. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers with plain integer arithmetic.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-performance-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_performance_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        A0, S0, HWM = 1_000_000 * USDC, 1_000_000 * USDC, 1_000_000 * USDC
+
+        def fee_accrued(assets, hwm):
+            gain = assets - hwm
+            return gain * 20 // 100 if gain > 0 else 0
+
+        def crystallise(assets, supply, hwm):
+            fee = fee_accrued(assets, hwm)
+            fee_shares = fee * supply // assets if fee else 0
+            return supply + fee_shares, fee_shares, fee
+
+        def redeem(shares, assets, supply):
+            return shares * assets // supply
+
+        def run(assets):
+            """Crystallise, manager redeems fee shares, Alice redeems
+            her 1,000,000 shares. Returns (fee, fee_shares, mgr,
+            alice, dust)."""
+            s, fshares, fee = crystallise(assets, S0, HWM)
+            mgr = redeem(fshares, assets, s)
+            a, s = assets - mgr, s - fshares
+            alice = redeem(S0, a, s)
+            a, s = a - alice, s - S0
+            return fee, fshares, mgr, alice, a
+
+        # (1) Control: +100,000 real yield. (2) Donation +100,000,
+        # no yield: identical fee and identical split.
+        y = run(A0 + 100_000 * USDC)
+        d = run(A0 + 100_000 * USDC)
+        self.assertEqual(y, d)
+        self.assertEqual(y, (20_000 * USDC, 18_181_818_181,
+                             19_642_857_141, 1_080_357_142_859, 0))
+        # Mint dilution shaves 357.142859 off the nominal 20,000 fee.
+        self.assertEqual(20_000 * USDC - y[2], 357_142_859)
+        # The gift splits 19.64% manager / 80.36% Alice.
+        self.assertEqual(d[2] + (d[3] - S0), 100_000 * USDC)
+        self.assertEqual(d[3] - S0, 80_357_142_859)
+
+        # (3) Manager self-donates 100,000: gets back only the fee.
+        self.assertEqual(y[2] - 100_000 * USDC, -80_357_142_859)
+
+        # (4) Donation + yield stacked: fee base doubles to 40,000.
+        st = run(A0 + 200_000 * USDC)
+        self.assertEqual(st, (40_000 * USDC, 33_333_333_333,
+                              38_709_677_418, 1_161_290_322_582, 0))
+        # The donation lifts the manager's take by 19,066.820277 —
+        # almost as much again as the yield-only fee.
+        self.assertEqual(st[2] - y[2], 19_066_820_277)
+
+        # (5) Below the high-water mark: NAV 900,000, HWM 1,000,000.
+        self.assertEqual(fee_accrued(900_000 * USDC + 100_000 * USDC,
+                                     HWM), 0)
+        self.assertEqual(fee_accrued(900_000 * USDC + 200_000 * USDC,
+                                     HWM), 20_000 * USDC)
+
+        # (6) Alice exits BEFORE crystallisation: whole donation,
+        # manager gets nothing.
+        self.assertEqual(redeem(S0, 1_100_000 * USDC, S0),
+                         1_100_000 * USDC)
+
 if __name__ == "__main__":
     unittest.main()
