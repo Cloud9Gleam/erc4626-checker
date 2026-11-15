@@ -3360,5 +3360,117 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(sum(highs) + sum(mediums) + sum(lows),
                          Decimal("30259.31"))
 
+    def test_idle_cash_drag_guide_numbers(self):
+        # Pins /guides/erc4626-idle-cash-drag/ to its model: a 1,000,000
+        # USDC / 1,000,000 share vault, price $1.00, Alice 100,000
+        # shares, Carol 900,000, strategy 10%/yr on deployed assets.
+        # Importing the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers the guide quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "idle-cash-drag-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "idle_cash_drag_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Case 1: 20% buffer, 1y — 800,000 deployed -> 880,000, total
+        # 1,080,000, price 27/25 = 1.08; Alice 108,000 (short 2,000),
+        # Carol 972,000 (short 18,000); missing 20,000 = idle x 10%.
+        self.assertEqual((800_000 * USDC * 11) // 10, 880_000 * USDC)
+        self.assertEqual(Fraction(1_080_000, 1_000_000),
+                         Fraction(27, 25))
+        self.assertEqual((100_000 * 1_080_000 * USDC) // 1_000_000,
+                         108_000 * USDC)
+        self.assertEqual((900_000 * 1_080_000 * USDC) // 1_000_000,
+                         972_000 * USDC)
+        self.assertEqual(110_000 * USDC - 108_000 * USDC,
+                         2_000 * USDC)
+        self.assertEqual(990_000 * USDC - 972_000 * USDC,
+                         18_000 * USDC)
+        self.assertEqual(Fraction(20, 100) * Fraction(1, 10),
+                         Fraction(2, 100))
+        # Case 2: 5% buffer, 1y — price 219/200 = 1.095; Alice
+        # 109,500 (short 500), Carol 985,500 (short 4,500).
+        self.assertEqual(Fraction(1_095_000, 1_000_000),
+                         Fraction(219, 200))
+        self.assertEqual((100_000 * 1_095_000 * USDC) // 1_000_000,
+                         109_500 * USDC)
+        self.assertEqual((900_000 * 1_095_000 * USDC) // 1_000_000,
+                         985_500 * USDC)
+        # Case 3: 50% buffer, 1y — price 21/20 = 1.05; Alice
+        # 105,000 (short 5,000), Carol 945,000 (short 45,000).
+        self.assertEqual(Fraction(1_050_000, 1_000_000),
+                         Fraction(21, 20))
+        self.assertEqual((100_000 * 1_050_000 * USDC) // 1_000_000,
+                         105_000 * USDC)
+        self.assertEqual((900_000 * 1_050_000 * USDC) // 1_000_000,
+                         945_000 * USDC)
+        # Case 4: buffer at 20% of TVL, 2y — year 2 deploys 864,000
+        # -> 950,400, total 1,166,400, price 729/625 = 1.1664;
+        # Alice 116,640, Carol 1,049,760; drag 4.36pp vs 21%.
+        self.assertEqual((864_000 * USDC * 11) // 10, 950_400 * USDC)
+        self.assertEqual(Fraction(1_166_400, 1_000_000),
+                         Fraction(729, 625))
+        self.assertEqual((100_000 * 1_166_400 * USDC) // 1_000_000,
+                         116_640 * USDC)
+        self.assertEqual((900_000 * 1_166_400 * USDC) // 1_000_000,
+                         1_049_760 * USDC)
+        self.assertEqual(Fraction(121, 100) - Fraction(729, 625),
+                         Fraction(109, 2500))
+        # Case 5: fixed $200,000 buffer, 2y — total 1,168,000, price
+        # 146/125 = 1.168; Alice 116,800, Carol 1,051,200; beats
+        # case 4 by 1,600; year-2 blended yield 11/135 = 8.148148%.
+        self.assertEqual(Fraction(1_168_000, 1_000_000),
+                         Fraction(146, 125))
+        self.assertEqual((100_000 * 1_168_000 * USDC) // 1_000_000,
+                         116_800 * USDC)
+        self.assertEqual((900_000 * 1_168_000 * USDC) // 1_000_000,
+                         1_051_200 * USDC)
+        self.assertEqual(1_168_000 * USDC - 1_166_400 * USDC,
+                         1_600 * USDC)
+        self.assertEqual(Fraction(88_000, 1_080_000),
+                         Fraction(11, 135))
+        # Case 6: Bob deposits 500,000, half waits a year — total
+        # 1,605,000 over 1,500,000 shares, price 107/100 = 1.07;
+        # no-lag total 1,630,000, price 163/150 = 1.086667; lag
+        # costs 25,000, split Bob 8,333.333333 / Alice 1,666.666667
+        # / Carol 15,000 (floored, 1 base unit of dust).
+        self.assertEqual(Fraction(1_605_000, 1_500_000),
+                         Fraction(107, 100))
+        self.assertEqual(Fraction(1_630_000, 1_500_000),
+                         Fraction(163, 150))
+        self.assertEqual((500_000 * 1_605_000 * USDC) // 1_500_000,
+                         535_000 * USDC)
+        self.assertEqual((500_000 * 1_630_000 * USDC) // 1_500_000,
+                         543_333_333_333)
+        self.assertEqual((100_000 * 1_605_000 * USDC) // 1_500_000,
+                         107_000 * USDC)
+        self.assertEqual((100_000 * 1_630_000 * USDC) // 1_500_000,
+                         108_666_666_666)
+        self.assertEqual((900_000 * 1_605_000 * USDC) // 1_500_000,
+                         963_000 * USDC)
+        self.assertEqual((900_000 * 1_630_000 * USDC) // 1_500_000,
+                         978_000 * USDC)
+        self.assertEqual((543_333_333_333 - 535_000 * USDC)
+                         + (108_666_666_666 - 107_000 * USDC)
+                         + (978_000 * USDC - 963_000 * USDC),
+                         25_000 * USDC - 1)
+        # Case 7: buffer earns 4% — total 1,088,000, price 136/125
+        # = 1.088; Alice 108,800 (short 1,200), Carol 979,200
+        # (short 10,800); drag 1.2pp = 20% x (10% - 4%).
+        self.assertEqual(Fraction(1_088_000, 1_000_000),
+                         Fraction(136, 125))
+        self.assertEqual((100_000 * 1_088_000 * USDC) // 1_000_000,
+                         108_800 * USDC)
+        self.assertEqual((900_000 * 1_088_000 * USDC) // 1_000_000,
+                         979_200 * USDC)
+        self.assertEqual(Fraction(20, 100)
+                         * (Fraction(1, 10) - Fraction(4, 100)),
+                         Fraction(12, 1000))
+
 if __name__ == "__main__":
     unittest.main()
