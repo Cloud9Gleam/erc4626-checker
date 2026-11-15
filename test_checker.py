@@ -1063,6 +1063,45 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(Fraction(20_000) * Fraction(1_000_000)
                          / Fraction(1_020_000), Fraction(1_000_000, 51))
 
+    def test_fee_basis_chart_numbers(self):
+        # Pins the effective-rate bar chart on
+        # /guides/erc4626-fee-basis/ to the f/(1+f) invariant: a fee
+        # quoted at f and collected by minting f of the supply
+        # transfers only f/(1+f) of assets to the manager, at any
+        # share price. Re-derived here with plain Fractions,
+        # independent of the model file, so the chart's numbers
+        # cannot drift silently.
+        from fractions import Fraction
+        from pathlib import Path
+
+        for quoted, effective, width in [
+            (Fraction(1, 1000), Fraction(1, 1001), 99.9),
+            (Fraction(2, 100), Fraction(1, 51), 98.0),
+            (Fraction(1, 10), Fraction(1, 11), 90.9),
+        ]:
+            self.assertEqual(quoted / (1 + quoted), effective)
+            # Bar width, one decimal, as a share of the quoted rate.
+            self.assertEqual(round(float(effective / quoted) * 100, 1),
+                             width)
+
+        # Chart markup is present in the guide source. The width
+        # assertions ride on the full row, so the 90.9% width (also
+        # used by the profit-unlock chart) cannot false-positive.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('loss-label">0.1% quoted</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:99.9%"', build)
+        self.assertIn('loss-label">2% quoted</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:98.0%"', build)
+        self.assertIn('loss-label">10% quoted</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:90.9%"', build)
+        self.assertIn('loss-value">0.099900%', build)
+        self.assertIn('loss-value">1.960784%', build)
+        self.assertIn('loss-value">9.090909%', build)
+
     def test_deposit_fee_guide_numbers(self):
         # Deposit-fee guide (site/deposit-fee-model.py): a 5% front-end
         # load on a 100,000 USDC deposit into a 1,000,000 / 1,000,000
