@@ -44,6 +44,12 @@ def _fmt_int(n: int) -> str:
     return f"{n:,}"
 
 
+# Non-breaking space between a formatted amount and its unit, so a
+# wrapping detail line breaks at "==" / "," / "->" instead of leaving a
+# lone "USDC" / "shares" on its own line (narrow card, mobile width).
+NBSP = "\u00a0"
+
+
 @dataclass
 class Vault:
     """Minimal ERC-4626 state machine. Amounts are base units."""
@@ -218,11 +224,12 @@ def check_preview_consistency(v: Vault) -> dict:
     # dep/got are shares; mint/paid/red/out are base-unit assets. Label
     # each, or the reader cannot tell which number is which unit. One
     # line per operation: a single comma-joined line wraps with the final
-    # "USDC" orphaned alone on its own line at desktop width.
+    # "USDC" orphaned alone on its own line, so each amount is bound to
+    # its unit with a non-breaking space and wraps land on "==" instead.
     return {"name": "preview_consistency", "pass": ok,
-            "detail": [f"deposit {_fmt_int(dep)} shares == {_fmt_int(got)} shares",
-                       f"mint {_fmt_usdc(mint_assets)} USDC == {_fmt_usdc(paid)} USDC",
-                       f"redeem {_fmt_usdc(red)} USDC == {_fmt_usdc(out)} USDC"]}
+            "detail": [f"deposit {_fmt_int(dep)}{NBSP}shares == {_fmt_int(got)}{NBSP}shares",
+                       f"mint {_fmt_usdc(mint_assets)}{NBSP}USDC == {_fmt_usdc(paid)}{NBSP}USDC",
+                       f"redeem {_fmt_usdc(red)}{NBSP}USDC == {_fmt_usdc(out)}{NBSP}USDC"]}
 
 
 def check_fee_conservation(v: Vault) -> dict:
@@ -236,8 +243,8 @@ def check_fee_conservation(v: Vault) -> dict:
     holder_gain = (w.total_assets - before) - fee
     ok = holder_gain == 10_000_000_000 - fee and fee == 10_000_000_000 * v.perf_fee_bps // 10_000
     return {"name": "fee_conservation", "pass": ok,
-            "detail": [f"yield {_fmt_usdc(10_000_000_000)} USDC, fee {_fmt_usdc(fee)} USDC, "
-                       f"holder gain {_fmt_usdc(holder_gain)} USDC"]}
+            "detail": [f"yield {_fmt_usdc(10_000_000_000)}{NBSP}USDC, fee {_fmt_usdc(fee)}{NBSP}USDC, "
+                       f"holder gain {_fmt_usdc(holder_gain)}{NBSP}USDC"]}
 
 
 def check_share_price_sanity(v: Vault) -> dict:
@@ -248,8 +255,8 @@ def check_share_price_sanity(v: Vault) -> dict:
     price_after = w.convert_to_assets(1_000_000)
     ok = price_before >= 0 and price_after >= price_before - 1
     return {"name": "share_price_sanity", "pass": ok,
-            "detail": [f"price per 1,000,000 shares {_fmt_usdc(price_before)} USDC -> "
-                       f"{_fmt_usdc(price_after)} USDC"]}
+            "detail": [f"price per 1,000,000{NBSP}shares {_fmt_usdc(price_before)}{NBSP}USDC -> "
+                       f"{_fmt_usdc(price_after)}{NBSP}USDC"]}
 
 
 def run_all(v: Vault, victim_deposit: int = 100_000_000_000,
