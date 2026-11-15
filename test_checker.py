@@ -3554,5 +3554,80 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(Fraction(50, 1_000), Fraction(1, 20))
         self.assertEqual(Fraction(50, 10_000), Fraction(1, 200))
 
+    def test_dead_shares_guide_numbers(self):
+        # Pins /guides/erc4626-dead-shares/ to its model: a new vault,
+        # offset 0, attacker seeds 1 USDC, donates D, victim deposits
+        # 100,000 USDC, both redeem. Dead shares are D USDC deposited
+        # at deployment and never redeemed. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers the guide quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "dead-shares-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "dead_shares_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        DONATIONS = [1 * USDC, 1_000 * USDC, 1_000_000 * USDC,
+                     1_000_000_000 * USDC]
+        # Case 1: the loss table — victim loss in base units at the
+        # four donation scales, for four dead-share levels.
+        expected = {
+            0: [0, 6, 909091, 99890],
+            1_000: [1, 0, 182, 898913],
+            100_000: [0, 1, 6, 801],
+            1_000_000: [1, 1, 1, 702],
+        }
+        for dead, losses in expected.items():
+            self.assertEqual(
+                [model.attack(dead, d)[0] for d in DONATIONS], losses)
+        # 1,000 USDC dead cuts the 1M-donation loss ~5,000x.
+        self.assertTrue(Fraction(909091, 182) > 4990)
+        self.assertTrue(Fraction(909091, 182) < 5000)
+        # Case 2: at the 1B donation, 1,000 USDC dead leaves the
+        # victim ~9x worse off than no protection at all — the
+        # victim mints 100,099 shares instead of 100 and redeems
+        # less in total.
+        self.assertEqual(model.attack(0, 1_000_000_000 * USDC)[0], 99890)
+        self.assertEqual(model.attack(1_000, 1_000_000_000 * USDC)[0],
+                         898913)
+        self.assertTrue(Fraction(898913, 99890) > Fraction(899, 100))
+        self.assertTrue(Fraction(898913, 99890) < Fraction(901, 100))
+        self.assertEqual(model.attack(0, 1_000_000_000 * USDC)[2], 100)
+        self.assertEqual(model.attack(1_000, 1_000_000_000 * USDC)[2],
+                         100099)
+        self.assertEqual(model.attack(0, 1_000_000_000 * USDC)[4],
+                         99999900110)
+        self.assertEqual(model.attack(1_000, 1_000_000_000 * USDC)[4],
+                         99999101087)
+        # 1,000,000 USDC dead loses only 702 at the same scale —
+        # ~1,280x less than the 1,000-dead loss.
+        self.assertTrue(Fraction(898913, 702) > 1280)
+        self.assertTrue(Fraction(898913, 702) < 1281)
+        # Case 3: cheapest all-scales pass is 478,178 USDC dead,
+        # locked forever; offset 6 passes the same scales for $0.
+        self.assertEqual(model.verdict(478_177), (False, [1, 1, 2, 1065]))
+        self.assertEqual(model.verdict(478_178), (True, [1, 1, 3, 865]))
+        self.assertEqual(model.verdict(0, offset=6),
+                         (True, [0, 0, 1, 900]))
+        # Case 4: where the donation goes — 1,000 dead, 1M donation.
+        # Attacker recovers 1,000.000998 of 1,000,001 put in; victim
+        # loses 0.000182; 999,000.999184 stranded behind dead shares.
+        (loss, _net, _sh, att_out, vic_out, left_a, left_s) = model.attack(
+            1_000, 1_000_000 * USDC)
+        self.assertEqual(loss, 182)
+        self.assertEqual(att_out, 1_000_000_998)
+        self.assertEqual(vic_out, 99_999_999_818)
+        self.assertEqual(left_a, 1_000_000_999_184)
+        self.assertEqual(left_s, 1_000_000_000)
+        total_in = (1_000 * USDC + 1 * USDC + 1_000_000 * USDC
+                    + 100_000 * USDC)
+        self.assertEqual(total_in, att_out + vic_out + left_a)
+        self.assertEqual(left_a - 1_000 * USDC, 999_000_999_184)
+
 if __name__ == "__main__":
     unittest.main()
