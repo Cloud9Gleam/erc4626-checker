@@ -3165,6 +3165,80 @@ class TestChecker(unittest.TestCase):
                          // (1_000_000 * USDC), 144_000 * USDC)
         self.assertEqual(144_000 * USDC - 122_000 * USDC, 22_000 * USDC)
 
+    def test_maxmint_vs_maxdeposit_guide_numbers(self):
+        # Pins /guides/erc4626-maxmint-vs-maxdeposit/ to its model: a
+        # 1,000,000 USDC / 1,000,000 share vault, price $1.00, with
+        # maxDeposit = 100,000 USDC and maxMint = 100,000 shares.
+        # Importing the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers the guide
+        # quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "maxmint-vs-maxdeposit-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "maxmint_vs_maxdeposit_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Case 1: price $1.00 — the caps agree: deposit 100,000 USDC
+        # mints 100,000 shares; mint 100,000 shares costs 100,000 USDC.
+        self.assertEqual((100_000 * USDC * 1_000_000 * USDC)
+                         // (1_000_000 * USDC), 100_000 * USDC)
+        self.assertEqual((100_000 * USDC * 1_000_000 * USDC)
+                         // (1_000_000 * USDC), 100_000 * USDC)
+        # Case 2: price $1.10 — deposit 100,000 USDC mints
+        # 90,909.090909 shares (floor 90,909,090,909 base units);
+        # mint 100,000 shares costs 110,000 USDC; gap 10,000 USDC.
+        self.assertEqual((100_000 * USDC * 1_000_000 * USDC)
+                         // (1_100_000 * USDC), 90_909_090_909)
+        self.assertEqual(Fraction(100_000 * 1_000_000, 1_100_000),
+                         Fraction(1_000_000, 11))
+        self.assertEqual((100_000 * USDC * 1_100_000 * USDC)
+                         // (1_000_000 * USDC), 110_000 * USDC)
+        self.assertEqual(110_000 * USDC - 100_000 * USDC, 10_000 * USDC)
+        # Case 3: price $0.90 — deposit 100,000 USDC would mint
+        # 111,111.111111 shares (floor 111,111,111,111), over the
+        # 100,000-share cap, so it is blocked; mint 100,000 shares
+        # costs only 90,000 USDC.
+        self.assertEqual((100_000 * USDC * 1_000_000 * USDC)
+                         // (900_000 * USDC), 111_111_111_111)
+        self.assertEqual(Fraction(100_000 * 1_000_000, 900_000),
+                         Fraction(1_000_000, 9))
+        self.assertGreater(111_111_111_111, 100_000 * USDC)
+        self.assertEqual((100_000 * USDC * 900_000 * USDC)
+                         // (1_000_000 * USDC), 90_000 * USDC)
+        # Case 4: scaling — at $2.00 the mint cap admits 200,000 USDC;
+        # at $0.50 it admits 50,000 USDC.
+        self.assertEqual((100_000 * USDC * 2_000_000 * USDC)
+                         // (1_000_000 * USDC), 200_000 * USDC)
+        self.assertEqual((100_000 * USDC * 500_000 * USDC)
+                         // (1_000_000 * USDC), 50_000 * USDC)
+        # Case 5: both caps set — effective cap is the smaller of the
+        # two: 100,000 at $1.10 (deposit binds), 90,000 at $0.90
+        # (mint binds), 100,000 at $1.00.
+        self.assertEqual(min(100_000 * USDC, 110_000 * USDC),
+                         100_000 * USDC)
+        self.assertEqual(min(100_000 * USDC, 90_000 * USDC),
+                         90_000 * USDC)
+        # Case 6: exit mirror — at $1.10 redeem 100,000 shares pays
+        # 110,000 USDC, withdraw 100,000 USDC burns 90,909.090909
+        # shares (ceil 90,909,090,910 base units); at $0.90 redeem
+        # 100,000 shares pays 90,000 USDC, withdraw 100,000 USDC
+        # would burn 111,111.111111 shares (ceil 111,111,111,112),
+        # over the redeem cap, so it is blocked.
+        self.assertEqual((100_000 * USDC * 1_100_000 * USDC)
+                         // (1_000_000 * USDC), 110_000 * USDC)
+        self.assertEqual(-(-(100_000 * USDC * 1_000_000 * USDC)
+                           // (1_100_000 * USDC)), 90_909_090_910)
+        self.assertEqual((100_000 * USDC * 900_000 * USDC)
+                         // (1_000_000 * USDC), 90_000 * USDC)
+        self.assertEqual(-(-(100_000 * USDC * 1_000_000 * USDC)
+                           // (900_000 * USDC)), 111_111_111_112)
+        self.assertGreater(111_111_111_112, 100_000 * USDC)
+
     def test_gamma_research_page_numbers(self):
         # Pins /research/gamma/ to the study: 27 validated findings
         # (5H + 9M + 13L), 24 published as verified, payouts summing
