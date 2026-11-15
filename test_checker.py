@@ -2264,5 +2264,68 @@ class TestChecker(unittest.TestCase):
             got = ((30 - k) * Fraction(1) + k * Fraction(4, 5)) / 30
             self.assertEqual(got, want)
 
+    def test_time_decay_exit_fee_guide_numbers(self):
+        # Time-decaying exit-fee guide: 500 bps day 0 -> 0 bps day 30.
+        # Vault 1,000,000 USDC / 1,000,000 shares, price 1.00, Alice
+        # 100,000 shares. Independent re-derivation with Fraction and
+        # integer mul_div_down (does not import the site model file);
+        # pins every number the guide prints.
+        USDC = 1_000_000
+        gross_base = 100_000 * USDC
+
+        def fee_base(days):
+            if days >= 30:
+                return 0
+            # rate = 500 * (30 - days) / 30 bps; fee = gross * rate / 10000.
+            return (gross_base * 500 * (30 - days)) // (30 * 10_000)
+
+        # Day 0: fee 5,000, net 95,000, price after 181/180 = 1.005556.
+        self.assertEqual(fee_base(0), 5_000 * USDC)
+        self.assertEqual(gross_base - fee_base(0), 95_000 * USDC)
+        price0 = Fraction(1_000_000 * USDC - (gross_base - fee_base(0)),
+                          900_000 * USDC)
+        self.assertEqual(price0, Fraction(181, 180))
+        # Day 15: fee 2,500, net 97,500, price after 9025/9000 = 1.002778.
+        self.assertEqual(fee_base(15), 2_500 * USDC)
+        self.assertEqual(gross_base - fee_base(15), 97_500 * USDC)
+        price15 = Fraction(1_000_000 * USDC - (gross_base - fee_base(15)),
+                           900_000 * USDC)
+        self.assertEqual(price15, Fraction(9025, 9000))
+        # Day 29: rate 50/3 bps, fee 166,666,666 base units, net
+        # 99,833,333,334, price after 1.000185 (900166666666/900000000000).
+        self.assertEqual(fee_base(29), 166_666_666)
+        self.assertEqual(gross_base - fee_base(29), 99_833_333_334)
+        price29 = Fraction(1_000_000 * USDC - (gross_base - fee_base(29)),
+                           900_000 * USDC)
+        self.assertEqual(price29, Fraction(900_166_666_666, 900_000_000_000))
+        self.assertLess(abs(price29 - Fraction(1_000_185, 1_000_000)),
+                        Fraction(1, USDC))
+        # Day 30: fee 0, net 100,000.
+        self.assertEqual(fee_base(30), 0)
+        self.assertEqual(gross_base - fee_base(30), gross_base)
+        # Waiting 0 -> 30 saves exactly the day-0 fee.
+        self.assertEqual(fee_base(0) - fee_base(30), 5_000 * USDC)
+        # Yield while waiting 30 days at 10%/yr: 821.917808 USDC.
+        # (yield_30d is base units; compare in USDC, not base units.)
+        yield_30d = Fraction(100_000 * USDC * 10 * 30, 100 * 365)
+        yield_30d_usdc = yield_30d / USDC
+        self.assertLess(abs(yield_30d_usdc - Fraction(821_917_808, USDC)),
+                        Fraction(1, USDC))
+        # Clock reset: 1 USDC top-up at day 29, exit all 100,001 shares
+        # at the day-0 rate.
+        all_base = gross_base + 1 * USDC
+        fee_reset = (all_base * 500) // 10_000
+        self.assertEqual(fee_reset, 5_000_050_000)
+        net_reset = all_base - fee_reset
+        self.assertEqual(net_reset, 95_000_950_000)
+        reset_cost = (gross_base - fee_base(29)) - net_reset
+        self.assertEqual(reset_cost, 4_832_383_334)
+        # FIFO per-lot clock: old lot at day-29 fee, new 1 share at 500 bps.
+        fee_fifo = fee_base(29) + (1 * USDC * 500) // 10_000
+        self.assertEqual(fee_fifo, 166_716_666)
+        net_fifo = all_base - fee_fifo
+        self.assertEqual(net_fifo, 99_834_283_334)
+        self.assertEqual(net_fifo - net_reset, 4_833_333_334)
+
 if __name__ == "__main__":
     unittest.main()
