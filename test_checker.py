@@ -4750,5 +4750,105 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(10_000 * USDC + fa3, 19_900 * USDC)
         self.assertEqual(1_089_000 * USDC - 1_000_000 * USDC, 89_000 * USDC)
 
+    def test_redeem_slippage_guide_numbers(self):
+        # Pins /guides/erc4626-redeem-slippage/ to its model: a
+        # previewRedeem quote is not a commitment — a loss landing
+        # between quote and execution shrinks the payout pro-rata,
+        # a 1% min-out refuses the bad exit instead, a donation is
+        # a gift to a redeemer, and a redemption queue ahead cannot
+        # reprice a single share. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers the guide quotes, on the checker's own
+        # Vault (exact integer arithmetic).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "redeem-slippage-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "redeem_slippage_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+        ALICE = 100_000 * USDC
+
+        def fresh():
+            return ec.Vault(total_assets=1_000_000 * USDC,
+                            total_supply=1_000_000 * USDC,
+                            decimals_offset=0)
+
+        # 0. Clean redeem: quote and execution agree exactly.
+        v = fresh()
+        self.assertEqual(v.preview_redeem(ALICE), 100_000 * USDC)
+        self.assertEqual(v.redeem(ALICE), 100_000 * USDC)
+
+        # 1. Loss of 50,000 (5%) between quote and execution:
+        # payout 95,000 — exactly her 10% share of the loss.
+        v = fresh()
+        quote = v.preview_redeem(ALICE)
+        v.total_assets -= 50_000 * USDC
+        out = v.redeem(ALICE)
+        self.assertEqual((quote, out, quote - out),
+                         (100_000 * USDC, 95_000 * USDC, 5_000 * USDC))
+
+        # 2. Min-out 1% (99,000): the 95,000 execution is below
+        # the bound, so it reverts; she keeps shares worth 95,000.
+        v = fresh()
+        quote = v.preview_redeem(ALICE)
+        min_out = quote * 99 // 100
+        v.total_assets -= 50_000 * USDC
+        out = v.preview_redeem(ALICE)
+        self.assertEqual(min_out, 99_000 * USDC)
+        self.assertEqual(out, 95_000 * USDC)
+        self.assertLess(out, min_out)
+
+        # 3. Loss inside tolerance: 5,000 loss (0.5%) pays 99,500,
+        # above the 99,000 bound — executes, she loses 500.
+        v = fresh()
+        quote = v.preview_redeem(ALICE)
+        min_out = quote * 99 // 100
+        v.total_assets -= 5_000 * USDC
+        out = v.redeem(ALICE)
+        self.assertEqual(out, 99_500 * USDC)
+        self.assertGreaterEqual(out, min_out)
+        self.assertEqual(quote - out, 500 * USDC)
+
+        # 4. Donation windfall: 50,000 donated pays 104,999.999999
+        # — 4,999.999999 more than quoted, one base unit short of
+        # 105,000 (virtual-share rounding), above the min-out.
+        v = fresh()
+        quote = v.preview_redeem(ALICE)
+        min_out = quote * 99 // 100
+        v.donate(50_000 * USDC)
+        out = v.redeem(ALICE)
+        self.assertEqual(out, 104_999_999_999)
+        self.assertEqual(out - quote, 4_999_999_999)
+        self.assertGreaterEqual(out, min_out)
+
+        # 5. Transient loss: blocked at 95,000, recovers +50,000,
+        # redeems the full 100,000 quote — the bound saved 5,000.
+        v = fresh()
+        quote = v.preview_redeem(ALICE)
+        min_out = quote * 99 // 100
+        v.total_assets -= 50_000 * USDC
+        blocked = v.preview_redeem(ALICE)
+        v.donate(50_000 * USDC)
+        out = v.redeem(ALICE)
+        self.assertEqual(blocked, 95_000 * USDC)
+        self.assertLess(blocked, min_out)
+        self.assertEqual(out, 100_000 * USDC)
+        self.assertEqual(out - blocked, 5_000 * USDC)
+
+        # 6. Queue: Bob redeems 500,000 shares first for 475,000;
+        # Alice still gets exactly 95,000 — the queue cannot
+        # reprice her.
+        v = fresh()
+        v.total_assets -= 50_000 * USDC
+        bob_out = v.redeem(500_000 * USDC)
+        alice_out = v.redeem(ALICE)
+        self.assertEqual(bob_out, 475_000 * USDC)
+        self.assertEqual(alice_out, 95_000 * USDC)
+
 if __name__ == "__main__":
     unittest.main()
