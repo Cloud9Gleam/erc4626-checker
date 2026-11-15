@@ -5505,5 +5505,125 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(f"{float(Fraction(22_000) - manager_assets):.6f}",
                          "431.372549")
 
+    def test_mint_slippage_guide_numbers(self):
+        # Pins /guides/erc4626-mint-slippage/ to its model: mint
+        # fixes the shares and floats the assets paid, so a donation
+        # landing between previewMint and execution overcharges the
+        # minter and a loss discounts her — the mirror of redeem.
+        # Vault 1,000,000 USDC / 1,000,000 shares at $1.00, offset 0;
+        # Alice mints 10,000 shares (1% of supply), max-in 1% above
+        # her 10,000 quote. Importing the model re-runs its
+        # assertions; the checks below independently re-derive every
+        # headline number with plain integer arithmetic on the OZ
+        # previewMint formula — ceil(shares * (assets + 1) /
+        # (supply + 1)), the +1s being the offset-0 virtual share
+        # and virtual asset — run through the checker's own Vault
+        # for the state changes.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "mint-slippage-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "mint_slippage_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        SHARES = 10_000 * USDC
+
+        def mint_cost(shares, assets, supply):
+            # previewMint, rounded up, offset-0 virtuals (+1/+1).
+            return -(-shares * (assets + 1) // (supply + 1))
+
+        def fresh():
+            return Vault(total_assets=1_000_000 * USDC,
+                         total_supply=1_000_000 * USDC, decimals_offset=0)
+
+        # (0) Clean mint: quote and execution agree to the base unit.
+        v = fresh()
+        self.assertEqual(v.preview_mint(SHARES), 10_000 * USDC)
+        self.assertEqual(v.mint(SHARES), 10_000 * USDC)
+        self.assertEqual(mint_cost(SHARES, 1_000_000 * USDC,
+                                   1_000_000 * USDC), 10_000 * USDC)
+
+        # (1) Donation 50,000 between quote and execution: same
+        # shares cost 10,500 — 500 more, her 1% share of the gift.
+        v = fresh()
+        quote = v.preview_mint(SHARES)
+        v.donate(50_000 * USDC)
+        cost = v.mint(SHARES)
+        self.assertEqual((quote, cost),
+                         (10_000 * USDC, 10_500 * USDC))
+        self.assertEqual(cost - quote, 500 * USDC)
+        self.assertEqual(mint_cost(SHARES, 1_050_000 * USDC,
+                                   1_000_000 * USDC), 10_500 * USDC)
+
+        # (2) Max-in 1% (10,100) refuses the 10,500 execution:
+        # the bound is a refusal, not insurance.
+        v = fresh()
+        quote = v.preview_mint(SHARES)
+        max_in = quote * 101 // 100
+        v.donate(50_000 * USDC)
+        cost = v.preview_mint(SHARES)
+        self.assertEqual(max_in, 10_100 * USDC)
+        self.assertEqual(cost, 10_500 * USDC)
+        self.assertGreater(cost, max_in)
+
+        # (3) Donation 5,000 inside tolerance: cost 10,050, under
+        # the bound — executes, overpaying 50 against the quote.
+        v = fresh()
+        quote = v.preview_mint(SHARES)
+        max_in = quote * 101 // 100
+        v.donate(5_000 * USDC)
+        cost = v.mint(SHARES)
+        self.assertEqual(cost, 10_050 * USDC)
+        self.assertLessEqual(cost, max_in)
+        self.assertEqual(cost - quote, 50 * USDC)
+        self.assertEqual(mint_cost(SHARES, 1_005_000 * USDC,
+                                   1_000_000 * USDC), 10_050 * USDC)
+
+        # (4) Loss 50,000 discounts the minter: cost 9,500.000001 —
+        # 499.999999 less than quoted, one base unit over 9,500
+        # because previewMint rounds up; under the max-in, executes.
+        v = fresh()
+        quote = v.preview_mint(SHARES)
+        max_in = quote * 101 // 100
+        v.total_assets -= 50_000 * USDC
+        cost = v.mint(SHARES)
+        self.assertEqual(cost, 9_500_000_001)
+        self.assertEqual(quote - cost, 499_999_999)
+        self.assertLessEqual(cost, max_in)
+        self.assertEqual(mint_cost(SHARES, 950_000 * USDC,
+                                   1_000_000 * USDC), 9_500_000_001)
+
+        # (5) Transient donation: blocked at 10,500, then the
+        # position gives the 50,000 back and she mints at the full
+        # quote — the bound saved her exactly 500.
+        v = fresh()
+        quote = v.preview_mint(SHARES)
+        max_in = quote * 101 // 100
+        v.donate(50_000 * USDC)
+        blocked = v.preview_mint(SHARES)
+        v.total_assets -= 50_000 * USDC
+        cost = v.mint(SHARES)
+        self.assertEqual(blocked, 10_500 * USDC)
+        self.assertGreater(blocked, max_in)
+        self.assertEqual(cost, 10_000 * USDC)
+        self.assertEqual(blocked - cost, 500 * USDC)
+
+        # (6) Queue cannot reprice: after the same 50,000 donation
+        # Bob mints 500,000 shares for 525,000, then Alice still
+        # pays 10,500 — exactly as with no Bob at all.
+        v = fresh()
+        v.donate(50_000 * USDC)
+        bob_cost = v.mint(500_000 * USDC)
+        alice_cost = v.mint(SHARES)
+        self.assertEqual(bob_cost, 525_000 * USDC)
+        self.assertEqual(alice_cost, 10_500 * USDC)
+        self.assertEqual(mint_cost(500_000 * USDC, 1_050_000 * USDC,
+                                   1_000_000 * USDC), 525_000 * USDC)
+        self.assertEqual(mint_cost(SHARES, 1_575_000 * USDC,
+                                   1_500_000 * USDC), 10_500 * USDC)
+
 if __name__ == "__main__":
     unittest.main()
