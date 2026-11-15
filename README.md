@@ -52,6 +52,13 @@ python3 check_vault.py --offset 6 --min-deposit-usdc 1 \
 
 Try it in the browser instead: https://check.n1netw3n.live/checker/
 
+## Guides
+
+90 worked ERC-4626 accounting guides, each with exact-integer
+numbers — donation and first-depositor attacks, fee mechanics,
+rounding, preview drift, empty-vault reseeds:
+https://check.n1netw3n.live/guides/
+
 ## Worked example
 
 AlphaPrimerVault parameters (audited 2026-11-03, clean negative):
