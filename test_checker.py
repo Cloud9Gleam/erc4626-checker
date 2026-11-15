@@ -2579,5 +2579,74 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(model.classic_donation, 1_000_000 * USDC)
         self.assertEqual(model.cost1, 1)
 
+    def test_underlying_depeg_guide_numbers(self):
+        # Pins /guides/erc4626-underlying-depeg/ to its model: a
+        # 1,000,000 sUSDS / 1,000,000 share vault, price $1.00 at the
+        # peg. The vault accounts in sUSDS units, so convertToAssets
+        # per share is flat at 1 sUSDS at any price; only a USD mark
+        # shows the loss. Yield in units can mask a depeg in dollars.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "underlying-depeg-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "underlying_depeg_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        SUSDS = model.SUSDS
+
+        # Setup: 1,000,000 sUSDS / 1,000,000 shares, price $1.00.
+        self.assertEqual(model.balance, 1_000_000 * SUSDS)
+        self.assertEqual(model.shares_total, 1_000_000)
+        self.assertEqual(model.price_peg, 1)
+        # At the peg a 10,000-share redemption pays exactly $10,000.
+        self.assertEqual(model.redeem_value_usd(10_000, Fraction(1)),
+                         10_000)
+        # At $0.97: 10,000 shares -> $9,700, loss $300 (3%); one share
+        # -> $0.97, loss $0.03; full redeem -> $970,000, loss $30,000
+        # (recomputed here from the price, not read from the model).
+        p97 = Fraction(97, 100)
+        self.assertEqual(model.value_usd(p97), 970_000)
+        self.assertEqual(model.share_price_usd(p97), p97)
+        self.assertEqual(model.redeem_value_usd(10_000, p97), 9_700)
+        self.assertEqual(Fraction(10_000)
+                         - model.redeem_value_usd(10_000, p97), 300)
+        self.assertEqual(model.redeem_value_usd(1, p97), p97)
+        self.assertEqual(Fraction(1) - model.redeem_value_usd(1, p97),
+                         Fraction(3, 100))
+        self.assertEqual(model.redeem_value_usd(1_000_000, p97), 970_000)
+        # At $1.03 the mirror: 10,000 shares -> $10,300, gain $300.
+        p103 = Fraction(103, 100)
+        self.assertEqual(model.redeem_value_usd(10_000, p103), 10_300)
+        # Blind spot: the unit-denominated price is 1 sUSDS/share at
+        # $1.00 and at $0.97 alike; the USD price at $0.97 is $0.97.
+        self.assertEqual(model.convert_to_assets_units(1), 1)
+        self.assertEqual(model.convert_to_assets_units(10_000), 10_000)
+        self.assertEqual(model.unit_price - model.usd_price_at_depeg,
+                         Fraction(3, 100))
+        # Depositing during the depeg: 100,000 sUSDS at $0.97 costs
+        # $97,000 and mints 100,000 shares; at a restored $1.00 peg
+        # they are worth $100,000 (+$3,000); A is whole again.
+        self.assertEqual(model.b_shares, 100_000)
+        self.assertEqual(model.b_cost_usd, 97_000)
+        self.assertEqual(model.b_value_restored, 100_000)
+        self.assertEqual(model.b_value_restored - model.b_cost_usd, 3_000)
+        self.assertEqual(model.a_value_restored, 1_000_000)
+        # Deeper slide to $0.94: 10,000 shares -> $9,400, loss $600 (6%).
+        p94 = Fraction(94, 100)
+        self.assertEqual(model.redeem_value_usd(10_000, p94), 9_400)
+        self.assertEqual(Fraction(10_000)
+                         - model.redeem_value_usd(10_000, p94), 600)
+        # Yield masks the depeg: balance +5% to 1,050,000 sUSDS at
+        # $0.97 is $1,018,500 (+1.85% USD) while the unit price shows
+        # +5% (1.05 sUSDS); the depeg ate $31,500 of $50,000 yield.
+        self.assertEqual(model.balance_yield, 1_050_000 * SUSDS)
+        self.assertEqual(model.value_yield, Fraction(1_018_500))
+        self.assertEqual(model.value_yield - 1_000_000, 18_500)
+        self.assertEqual(model.share_price_yield_units, Fraction(105, 100))
+        self.assertEqual(model.depeg_cost, 31_500)
+        self.assertEqual(model.yield_usd - model.depeg_cost, 18_500)
+
 if __name__ == "__main__":
     unittest.main()
