@@ -2828,5 +2828,42 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(model.redeem_assets(1_500, model.A0, model.S0),
                          1_500 * model.USDC)
 
+    def test_gamma_research_page_numbers(self):
+        # Pins /research/gamma/ to the study: 27 validated findings
+        # (5H + 9M + 13L), 21 published as verified, payouts summing
+        # to 9,911.30 USDC. The 21 are H-01 + H-03 (2), M-01–M-04
+        # + M-06–M-09 (8) and L-01–L-11 (11); M-05 is a MISS and
+        # H-02/H-04/H-05, L-12/L-13, M-1(#829) are cut or flagged.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/research/gamma/"')
+        end = build.index('add("/research/domain-hijack/"', start)
+        page = build[start:end]
+        self.assertEqual(page.count("<tr><td>"), 21)
+        self.assertIn("9,911.30 USDC", page)
+        self.assertIn("27 findings: 5 High, 9 Medium, 13 Low", page)
+        # Largest payout (M-08, live on-chain) and the two Highs.
+        self.assertIn("3,849.97 USDC", page)
+        self.assertIn("95.74 USDC", page)
+        self.assertIn("61.42 USDC", page)
+        # Scope cut is stated on the page itself.
+        self.assertIn("M-05", page)
+        self.assertIn("MISS", page)
+        self.assertIn("Flagged or cut", page)
+        # Payout arithmetic: H 157.16 + M 8,485.06 + L 1,269.08.
+        from decimal import Decimal
+        highs = [Decimal("95.74"), Decimal("61.42")]
+        mediums = [Decimal("122.04"), Decimal("122.04"),
+                   Decimal("378.89"), Decimal("41.97"),
+                   Decimal("505.19"), Decimal("1732.48"),
+                   Decimal("3849.97"), Decimal("1732.48")]
+        lows = [Decimal("9.22"), Decimal("78.56"), Decimal("0.93"),
+                Decimal("17.40"), Decimal("53.03"), Decimal("53.03"),
+                Decimal("290.98"), Decimal("290.98"), Decimal("53.03"),
+                Decimal("290.98"), Decimal("130.94")]
+        self.assertEqual(sum(highs) + sum(mediums) + sum(lows),
+                         Decimal("9911.30"))
+
 if __name__ == "__main__":
     unittest.main()
