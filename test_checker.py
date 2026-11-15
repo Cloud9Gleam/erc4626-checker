@@ -1639,6 +1639,47 @@ class TestChecker(unittest.TestCase):
         # worth 2,500 USDC.
         self.assertEqual(5_000 * USDC * Fraction(1, 2), 2_500 * USDC)
 
+    def test_tranched_vault_guide_numbers(self):
+        # Tranched-vault guide (site/tranche-vault-model.py): senior
+        # 60,000 shares promised fixed 5% per period, junior 40,000
+        # shares takes the residual and absorbs losses first. Vault
+        # 100,000 USDC / 100,000 shares, both tranches at 1.00.
+        # Re-derived here with plain integer / Fraction arithmetic,
+        # independent of the model file.
+        USDC = 1_000_000
+        # 1: yield +10,000: senior takes 5% of 60,000 = 3,000, junior
+        # the residual 7,000. Prices 1.05 / 1.175; blended 1.10.
+        self.assertEqual(60_000 * USDC * 5 // 100, 3_000 * USDC)
+        self.assertEqual(10_000 * USDC - 3_000 * USDC, 7_000 * USDC)
+        self.assertEqual(Fraction(63_000 * USDC, 60_000), Fraction(21, 20) * USDC)
+        self.assertEqual(Fraction(47_000 * USDC, 40_000), Fraction(47, 40) * USDC)
+        self.assertEqual(Fraction(110_000 * USDC, 100_000), Fraction(11, 10) * USDC)
+        self.assertEqual(66_000 * USDC - 63_000 * USDC, 3_000 * USDC)
+        # 2: loss -10,000: junior absorbs it all. Prices 1.00 / 0.75.
+        self.assertEqual(Fraction(60_000 * USDC, 60_000), 1 * USDC)
+        self.assertEqual(Fraction(30_000 * USDC, 40_000), Fraction(3, 4) * USDC)
+        self.assertEqual(60_000 * USDC // 10, 6_000 * USDC)
+        # 3: loss -50,000: junior wiped to 0, senior takes the excess
+        # 10,000 = one sixth of senior capital; price 5/6.
+        self.assertEqual(max(40_000 * USDC - 50_000 * USDC, 0), 0)
+        self.assertEqual(Fraction(50_000 * USDC, 60_000), Fraction(5, 6) * USDC)
+        self.assertEqual(Fraction(10_000, 60_000), Fraction(1, 6))
+        self.assertEqual(10_000 * Fraction(50_000 * USDC, 60_000),
+                         Fraction(25_000, 3) * USDC)
+        # 4: shortfall: yield +2,000 < promised 3,000. Senior 62,000
+        # (price 31/30), junior 40,000 (1.00), shortfall 1,000 carried.
+        self.assertEqual(3_000 * USDC - 2_000 * USDC, 1_000 * USDC)
+        self.assertEqual(Fraction(62_000 * USDC, 60_000), Fraction(31, 30) * USDC)
+        # Next +10,000: senior takes 1,000 + 3,000 = 4,000, junior 6,000.
+        self.assertEqual(Fraction(66_000 * USDC, 60_000), Fraction(11, 10) * USDC)
+        self.assertEqual(Fraction(46_000 * USDC, 40_000), Fraction(23, 20) * USDC)
+        self.assertEqual(66_000 * USDC + 46_000 * USDC, 112_000 * USDC)
+        # 5: new 10,000 deposit after the +10% period mints 200,000/21
+        # senior shares or 400,000/47 junior shares, both worth 10,000.
+        self.assertEqual(Fraction(10_000 * USDC, Fraction(21, 20) * USDC),
+                         Fraction(200_000, 21))
+        self.assertEqual(Fraction(10_000 * USDC, Fraction(47, 40) * USDC),
+                         Fraction(400_000, 47))
 
 if __name__ == "__main__":
     unittest.main()
