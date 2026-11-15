@@ -3096,6 +3096,75 @@ class TestChecker(unittest.TestCase):
                          Fraction(11, 10))
         self.assertEqual(1_000_000 * (Fraction(11, 10) - 1), 100_000)
 
+    def test_multi_strategy_guide_numbers(self):
+        # Pins /guides/erc4626-multi-strategy/ to its model: a
+        # 1,000,000 USDC / 1,000,000 share vault, price $1.00,
+        # Alice 100,000 shares (10%), Carol 900,000 (90%), split
+        # 50/50 across strategies A and B (500,000 each). Importing
+        # the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers the guide
+        # quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "multi-strategy-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "multi_strategy_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Case 1: drift — A +20%, B 0%: total 1,100,000, price 1.10,
+        # Alice $110,000, Carol $990,000; A is 6/11 = 54.5454% of
+        # the vault; all-A counterfactual $120,000 for Alice, so
+        # the drift cost her $10,000.
+        self.assertEqual((100_000 * USDC * 1_100_000 * USDC)
+                         // (1_000_000 * USDC), 110_000 * USDC)
+        self.assertEqual((900_000 * USDC * 1_100_000 * USDC)
+                         // (1_000_000 * USDC), 990_000 * USDC)
+        self.assertEqual(Fraction(600_000, 1_100_000), Fraction(6, 11))
+        self.assertEqual((100_000 * USDC * 1_200_000 * USDC)
+                         // (1_000_000 * USDC), 120_000 * USDC)
+        self.assertEqual(120_000 * USDC - 110_000 * USDC, 10_000 * USDC)
+        # Case 2: rebalance — move 50,000 at 0.5% = 250 fee; total
+        # 1,099,750, price 1.09975; Alice $109,975 (-$25), Carol
+        # $989,775 (-$225).
+        self.assertEqual(50_000 * USDC * 50 // 10_000, 250 * USDC)
+        self.assertEqual((100_000 * USDC * 1_099_750 * USDC)
+                         // (1_000_000 * USDC), 109_975 * USDC)
+        self.assertEqual((900_000 * USDC * 1_099_750 * USDC)
+                         // (1_000_000 * USDC), 989_775 * USDC)
+        self.assertEqual(110_000 * USDC - 109_975 * USDC, 25 * USDC)
+        self.assertEqual(990_000 * USDC - 989_775 * USDC, 225 * USDC)
+        # Case 3: loss socialization — A -20%: total 900,000, price
+        # 0.90, Alice $90,000 (-$10,000); direct-in-B she would
+        # still hold $100,000.
+        self.assertEqual((100_000 * USDC * 900_000 * USDC)
+                         // (1_000_000 * USDC), 90_000 * USDC)
+        self.assertEqual(100_000 * USDC - 90_000 * USDC, 10_000 * USDC)
+        # Case 4: dip buyer — Bob deposits 90,000 at 0.90, mints
+        # 100,000 shares; +10% recovery: total 1,089,000, price
+        # 0.99; Bob $99,000 (+$9,000), Alice $99,000 (-$1,000),
+        # Carol $891,000 (-$9,000).
+        self.assertEqual((90_000 * USDC * 1_000_000 * USDC)
+                         // (900_000 * USDC), 100_000 * USDC)
+        self.assertEqual((100_000 * USDC * 1_089_000 * USDC)
+                         // (1_100_000 * USDC), 99_000 * USDC)
+        self.assertEqual((900_000 * USDC * 1_089_000 * USDC)
+                         // (1_100_000 * USDC), 891_000 * USDC)
+        self.assertEqual(99_000 * USDC - 90_000 * USDC, 9_000 * USDC)
+        self.assertEqual(99_000 * USDC - 100_000 * USDC, -1_000 * USDC)
+        # Case 5: two periods unrebalanced — A 720,000, B 500,000,
+        # total 1,220,000, price 1.22, Alice $122,000; A is 36/61 =
+        # 59.0164%; all-A counterfactual Alice $144,000, gap $22,000.
+        self.assertEqual((100_000 * USDC * 1_220_000 * USDC)
+                         // (1_000_000 * USDC), 122_000 * USDC)
+        self.assertEqual(Fraction(720_000, 1_220_000), Fraction(36, 61))
+        self.assertEqual((100_000 * USDC * 1_440_000 * USDC)
+                         // (1_000_000 * USDC), 144_000 * USDC)
+        self.assertEqual(144_000 * USDC - 122_000 * USDC, 22_000 * USDC)
+
     def test_gamma_research_page_numbers(self):
         # Pins /research/gamma/ to the study: 27 validated findings
         # (5H + 9M + 13L), 24 published as verified, payouts summing
