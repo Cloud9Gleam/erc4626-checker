@@ -276,6 +276,25 @@ class TestChecker(unittest.TestCase):
         self.assertLessEqual(max(losses), 1000)
         self.assertLessEqual(max(losses), victim // 1000)
 
+    def test_how_to_guide_mentions_vault_state(self):
+        # Pins /guides/how-to-use-the-erc4626-checker/ Step 1 to the
+        # form: the checker has two vault-state fields (assets already
+        # in the vault, shares already issued) that the guide must
+        # mention -- give both or leave both at 0, only the donation
+        # check uses them, and presets never fill them in.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/how-to-use-the-erc4626-checker/"')
+        end = build.index('add("/guides/erc4626-slippage-bounds/"', start)
+        page = build[start:end]
+        self.assertIn("vault assets now", page)
+        self.assertIn("vault shares now", page)
+        self.assertIn("not the raw totalSupply", page)
+        self.assertIn("Give both, or", page)
+        self.assertIn("Only the donation check uses them", page)
+        self.assertIn("never fills them in", page)
+
     def test_minfeeonly_preset_numbers(self):
         # Pins the checker's "Minimum + fee, no offset" preset to the
         # model: offset 0, minimum deposit 1 USDC, fee 10%, victim
