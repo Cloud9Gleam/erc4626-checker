@@ -865,6 +865,34 @@ class TestChecker(unittest.TestCase):
         # Dust redemption: 1 USDC gross nets 0.95 USDC.
         self.assertEqual(USDC - USDC * 500 // 10_000, 950_000)
 
+    def test_rounding_direction_guide_numbers(self):
+        # Rounding-direction guide (site/rounding-direction-model.py):
+        # convertTo* floor, previewMint/previewWithdraw ceil.
+        # Re-derived here with plain integer arithmetic, independent of
+        # the model file, so the guide's numbers cannot drift silently.
+        # Vault 1,000,001 base units / 1,000,000 shares, price 1.000001.
+        USDC = 1_000_000
+        A, S = 1_000_001, 1_000_000
+        # Minting one share costs 2 base units, converts back to 1.
+        self.assertEqual(-(-1 * A // S), 2)   # previewMint ceil
+        self.assertEqual(1 * A // S, 1)       # convertToAssets floor
+        # A 1-base-unit deposit mints zero shares.
+        self.assertEqual(1 * S // A, 0)       # previewDeposit floor
+        # Round trip on 1 USDC loses exactly 1 base unit.
+        shares = 1 * USDC * S // A
+        self.assertEqual(shares, 999_999)
+        self.assertEqual(shares * A // S, 999_999)
+        # Round trip on 100,000 USDC loses exactly 1 base unit too.
+        shares = 100_000 * USDC * S // A
+        self.assertEqual(shares, 99_999_900_000)
+        self.assertEqual(shares * A // S, 99_999_999_999)
+        # Withdrawing 1 base unit burns 1 share (ceil).
+        self.assertEqual(-(-1 * S // A), 1)   # previewWithdraw ceil
+        # At price exactly 1.00 the directions agree.
+        self.assertEqual(1_000_000 * 1_000_000 // 1_000_000, 1_000_000)
+        self.assertEqual(-(-1_000_000 * 1_000_000 // 1_000_000),
+                         1_000_000)
+
     def test_vault_state_seeded_donation(self):
         # A live vault is not a new vault: the checker used to run the
         # donation check only on an empty vault, so every live vault got
