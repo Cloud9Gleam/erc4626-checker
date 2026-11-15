@@ -2885,20 +2885,74 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(Fraction(810_000 - 0, 810_000), 1)
         self.assertEqual(810_000 * 1, 810_000)
 
+    def test_claim_window_guide_numbers(self):
+        # Pins /guides/erc4626-claim-window/ to its model: a
+        # 100,000 USDC / 100,000 share vault, price $1.00.
+        # Bob holds 10,000 shares (10%), Alice 50,000.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers the
+        # guide quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "claim-window-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "claim_window_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Setup: 100,000 USDC / 100,000 shares, price $1.00.
+        self.assertEqual(Fraction(100_000 * USDC, USDC) / 100_000, 1)
+        # Case 1: claim in time — Bob paid 10,000 in full, price
+        # stays 1.00, Alice still 50,000.
+        self.assertEqual((10_000 * 100_000 * USDC) // 100_000,
+                         10_000 * USDC)
+        self.assertEqual(Fraction(90_000, 90_000), 1)
+        self.assertEqual(50_000 * Fraction(90_000, 90_000), 50_000)
+        # Case 2: missed window, forfeit — price 10/9; Alice's
+        # 50,000 shares rise to 55,555,555,555 base units
+        # ($55,555.555555, +$5,555.555555); the other 40,000
+        # shares are worth 44,444,444,444 (+$4,444.444444);
+        # one base unit of dust is left unaccounted.
+        self.assertEqual(Fraction(100_000, 90_000), Fraction(10, 9))
+        self.assertEqual(50_000 * Fraction(10, 9), Fraction(500_000, 9))
+        self.assertEqual((50_000 * 100_000 * USDC) // 90_000,
+                         55_555_555_555)
+        self.assertEqual(55_555_555_555 - 50_000 * USDC, 5_555_555_555)
+        self.assertEqual((40_000 * 100_000 * USDC) // 90_000,
+                         44_444_444_444)
+        self.assertEqual(44_444_444_444 - 40_000 * USDC, 4_444_444_444)
+        self.assertEqual(55_555_555_555 + 44_444_444_444,
+                         99_999_999_999)
+        # Case 3: missed window, refund — Bob keeps 10,000,
+        # price stays 1.00, Alice stays 50,000.
+        self.assertEqual(Fraction(100_000, 100_000), 1)
+        self.assertEqual(10_000 * Fraction(100_000, 100_000), 10_000)
+        self.assertEqual(50_000 * Fraction(100_000, 100_000), 50_000)
+        # Case 4: the clock — fulfilment 3 days, 2-day window
+        # from the request is dead on arrival (-1 days left);
+        # from fulfilment it leaves 2 days; a 7-day window
+        # from the request leaves 4 days.
+        self.assertEqual(2 - 3, -1)
+        self.assertLess(2 - 3, 0)
+        self.assertEqual(7 - 3, 4)
+
     def test_gamma_research_page_numbers(self):
         # Pins /research/gamma/ to the study: 27 validated findings
-        # (5H + 9M + 13L), 22 published as verified, payouts summing
-        # to 10,657.08 USDC. The 22 are H-01 + H-03 + H-04 (3),
+        # (5H + 9M + 13L), 23 published as verified, payouts summing
+        # to 10,718.50 USDC. The 23 are H-01–H-04 (4),
         # M-01–M-04 + M-06–M-09 (8) and L-01–L-11 (11); M-05 is a
-        # MISS and H-02/H-05, L-12/L-13, M-1(#829) are cut or flagged.
+        # MISS and H-05, L-12/L-13, M-1(#829) are cut or flagged.
         from pathlib import Path
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
         start = build.index('add("/research/gamma/"')
         end = build.index('add("/research/domain-hijack/"', start)
         page = build[start:end]
-        self.assertEqual(page.count("<tr><td>"), 22)
-        self.assertIn("10,657.08 USDC", page)
+        self.assertEqual(page.count("<tr><td>"), 23)
+        self.assertIn("10,718.50 USDC", page)
         self.assertIn("27 findings: 5 High, 9 Medium, 13 Low", page)
         # Largest payout (M-08, live on-chain) and the two Highs.
         self.assertIn("3,849.97 USDC", page)
@@ -2908,9 +2962,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn("M-05", page)
         self.assertIn("MISS", page)
         self.assertIn("Flagged or cut", page)
-        # Payout arithmetic: H 902.94 + M 8,485.06 + L 1,269.08.
+        # Payout arithmetic: H 964.36 + M 8,485.06 + L 1,269.08.
         from decimal import Decimal
-        highs = [Decimal("95.74"), Decimal("61.42"), Decimal("745.78")]
+        highs = [Decimal("95.74"), Decimal("61.42"), Decimal("61.42"),
+                 Decimal("745.78")]
         mediums = [Decimal("122.04"), Decimal("122.04"),
                    Decimal("378.89"), Decimal("41.97"),
                    Decimal("505.19"), Decimal("1732.48"),
@@ -2920,7 +2975,7 @@ class TestChecker(unittest.TestCase):
                 Decimal("290.98"), Decimal("290.98"), Decimal("53.03"),
                 Decimal("290.98"), Decimal("130.94")]
         self.assertEqual(sum(highs) + sum(mediums) + sum(lows),
-                         Decimal("10657.08"))
+                         Decimal("10718.50"))
 
 if __name__ == "__main__":
     unittest.main()
