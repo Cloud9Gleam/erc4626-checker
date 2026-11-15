@@ -6027,6 +6027,105 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(allowances.get(("alice", VAULT)), 0)
         self.assertEqual(wallet["alice"], 0)
 
+    def test_flash_loan_fee_guide_numbers(self):
+        # Pins /guides/erc4626-flash-loan-fee/ to its model: a vault
+        # lends idle assets as ERC-3156 flash loans at a 0.09% fee
+        # that lands in totalAssets, so every share is worth a
+        # little more. One 100,000 loan keeps a 90 fee and lifts
+        # Alice's 100,000 shares from 100,000 to 100,009; a short
+        # repayment reverts the whole transaction; a loan larger
+        # than the liquid cash reverts before it starts; ten loans
+        # keep 900 in fees; the borrower can still profit (earns
+        # 200, pays 90, keeps 110); a fee rounds down to zero below
+        # 0.001112 USDC borrowed; a 10% protocol cut leaves 81 of
+        # the 90 in the vault.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers on the
+        # model's own Vault.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "flash-loan-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "flash_loan_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        SUPPLY = 1_000_000 * USDC
+        ALICE = 100_000 * USDC
+
+        # 1. Single loan: fee 90, totalAssets 1,000,090, price
+        # $1.000090, Alice's shares worth 100,009 (+9).
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC, SUPPLY)
+        self.assertEqual(v.flash_fee(100_000 * USDC), 90 * USDC)
+        ok, fee = v.flash_loan(100_000 * USDC, 100_090 * USDC)
+        self.assertTrue(ok)
+        self.assertEqual(fee, 90 * USDC)
+        self.assertEqual(v.total_assets, 1_000_090 * USDC)
+        self.assertEqual(v.share_price(), 1_000_090)
+        self.assertEqual(v.holder_value(ALICE), 100_009 * USDC)
+
+        # 2. Repay principal only: whole tx reverts, vault untouched.
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC, SUPPLY)
+        ok, fee = v.flash_loan(100_000 * USDC, 100_000 * USDC)
+        self.assertFalse(ok)
+        self.assertEqual(fee, 0)
+        self.assertEqual(v.total_assets, 1_000_000 * USDC)
+        self.assertEqual(v.holder_value(ALICE), 100_000 * USDC)
+
+        # 3. Borrow 200,000 with only 100,000 liquid: reverts
+        # before it starts.
+        v = model.Vault(1_000_000 * USDC, 100_000 * USDC, SUPPLY)
+        ok, fee = v.flash_loan(200_000 * USDC, 200_180 * USDC)
+        self.assertFalse(ok)
+        self.assertEqual(fee, 0)
+        self.assertEqual(v.total_assets, 1_000_000 * USDC)
+
+        # 4. Ten loans: fees total 900, totalAssets 1,000,900,
+        # price $1.000900, Alice's shares worth 100,090.
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC, SUPPLY)
+        total_fee = 0
+        for _ in range(10):
+            ok, fee = v.flash_loan(100_000 * USDC, 100_090 * USDC)
+            self.assertTrue(ok)
+            total_fee += fee
+        self.assertEqual(total_fee, 900 * USDC)
+        self.assertEqual(v.total_assets, 1_000_900 * USDC)
+        self.assertEqual(v.share_price(), 1_000_900)
+        self.assertEqual(v.holder_value(ALICE), 100_090 * USDC)
+
+        # 5. Borrower arbitrage earns 200, pays the 90 fee, keeps 110.
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC, SUPPLY)
+        ok, fee = v.flash_loan(100_000 * USDC, 100_090 * USDC)
+        self.assertTrue(ok)
+        self.assertEqual(200 * USDC - fee, 110 * USDC)
+
+        # 6. Fee rounds down: borrow 0.001111 USDC -> fee 0;
+        # borrow 0.001112 USDC -> fee 0.000001 (one base unit);
+        # a zero fee settles on principal alone.
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC, SUPPLY)
+        self.assertEqual(v.flash_fee(1_111), 0)
+        self.assertEqual(v.flash_fee(1_112), 1)
+        ok, fee = v.flash_loan(1_111, 1_111)
+        self.assertTrue(ok)
+        self.assertEqual(fee, 0)
+        self.assertEqual(v.total_assets, 1_000_000 * USDC)
+
+        # 7. Fee split 10% protocol / 90% vault: fee 90, protocol
+        # 9, vault keeps 81, totalAssets 1,000,081, Alice's shares
+        # worth 100,008.100000.
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC, SUPPLY)
+        ok, fee = v.flash_loan(100_000 * USDC, 100_090 * USDC)
+        self.assertTrue(ok)
+        protocol_cut = fee // 10
+        vault_kept = fee - protocol_cut
+        self.assertEqual(protocol_cut, 9 * USDC)
+        self.assertEqual(vault_kept, 81 * USDC)
+        v.total_assets -= protocol_cut
+        self.assertEqual(v.total_assets, 1_000_081 * USDC)
+        self.assertEqual(v.holder_value(ALICE), 100_008_100_000)
+
 
 if __name__ == "__main__":
     unittest.main()
