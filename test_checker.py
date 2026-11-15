@@ -1,7 +1,7 @@
 import unittest
 from fractions import Fraction
 
-from erc4626_checker import Vault, run_all, check_donation
+from erc4626_checker import Vault, run_all, check_donation, check_minimum_viable_deposit
 
 
 class TestChecker(unittest.TestCase):
@@ -77,6 +77,55 @@ class TestChecker(unittest.TestCase):
             self.assertIn("error", row)
             self.assertIsNone(row["victim_loss"])
             self.assertIsNone(row["attacker_net"])
+
+    def test_minimum_viable_deposit(self):
+        # Sixth check: smallest deposit minting >= 1 share, at the
+        # vault's live price. Closed form: shares =
+        # floor(a * S' / A'), so shares >= 1 exactly when
+        # a >= ceil(A' / S'). Each case below pins the closed form
+        # against preview_deposit on a vault seeded with the same
+        # state, so a formula drift fails here first.
+        # Fresh vault, offset 0: 1 base unit mints 1 share.
+        r = check_minimum_viable_deposit(Vault(decimals_offset=0, min_deposit=0))
+        self.assertTrue(r["pass"])
+        self.assertIn("1,000,000\u00a0shares", r["detail"][0])
+        self.assertIn("0.000001\u00a0USDC", r["detail"][1])
+        self.assertIn("no zero-share deposit", r["detail"][2])
+        # $1,000-a-share vault (1,000,000 USDC / 1,000 raw shares),
+        # offset 0: a 1 USDC deposit mints 0 shares; the smallest
+        # deposit minting 1 share is 999,001,000 base units
+        # ($999.001000), and 999,000,999 base units ($999.000999)
+        # still mints nothing.
+        hi = dict(vault_assets=1_000_000_000_000, vault_supply=1_000)
+        r = check_minimum_viable_deposit(Vault(decimals_offset=0, min_deposit=0), **hi)
+        self.assertFalse(r["pass"])
+        self.assertIn("0\u00a0shares", r["detail"][0])
+        self.assertIn("999.001000\u00a0USDC", r["detail"][1])
+        self.assertIn("999.000999\u00a0USDC", r["detail"][2])
+        w = Vault(total_assets=1_000_000_000_000, total_supply=1_000, decimals_offset=0)
+        self.assertEqual(w.preview_deposit(999_001_000), 1)
+        self.assertEqual(w.preview_deposit(999_000_999), 0)
+        # Same vault, offset 6: the virtual shares shrink the
+        # threshold to 999,001 base units ($0.999001), so 1 USDC
+        # mints exactly 1 share and the check passes.
+        r = check_minimum_viable_deposit(Vault(decimals_offset=6, min_deposit=0), **hi)
+        self.assertTrue(r["pass"])
+        self.assertIn("1\u00a0shares", r["detail"][0])
+        self.assertIn("0.999001\u00a0USDC", r["detail"][1])
+        w = Vault(total_assets=1_000_000_000_000, total_supply=1_000, decimals_offset=6)
+        self.assertEqual(w.preview_deposit(999_001), 1)
+        self.assertEqual(w.preview_deposit(999_000), 0)
+        # A min-deposit floor above the price threshold binds: fresh
+        # vault, 2 USDC floor, 1 USDC cannot buy a share at all.
+        r = check_minimum_viable_deposit(Vault(decimals_offset=0, min_deposit=2_000_000))
+        self.assertFalse(r["pass"])
+        self.assertEqual(len(r["detail"]), 4)
+        self.assertIn("2.000000\u00a0USDC", r["detail"][3])
+        # The check runs inside run_all; the AlphaPrimer preset
+        # (offset 6, min 1 USDC) still passes it at the boundary.
+        names = [x["name"] for x in run_all(Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000))]
+        self.assertIn("minimum_viable_deposit", names)
+        self.assertEqual(len(names), 6)
 
     def test_inflation_guide_numbers(self):
         # Pins the worked example in /guides/erc4626-inflation-attack/,
