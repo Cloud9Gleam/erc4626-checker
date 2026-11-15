@@ -1014,6 +1014,47 @@ class TestChecker(unittest.TestCase):
                                198.01326693244746, places=6)
         self.assertTrue(float(fee_net) < fee_cont < float(fee_gross))
 
+    def test_round_trip_fee_guide_numbers(self):
+        # Round-trip fee guide (site/round-trip-fee-model.py): a 5%
+        # deposit fee AND a 5% exit fee on a 100,000 USDC deposit into a
+        # 1,000,000 / 1,000,000 vault at price 1.00. Re-derived here with
+        # plain Fractions, independent of the model file.
+        D = Fraction(100_000)
+        FEE = Fraction(5, 100)
+        net = D * (1 - FEE)
+        self.assertEqual(net, 95_000)
+
+        def round_trip(price):
+            gross = net * price
+            exit_fee = gross * FEE
+            return gross, exit_fee, gross - exit_fee, D - (gross - exit_fee)
+
+        # Flat price: cost 9,750 = 9.75%, not the naive 10%.
+        gross, fee, out, cost = round_trip(Fraction(1))
+        self.assertEqual((gross, fee, out, cost), (95_000, 4_750, 90_250, 9_750))
+        self.assertEqual(D - out, D * (1 - (1 - FEE) ** 2))
+        self.assertEqual(1 - (1 - FEE) ** 2, Fraction(39, 400))
+        self.assertEqual(D * Fraction(10, 100) - cost, 250)
+        # Price 1.10: exit fee 5,225 on the grown value; net 99,275.
+        gross, fee, out, cost = round_trip(Fraction(11, 10))
+        self.assertEqual((gross, fee, out, cost), (104_500, 5_225, 99_275, 725))
+        self.assertEqual((net * Fraction(11, 10) - net) - (D * FEE + fee), -cost)
+        # Each fee alone leaves 104,500 (deposit-fee guide); both leave
+        # 99,275 -- the second fee costs the full 5,225.
+        self.assertEqual(net * Fraction(11, 10), 104_500)
+        self.assertEqual(D * Fraction(11, 10) * (1 - FEE), 104_500)
+        # Price 0.90: net 81,225, cost 18,775 = 9,500 price loss + fees.
+        gross, fee, out, cost = round_trip(Fraction(9, 10))
+        self.assertEqual((gross, fee, out, cost), (85_500, 4_275, 81_225, 18_775))
+        self.assertEqual((net - gross) + (D * FEE + fee), cost)
+        # Break-even price 1/(0.95 x 0.95) = 400/361; gain 10.803324%.
+        be = 1 / (1 - FEE) ** 2
+        self.assertEqual(be, Fraction(400, 361))
+        self.assertEqual(net * be * (1 - FEE), D)
+        self.assertTrue(be - 1 > Fraction(10, 100))
+        self.assertAlmostEqual(float((be - 1) * 100), 10.803324099722992,
+                               places=6)
+
     def test_vault_state_seeded_donation(self):
         # A live vault is not a new vault: the checker used to run the
         # donation check only on an empty vault, so every live vault got
@@ -1052,6 +1093,36 @@ class TestChecker(unittest.TestCase):
         self.assertFalse(don["pass"])
         self.assertEqual(max(r["victim_loss"] for r in don["detail"]),
                          909091)
+
+    def test_partial_vault_state_is_an_error(self):
+        # A half-filled vault state is not a vault: assets with no
+        # shares, or shares with no assets, cannot exist. Before this
+        # guard the shares-only half reported ALL PASS (victim loss 0
+        # at every donation) — a verdict about a vault that cannot
+        # exist — and the assets-only half failed with a cryptic
+        # "zero shares minted". Both halves must now fail with the
+        # incomplete-state error and no invented loss figure.
+        A50 = 50_000_000_000_000  # 50M USDC in base units
+        S50 = 50_000_000_000_000  # 50M shares in base units
+        for va, vs in ((A50, 0), (0, S50)):
+            don = check_donation(Vault(decimals_offset=0, min_deposit=0),
+                                 vault_assets=va, vault_supply=vs)
+            self.assertFalse(don["pass"])
+            self.assertEqual(len(don["detail"]), 4)
+            for row in don["detail"]:
+                self.assertIsNone(row["victim_loss"])
+                self.assertIsNone(row["attacker_net"])
+                self.assertEqual(
+                    row["error"],
+                    "incomplete vault state: assets and shares must "
+                    "both be set")
+        # Both halves filled stays a real vault: still PASS, same
+        # numbers as the seeded test above.
+        don = check_donation(Vault(decimals_offset=0, min_deposit=0),
+                             vault_assets=A50, vault_supply=S50)
+        self.assertTrue(don["pass"])
+        self.assertEqual([r["victim_loss"] for r in don["detail"]],
+                         [1, 1, 1, 13])
 
 
 if __name__ == "__main__":
