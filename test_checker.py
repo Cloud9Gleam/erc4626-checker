@@ -1284,5 +1284,59 @@ class TestChecker(unittest.TestCase):
                          [1, 1, 1, 13])
 
 
+    def test_rebasing_underlying_guide_numbers(self):
+        # Rebasing-underlying guide (site/rebasing-underlying-model.py):
+        # a rebasing token moves the share price with no yield at all.
+        # Re-derived here with plain integer / Fraction arithmetic,
+        # independent of the model file. Vault 100,000 USDC /
+        # 100,000 shares, price exactly 1.00; holder 50,000 shares.
+        USDC = 1_000_000
+        A0, S0 = 100_000 * USDC, 100_000 * USDC
+        HOLDER = 50_000 * USDC
+
+        def down(a, b, c):
+            return a * b // c
+
+        # 1: +10% rebase -- price 1.00 -> 1.10, holder +5,000 USDC
+        # with no yield; an 11,000 deposit mints 10,000 shares, not
+        # the 11,000 it minted before.
+        A1 = 110_000 * USDC
+        self.assertEqual(Fraction(A1, S0), Fraction(11, 10))
+        self.assertEqual(HOLDER * Fraction(A1, S0), 55_000 * USDC)
+        self.assertEqual(down(11_000 * USDC, S0, A0), 11_000 * USDC)
+        self.assertEqual(down(11_000 * USDC, S0, A1), 10_000 * USDC)
+        # 2: -10% rebase -- price 1.00 -> 0.90, holder -5,000 USDC
+        # with no loss; a 9,000 deposit mints 10,000 shares, not 9,000.
+        A2 = 90_000 * USDC
+        self.assertEqual(Fraction(A2, S0), Fraction(9, 10))
+        self.assertEqual(HOLDER * Fraction(A2, S0), 45_000 * USDC)
+        self.assertEqual(down(9_000 * USDC, S0, A0), 9_000 * USDC)
+        self.assertEqual(down(9_000 * USDC, S0, A2), 10_000 * USDC)
+        # 3: stale quote -- an 11,000 deposit previews 11,000 shares
+        # at price 1.00 and executes 10,000 after the +10% rebase:
+        # 1,000 shares short, worth 1,100 USDC at the new price.
+        short = down(11_000 * USDC, S0, A0) - down(11_000 * USDC, S0, A1)
+        self.assertEqual(short, 1_000 * USDC)
+        self.assertEqual(short * Fraction(A1, S0), 1_100 * USDC)
+        # 4: fee on rebased assets -- 2% of 110,000 is 2,200, not
+        # the 2,000 it is on 100,000: +200 from the rebase alone.
+        self.assertEqual((2 * A0 // 100, 2 * A1 // 100),
+                         (2_000 * USDC, 2_200 * USDC))
+        # 5: donation attack on the seeded vault (offset 0, min 1
+        # USDC, victim 100,000 USDC): worst loss at the 1,000,000,000
+        # donation is 801 base units with no rebase (PASS), 101 after
+        # a +10% rebase (PASS), 1722 after a -10% rebase (FAIL -- over
+        # the 0.001 USDC bound). The negative rebase shrinks the asset
+        # base the donation is measured against.
+        v = Vault(decimals_offset=0, min_deposit=1 * USDC, perf_fee_bps=0)
+        for assets, want_worst, want_pass in (
+                (A0, 801, True), (A1, 101, True), (A2, 1722, False)):
+            res = check_donation(v, victim_deposit=100_000 * USDC,
+                                 vault_assets=assets, vault_supply=S0)
+            worst = max(r["victim_loss"] for r in res["detail"]
+                        if r["victim_loss"] is not None)
+            self.assertEqual((worst, res["pass"]), (want_worst, want_pass))
+
+
 if __name__ == "__main__":
     unittest.main()
