@@ -1852,6 +1852,75 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(10_000 * USDC // 100, 100 * USDC)
         self.assertEqual(5_000 * USDC // (100 * USDC), 50)
 
+    def test_yield_token_guide_numbers(self):
+        # Guide #51: yield-token vault (ERC-5115) -- 10,000 SY splits
+        # 1:1:1 into 10,000 PT + 10,000 YT. Vault 100,000 USDC /
+        # 100,000 SY, price 1.00, maturity one year out; Alice holds
+        # 10,000 SY. Re-derived here with plain integer / Fraction
+        # arithmetic, independent of the model file
+        # (site/yield-token-model.py).
+        USDC = 1_000_000
+        # 1: the split. 10,000 SY -> 10,000 PT + 10,000 YT; at +10%
+        # the YT pays 1,000. Hold both to maturity: 11,000, exactly
+        # what holding the SY would have been worth.
+        self.assertEqual(10_000 * USDC, 10_000 * USDC)
+        self.assertEqual(10_000 * USDC * Fraction(1, 10), 1_000 * USDC)
+        self.assertEqual(10_000 * USDC + 1_000 * USDC,
+                         10_000 * USDC * (1 + Fraction(1, 10)))
+        # 2: PT price at 10% implied: 10,000 / 1.10 = 100,000/11 USDC
+        # = 9,090.909091; discount 10,000/11 = 909.090909. YT price
+        # the same 909.090909; PT + YT = 10,000 = the SY value.
+        self.assertEqual(Fraction(10_000 * USDC, 1) / Fraction(11, 10),
+                         Fraction(100_000 * USDC, 11))
+        self.assertEqual(10_000 * USDC - Fraction(100_000 * USDC, 11),
+                         Fraction(10_000 * USDC, 11))
+        self.assertEqual(Fraction(1_000 * USDC, 1) / Fraction(11, 10),
+                         Fraction(10_000 * USDC, 11))
+        self.assertEqual(Fraction(100_000 * USDC, 11)
+                         + Fraction(10_000 * USDC, 11),
+                         10_000 * USDC)
+        # 3: PT gain locked: 10,000 - 100,000/11 = 10,000/11, exactly
+        # 10% of the PT price, whatever the vault earns.
+        self.assertEqual(10_000 * USDC - Fraction(100_000 * USDC, 11),
+                         Fraction(10_000 * USDC, 11))
+        self.assertEqual(Fraction(Fraction(10_000 * USDC, 11),
+                                  Fraction(100_000 * USDC, 11)),
+                         Fraction(1, 10))
+        # 4: YT at +5% pays 500; loss 909.090909 - 500 = 409.090909
+        # = 4,500/11 USDC, which is 9/20 = -45% of the YT price.
+        # At 0% the YT pays 0: the whole 909.090909 is lost (-100%).
+        # After maturity the YT is worth exactly 0.
+        self.assertEqual(10_000 * USDC * Fraction(1, 20), 500 * USDC)
+        self.assertEqual(Fraction(10_000 * USDC, 11) - 500 * USDC,
+                         Fraction(4_500 * USDC, 11))
+        self.assertEqual(Fraction(Fraction(4_500 * USDC, 11),
+                                  Fraction(10_000 * USDC, 11)),
+                         Fraction(9, 20))
+        self.assertEqual(Fraction(10_000 * USDC, 11) - 0,
+                         Fraction(10_000 * USDC, 11))
+        # 5: PT quoted at 9,500 implies 10,000/9,500 - 1 = 1/19
+        # = 5.263158%. The PT buyer still only gets 10,000 even if
+        # the vault earns 10%.
+        self.assertEqual(Fraction(10_000 * USDC, 9_500 * USDC) - 1,
+                         Fraction(1, 19))
+        # 6: sell the YT early at 909.090909, cash idle, PT redeems
+        # 10,000: total 120,000/11 = 10,909.090909, short of holding
+        # by 1,000/11 = 90.909091.
+        self.assertEqual(10_000 * USDC + Fraction(10_000 * USDC, 11),
+                         Fraction(120_000 * USDC, 11))
+        self.assertEqual(11_000 * USDC - Fraction(120_000 * USDC, 11),
+                         Fraction(1_000 * USDC, 11))
+        # 7: double-count bug: PT at face 10,000 + YT at expected
+        # 1,000 = 11,000 against 10,000 SY of backing -- 1,000
+        # overstated, 1/10 = 10%.
+        self.assertEqual(10_000 * USDC + 1_000 * USDC, 11_000 * USDC)
+        self.assertEqual(11_000 * USDC - 10_000 * USDC, 1_000 * USDC)
+        self.assertEqual(Fraction(1_000 * USDC, 10_000 * USDC),
+                         Fraction(1, 10))
+        # 8: SY price blind spot: totalAssets stays 100,000 through
+        # a +10% year, price exactly 1.00.
+        self.assertEqual(Fraction(100_000 * USDC, 100_000 * USDC), 1)
+
     def test_share_classes_guide_numbers(self):
         # Guide #50: two share classes, one vault -- A pays 2%, B pays
         # 0.5%. Each class holds 500,000 shares / 500,000 USDC at launch,
