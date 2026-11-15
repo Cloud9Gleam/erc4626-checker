@@ -6126,6 +6126,101 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(v.total_assets, 1_000_081 * USDC)
         self.assertEqual(v.holder_value(ALICE), 100_008_100_000)
 
+    def test_profit_unlock_guide_numbers(self):
+        # Pins /guides/erc4626-profit-unlock/ to its model: a reported
+        # gain unlocks linearly over 10 days; redeemable value counts
+        # only unlocked gains; losses hit immediately. Day-0/5/10 prices
+        # 1.00/1.05/1.10; an early exit leaves 10,000 to the stayers;
+        # a second gain stacks a second schedule (1.05/1.15/1.20); a
+        # day-5 depositor takes 4,347.826087 of the locked gain; a day-5
+        # loss takes the price straight back to 1.00.
+        # Importing the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers with Fraction.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "profit-unlock-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "profit_unlock_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        BASE = 1_000_000 * USDC
+        SUPPLY = 1_000_000 * USDC
+        ALICE = 100_000 * USDC
+        CAROL = 900_000 * USDC
+        GAIN = 100_000 * USDC
+
+        def fmt(fr):
+            # Exact 6-decimal USDC, round-half-up.
+            scaled = fr * USDC
+            q, r = divmod(scaled.numerator, scaled.denominator)
+            if 2 * r >= scaled.denominator:
+                q += 1
+            return "%d.%06d" % (q // USDC, q % USDC)
+
+        def unlocked(gains, day):
+            total = Fraction(0)
+            for amount, reported, span in gains:
+                elapsed = min(max(day - reported, 0), span)
+                total += amount * Fraction(elapsed, span)
+            return total
+
+        def price(gains, losses, day):
+            return (BASE + unlocked(gains, day) - losses) / SUPPLY
+
+        # S1-S3: one gain, day 0/5/10.
+        gains = [(GAIN, 0, 10)]
+        self.assertEqual(price(gains, 0, 0), 1)
+        self.assertEqual(ALICE * price(gains, 0, 0), 100_000 * USDC)
+        self.assertEqual(price(gains, 0, 5), Fraction(21, 20))
+        self.assertEqual(ALICE * price(gains, 0, 5), 105_000 * USDC)
+        self.assertEqual(price(gains, 0, 10), Fraction(11, 10))
+        self.assertEqual(ALICE * price(gains, 0, 10), 110_000 * USDC)
+        # Immediate pricing would already be 1.10 on day 0.
+        self.assertEqual(Fraction(BASE + GAIN, SUPPLY), Fraction(11, 10))
+
+        # S4: Alice exits day 0; day-10 price 10/9, Carol gains 10,000.
+        remaining_supply = SUPPLY - ALICE
+        day10_assets = BASE + GAIN - 100_000 * USDC
+        self.assertEqual(Fraction(day10_assets, remaining_supply),
+                         Fraction(10, 9))
+        self.assertEqual(CAROL * Fraction(10, 9), 1_000_000 * USDC)
+        self.assertEqual(CAROL * Fraction(10, 9) - 990_000 * USDC,
+                         10_000 * USDC)
+
+        # S5: second gain day 5; prices 1.05/1.15/1.20.
+        gains2 = [(GAIN, 0, 10), (GAIN, 5, 10)]
+        self.assertEqual(price(gains2, 0, 5), Fraction(21, 20))
+        self.assertEqual(price(gains2, 0, 10), Fraction(23, 20))
+        self.assertEqual(price(gains2, 0, 15), Fraction(6, 5))
+
+        # S6: Dave deposits 100,000 on day 5 at 1.05.
+        dave_shares = Fraction(100_000 * USDC) / price(gains, 0, 5)
+        self.assertEqual(fmt(dave_shares / USDC), "95238.095238")
+        total_supply = SUPPLY + dave_shares
+        day10_price = Fraction(1_200_000 * USDC, total_supply)
+        self.assertEqual(day10_price, Fraction(126, 115))
+        dave_day10 = dave_shares * day10_price
+        self.assertEqual(fmt(dave_day10 / USDC), "104347.826087")
+        stayers_day10 = Fraction(1_000_000 * USDC) * day10_price
+        self.assertEqual(fmt(stayers_day10 / USDC), "1095652.173913")
+        self.assertEqual(dave_day10 + stayers_day10, 1_200_000 * USDC)
+        self.assertEqual(fmt(Fraction(110_000 * USDC - dave_day10) / USDC),
+                         "5652.173913")
+        self.assertEqual(fmt(Fraction(dave_day10 - 100_000 * USDC) / USDC),
+                         "4347.826087")
+
+        # S7: day-5 loss of 50,000 hits immediately.
+        self.assertEqual(price(gains, 50_000 * USDC, 5), 1)
+        self.assertEqual(ALICE * price(gains, 50_000 * USDC, 5),
+                         100_000 * USDC)
+        self.assertEqual(price(gains, 50_000 * USDC, 10), Fraction(21, 20))
+        self.assertEqual(ALICE * price(gains, 50_000 * USDC, 10),
+                         105_000 * USDC)
+
 
 if __name__ == "__main__":
     unittest.main()
