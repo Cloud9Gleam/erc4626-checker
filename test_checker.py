@@ -6462,5 +6462,51 @@ class TestChecker(unittest.TestCase):
         self.assertIn("25,000 USDC", build)
 
 
+    def test_deposit_fee_chart_numbers(self):
+        # Pins the what-the-fee-costs bar chart on
+        # /guides/erc4626-deposit-fee/ to the (a)/(b) split: a 5,000
+        # USDC fee paid to the manager costs the depositor exactly
+        # 5,000, while the same fee retained in the vault costs
+        # 4,566.210046 — the depositor recaptures 433.789954 through
+        # their own shares, and the existing holders gain exactly
+        # the depositor's loss. Re-derived with plain Fractions,
+        # independent of the model file, so the chart's numbers
+        # cannot drift silently.
+        from fractions import Fraction
+        from pathlib import Path
+
+        fee = Fraction(5000)
+        # Retained fee: price 220/219 on 1,095,000 shares.
+        price = Fraction(220, 219)
+        dep_worth = Fraction(95000) * price
+        loss_retained = Fraction(100000) - dep_worth
+        recapture = fee - loss_retained
+        self.assertEqual(loss_retained, Fraction(1000000, 219))
+        self.assertEqual(recapture, Fraction(95000, 219))
+        self.assertEqual(loss_retained + recapture, fee)
+        # Bar widths, one decimal, as a share of the 5,000 fee.
+        self.assertEqual(round(float(loss_retained / fee) * 100, 1),
+                         91.3)
+        self.assertEqual(round(float(recapture / fee) * 100, 1), 8.7)
+        # The existing holders gain exactly the depositor's loss.
+        self.assertEqual(Fraction(1000000) * (price - 1),
+                         loss_retained)
+
+        # Chart markup is present in the guide source.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('loss-label\">To manager</span><span '
+                      'class="loss-track"><span class="loss-fill fail" '
+                      'style="width:100.0%"', build)
+        self.assertIn('loss-label\">Retained</span><span '
+                      'class="loss-track"><span class="loss-fill fail" '
+                      'style="width:91.3%"', build)
+        self.assertIn('loss-label\">Recaptured</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:8.7%"', build)
+        self.assertIn("4,566.210046", build)
+        self.assertIn("433.789954", build)
+
+
 if __name__ == "__main__":
     unittest.main()
