@@ -2755,5 +2755,78 @@ class TestChecker(unittest.TestCase):
         self.assertTrue(model.fresh(3_599))
         self.assertTrue(model.fresh(3_600))
         self.assertFalse(model.fresh(3_601))
+    def test_minimum_redemption_guide_numbers(self):
+        # Pins /guides/erc4626-minimum-redemption/ to its model: a
+        # 1,000,000 USDC / 1,000,000 share vault, price $1.00, with
+        # a 1,000-share / 1,000-USDC redemption floor. The floor is
+        # a threshold, not a price: it locks small holders out and
+        # strands the remainder of any partial redemption.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "minimum-redemption-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "minimum_redemption_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        # Setup: 1,000,000 USDC / 1,000,000 shares, price $1.00.
+        self.assertEqual(model.A0, 1_000_000 * model.USDC)
+        self.assertEqual(model.S0, 1_000_000)
+        self.assertEqual(Fraction(model.A0, model.USDC) / model.S0, 1)
+        self.assertEqual(model.MIN_SHARES, 1_000)
+        self.assertEqual(model.MIN_ASSETS, 1_000 * model.USDC)
+        # Case 1, shares minimum: 999 shares = $999 locked at
+        # $1.00; still locked at $2.00 ($1,998).
+        self.assertFalse(model.redeem_allowed_shares(999, 1_000))
+        self.assertEqual(model.redeem_assets(999, model.A0, model.S0),
+                         999 * model.USDC)
+        self.assertEqual(model.redeem_assets(999, 2_000_000 * model.USDC,
+                                             model.S0),
+                         1_998 * model.USDC)
+        self.assertFalse(model.redeem_allowed_shares(999, 1_000))
+        # Top-up escape: 1 USDC mints 1 share, balance hits 1,000.
+        self.assertEqual(999 + (1 * model.USDC * model.S0) // model.A0,
+                         1_000)
+        # Case 2, assets minimum: 999 shares locked at $999.00,
+        # unlocked at $1.01 ($1,008.99); 1,000 shares redeemable at
+        # $1.00, locked at $0.99 ($990).
+        self.assertFalse(model.redeem_allowed_assets(
+            999, model.A0, model.S0, model.MIN_ASSETS))
+        self.assertEqual(model.redeem_assets(
+            999, 1_010_000 * model.USDC, model.S0), 1_008_990_000)
+        self.assertEqual(
+            Fraction(model.redeem_assets(999, 1_010_000 * model.USDC,
+                                         model.S0), model.USDC),
+            Fraction(100899, 100))
+        self.assertTrue(model.redeem_allowed_assets(
+            999, 1_010_000 * model.USDC, model.S0, model.MIN_ASSETS))
+        self.assertTrue(model.redeem_allowed_assets(
+            1_000, model.A0, model.S0, model.MIN_ASSETS))
+        self.assertEqual(model.redeem_assets(
+            1_000, 990_000 * model.USDC, model.S0), 990 * model.USDC)
+        self.assertFalse(model.redeem_allowed_assets(
+            1_000, 990_000 * model.USDC, model.S0, model.MIN_ASSETS))
+        # Case 3, aggregate: 1,000 holders x 500 shares = $500,000
+        # stranded, exactly 50% of the vault; $550,000 at $1.10.
+        self.assertEqual(model.redeem_assets(
+            1_000 * 500, model.A0, model.S0), 500_000 * model.USDC)
+        self.assertEqual(Fraction(model.redeem_assets(
+            1_000 * 500, model.A0, model.S0), model.A0), Fraction(1, 2))
+        self.assertEqual(model.redeem_assets(
+            1_000 * 500, 1_100_000 * model.USDC, model.S0),
+            550_000 * model.USDC)
+        # Case 4, partial redemption: 1,500 shares, redeem 1,000
+        # -> $500 stranded; full exit pays $1,500.
+        self.assertTrue(model.redeem_allowed_shares(1_000, 1_000))
+        self.assertEqual(model.redeem_assets(1_000, model.A0, model.S0),
+                         1_000 * model.USDC)
+        self.assertFalse(model.redeem_allowed_shares(500, 1_000))
+        self.assertEqual(model.redeem_assets(500, model.A0, model.S0),
+                         500 * model.USDC)
+        self.assertEqual(model.redeem_assets(1_500, model.A0, model.S0),
+                         1_500 * model.USDC)
+
 if __name__ == "__main__":
     unittest.main()
