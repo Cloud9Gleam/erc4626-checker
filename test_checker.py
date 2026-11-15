@@ -3862,5 +3862,79 @@ class TestChecker(unittest.TestCase):
         v1.supply = 0
         self.assertEqual(v1.worth(50_000 * USDC), 0)
 
+    def test_hwm_reset_guide_numbers(self):
+        # Pins /guides/erc4626-hwm-reset/ to its model: vault
+        # 1,000,000 USDC / 1,000,000 shares, Alice holds 10,000 (1%),
+        # 20% performance fee above the high-water mark. Importing
+        # the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers the guide
+        # quotes.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "hwm-reset-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "hwm_reset_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        a0 = 1_000_000 * USDC
+        s0 = 1_000_000 * USDC
+        h = 10_000 * USDC
+        rate = 2000  # 20%
+
+        # Case 1: year 1, +10% — fee 20,000 on the 100,000 above the
+        # HWM; 18,181.818181 fee shares; HWM set to the 1,100,000
+        # peak; Alice's 10,000 shares worth 10,803.571428.
+        a1 = 1_100_000 * USDC
+        fa, fs, hwm1 = model.harvest(a1, a0, s0, rate)
+        self.assertEqual(fa, 20_000 * USDC)
+        self.assertEqual(fs, 18_181_818_181)
+        self.assertEqual(hwm1, a1)
+        s1 = s0 + fs
+        self.assertEqual(model.holder_claim(h, a1, s1), 10_803_571_428)
+
+        # Case 2: loss of 150,000 — assets 950,000, HWM still at the
+        # 1,100,000 peak; Alice's claim falls to 9,330.357142.
+        a2 = 950_000 * USDC
+        self.assertEqual(model.holder_claim(h, a2, s1), 9_330_357_142)
+
+        # Case 3: migration RESETS the HWM to the current 950,000,
+        # recovery to the old 1,100,000 peak is charged again — fee
+        # 30,000 (27,768.595041 fee shares). Alice's claim is
+        # 10,516.750948, 286.820480 less than the no-reset case at the
+        # same 1,100,000 asset level.
+        fa3, fs3, hwm3 = model.harvest(a1, a2, s1, rate)
+        self.assertEqual(fa3, 30_000 * USDC)
+        self.assertEqual(fs3, 27_768_595_041)
+        self.assertEqual(hwm3, a1)
+        s3 = s1 + fs3
+        self.assertEqual(model.holder_claim(h, a1, s3), 10_516_750_948)
+        self.assertEqual(10_803_571_428 - 10_516_750_948, 286_820_480)
+        # Same recovery with the HWM carried over: fee 0, Alice whole.
+        fa4, fs4, hwm4 = model.harvest(a1, hwm1, s1, rate)
+        self.assertEqual((fa4, fs4, hwm4), (0, 0, hwm1))
+        self.assertEqual(model.holder_claim(h, a1, s1), 10_803_571_428)
+
+        # Case 4: partial recovery to 1,000,000 with the reset HWM —
+        # fee 10,000 charged while holders are still 100,000 below
+        # the old peak. Alice's claim 9,724.186704.
+        a5 = 1_000_000 * USDC
+        fa5, fs5, hwm5 = model.harvest(a5, a2, s1, rate)
+        self.assertEqual(fa5, 10_000 * USDC)
+        self.assertEqual(fs5, 10_181_818_181)
+        self.assertEqual(model.holder_claim(h, a5, s1 + fs5),
+                         9_724_186_704)
+
+        # Case 5: round-trip totals — reset path 20,000 + 30,000 =
+        # 50,000 (50% of the 100,000 net gain above the original
+        # peak) vs HWM-carried path 20,000 (20%). The same 100,000
+        # of gain is charged twice: 40,000 total, a 40% effective
+        # rate on a 20% schedule.
+        self.assertEqual(fa + fa3, 50_000 * USDC)
+        self.assertEqual(fa + fa4, 20_000 * USDC)
+        self.assertEqual(fa + 20_000 * USDC, 40_000 * USDC)
+
 if __name__ == "__main__":
     unittest.main()
