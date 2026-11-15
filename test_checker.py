@@ -53,7 +53,7 @@ class TestChecker(unittest.TestCase):
 
     def test_run_all_threads_victim_deposit(self):
         # The victim deposit is a scenario parameter, not a vault constant:
-        # run_all must pass it to the donation check, and the three presets'
+        # run_all must pass it to the donation check, and the presets'
         # verdicts must not depend on it (offset 6 passes at every size
         # 1–10,000,000 USDC, offset 0 fails at every size).
         noprot = Vault(decimals_offset=0, min_deposit=0)
@@ -227,6 +227,20 @@ class TestChecker(unittest.TestCase):
         self.assertLessEqual(max(losses), 1000)
         self.assertLessEqual(max(losses), victim // 1000)
 
+    def test_minfeeonly_preset_numbers(self):
+        # Pins the checker's "Minimum + fee, no offset" preset to the
+        # model: offset 0, minimum deposit 1 USDC, fee 10%, victim
+        # 100,000 USDC. The fee only touches yield and the minimum only
+        # forces a 1 USDC seed, so neither blunts the donation: the
+        # preset still fails and still loses the full 0.909091 USDC to
+        # the 1,000,000 USDC donation, exactly like no protection.
+        victim = 100_000_000_000
+        v = Vault(decimals_offset=0, min_deposit=1_000_000, perf_fee_bps=1000)
+        self.assertFalse(all(r["pass"] for r in run_all(v, victim_deposit=victim)))
+        don = check_donation(v, victim_deposit=victim)
+        self.assertFalse(don["pass"])
+        self.assertEqual(don["detail"][2]["victim_loss"], 909091)
+        self.assertEqual(max(r["victim_loss"] for r in don["detail"]), 909091)
 
     def test_slippage_bounds_guide_numbers(self):
         # Pins /guides/erc4626-slippage-bounds/ to the model: victim
