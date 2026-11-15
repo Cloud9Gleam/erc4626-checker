@@ -5625,5 +5625,71 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(mint_cost(SHARES, 1_575_000 * USDC,
                                    1_500_000 * USDC), 10_500 * USDC)
 
+    def test_supply_cap_guide_numbers(self):
+        # Pins /guides/erc4626-supply-cap/ to its model: a vault
+        # caps totalSupply at 1,000,000 whole shares (10**12 raw
+        # shares; shares are 6-decimal like the asset, so at $1.00
+        # one whole share is 1 USDC). A deposit reverts when
+        # totalSupply + previewed shares > cap. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers with plain integer
+        # arithmetic (OZ convertToShares/convertToAssets, down).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "supply-cap-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "supply_cap_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        CAP = 10**12  # raw shares = 1,000,000 whole shares
+
+        def to_shares(assets, supply, total_assets, offset):
+            return assets * (supply + 10**offset) // (total_assets + 1)
+
+        def to_assets(shares, supply, total_assets, offset):
+            return shares * (total_assets + 1) // (supply + 10**offset)
+
+        # (1) Offset 0: vault half full, attacker fills the headroom
+        # for free — 500,000 USDC in, totalSupply hits the cap, every
+        # later deposit reverts, redeem returns the full 500,000.
+        S0, T0 = 500_000 * USDC, 500_000 * USDC
+        atk = to_shares(500_000 * USDC, S0, T0, 0)
+        self.assertEqual(atk, 500_000 * USDC)
+        self.assertEqual(S0 + atk, CAP)
+        self.assertGreater(S0 + atk + to_shares(1, CAP, T0 + 500_000 * USDC, 0), CAP)
+        self.assertEqual(to_assets(atk, CAP, T0 + 500_000 * USDC, 0),
+                         500_000 * USDC)
+
+        # (2) Offset 6: the vault bricks itself. A 1 USDC first
+        # deposit previews exactly the whole cap; 2 USDC reverts;
+        # dust tests pass; the 1 USDC is refunded in full.
+        self.assertEqual(to_shares(1 * USDC, 0, 0, 6), CAP)
+        self.assertEqual(to_shares(2 * USDC, 0, 0, 6), 2 * CAP)
+        self.assertEqual(to_shares(1, 0, 0, 6), 1_000_000)
+        self.assertEqual(to_shares(500_000, 0, 0, 6), 500_000 * USDC)
+        self.assertEqual(to_shares(1, CAP, 1 * USDC, 6), 1_000_000)
+        self.assertGreater(CAP + to_shares(1, CAP, 1 * USDC, 6), CAP)
+        self.assertEqual(to_assets(CAP, CAP, 1 * USDC, 6), 1 * USDC)
+
+        # (3) Sizing rule: 1,000,000 USDC at $1.00 needs a 10**18
+        # raw-share cap at offset 6 — 10**6x the offset-0 cap.
+        self.assertEqual(to_shares(1_000_000 * USDC, 0, 0, 6), 10**18)
+        self.assertEqual(to_shares(1_000_000 * USDC, 0, 0, 6) // CAP,
+                         10**6)
+        self.assertEqual(to_shares(1_000_000 * USDC, 0, 0, 0), CAP)
+
+        # (4) The cap's asset headroom moves with the price: 5*10**11
+        # raw shares admit 500,000 USDC at $1.00, 1,000,000 USDC at
+        # $2.00, and a 500,000 USDC deposit at $2.00 mints half of it.
+        headroom = CAP - S0
+        self.assertEqual(to_shares(500_000 * USDC, S0, T0, 0), headroom)
+        self.assertEqual(to_shares(1_000_000 * USDC, S0, 2 * T0, 0),
+                         headroom)
+        self.assertEqual(to_shares(500_000 * USDC, S0, 2 * T0, 0),
+                         250_000 * USDC)
+
 if __name__ == "__main__":
     unittest.main()
