@@ -2828,20 +2828,77 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(model.redeem_assets(1_500, model.A0, model.S0),
                          1_500 * model.USDC)
 
+    def test_pending_redemption_guide_numbers(self):
+        # Pins /guides/erc4626-pending-redemption/ to its model: a
+        # 1,000,000 USDC / 1,000,000 share vault, price $1.00.
+        # Alice requests redemption of 100,000 shares; Bob holds
+        # 90,000. Importing the model re-runs its 27 assertions;
+        # the checks below independently re-derive the headline
+        # numbers the guide quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "pending-redemption-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "pending_redemption_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        # Setup: 1,000,000 USDC / 1,000,000 shares, price $1.00.
+        self.assertEqual(Fraction(1_000_000, 1_000_000), 1)
+        # Design A: burn at request, earmark stays in totalAssets.
+        # Price jumps to 10/9; Bob's 90,000 shares pay 100,000
+        # (+10,000 over pro-rata); price after Alice claims is
+        # 80/81 and the remaining 810,000 shares are worth 800,000.
+        self.assertEqual(Fraction(1_000_000, 900_000), Fraction(10, 9))
+        self.assertEqual(90_000 * Fraction(10, 9), 100_000)
+        self.assertEqual(90_000 * Fraction(10, 9) - 90_000, 10_000)
+        self.assertEqual(Fraction(900_000, 810_000), Fraction(10, 9))
+        self.assertEqual(Fraction(800_000, 810_000), Fraction(80, 81))
+        self.assertEqual(810_000 * Fraction(80, 81), 800_000)
+        self.assertEqual(810_000 * Fraction(80, 81) - 810_000, -10_000)
+        # Full drain: 900,000 shares x 10/9 = the whole vault,
+        # so Alice's fixed claim pays zero.
+        self.assertEqual(900_000 * Fraction(10, 9), 1_000_000)
+        self.assertEqual(1_000_000 - 900_000 * Fraction(10, 9), 0)
+        # Design A + 100,000 yield during the wait: price 11/9
+        # before the claim; Alice still gets 100,000, forgoing
+        # 10,000 of yield (110,000 had she stayed); the remaining
+        # holders end at 1,000,000 vs 990,000 with no request.
+        self.assertEqual(Fraction(1_100_000, 900_000), Fraction(11, 9))
+        self.assertEqual(100_000 * Fraction(11, 10), 110_000)
+        self.assertEqual(100_000 - 110_000, -10_000)
+        self.assertEqual(900_000 * Fraction(10, 9), 1_000_000)
+        self.assertEqual(900_000 * Fraction(10, 9) - 990_000, 10_000)
+        # Design B: shares locked, priced at claim time. Yield:
+        # claim 110,000 at 1.10, remaining 990,000. Loss: claim
+        # 90,000 at 0.90, remaining 810,000.
+        self.assertEqual(100_000 * Fraction(11, 10), 110_000)
+        self.assertEqual(900_000 * Fraction(11, 10), 990_000)
+        self.assertEqual(100_000 * Fraction(9, 10), 90_000)
+        self.assertEqual(900_000 * Fraction(9, 10), 810_000)
+        # Design C: pending claim netted off totalAssets — price
+        # stays 1.00 through request, Bob's redemption and claim.
+        self.assertEqual(Fraction(1_000_000 - 100_000, 900_000), 1)
+        self.assertEqual(Fraction(910_000 - 100_000, 810_000), 1)
+        self.assertEqual(Fraction(810_000 - 0, 810_000), 1)
+        self.assertEqual(810_000 * 1, 810_000)
+
     def test_gamma_research_page_numbers(self):
         # Pins /research/gamma/ to the study: 27 validated findings
-        # (5H + 9M + 13L), 21 published as verified, payouts summing
-        # to 9,911.30 USDC. The 21 are H-01 + H-03 (2), M-01–M-04
-        # + M-06–M-09 (8) and L-01–L-11 (11); M-05 is a MISS and
-        # H-02/H-04/H-05, L-12/L-13, M-1(#829) are cut or flagged.
+        # (5H + 9M + 13L), 22 published as verified, payouts summing
+        # to 10,657.08 USDC. The 22 are H-01 + H-03 + H-04 (3),
+        # M-01–M-04 + M-06–M-09 (8) and L-01–L-11 (11); M-05 is a
+        # MISS and H-02/H-05, L-12/L-13, M-1(#829) are cut or flagged.
         from pathlib import Path
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
         start = build.index('add("/research/gamma/"')
         end = build.index('add("/research/domain-hijack/"', start)
         page = build[start:end]
-        self.assertEqual(page.count("<tr><td>"), 21)
-        self.assertIn("9,911.30 USDC", page)
+        self.assertEqual(page.count("<tr><td>"), 22)
+        self.assertIn("10,657.08 USDC", page)
         self.assertIn("27 findings: 5 High, 9 Medium, 13 Low", page)
         # Largest payout (M-08, live on-chain) and the two Highs.
         self.assertIn("3,849.97 USDC", page)
@@ -2851,9 +2908,9 @@ class TestChecker(unittest.TestCase):
         self.assertIn("M-05", page)
         self.assertIn("MISS", page)
         self.assertIn("Flagged or cut", page)
-        # Payout arithmetic: H 157.16 + M 8,485.06 + L 1,269.08.
+        # Payout arithmetic: H 902.94 + M 8,485.06 + L 1,269.08.
         from decimal import Decimal
-        highs = [Decimal("95.74"), Decimal("61.42")]
+        highs = [Decimal("95.74"), Decimal("61.42"), Decimal("745.78")]
         mediums = [Decimal("122.04"), Decimal("122.04"),
                    Decimal("378.89"), Decimal("41.97"),
                    Decimal("505.19"), Decimal("1732.48"),
@@ -2863,7 +2920,7 @@ class TestChecker(unittest.TestCase):
                 Decimal("290.98"), Decimal("290.98"), Decimal("53.03"),
                 Decimal("290.98"), Decimal("130.94")]
         self.assertEqual(sum(highs) + sum(mediums) + sum(lows),
-                         Decimal("9911.30"))
+                         Decimal("10657.08"))
 
 if __name__ == "__main__":
     unittest.main()
