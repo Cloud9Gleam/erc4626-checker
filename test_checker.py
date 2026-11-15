@@ -1429,6 +1429,70 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("TechArticle", checker)
         self.assertIn('<meta property="og:type" content="website">', checker)
 
+    def test_nested_vault_fee_guide_numbers(self):
+        # Nested-vault fee guide (site/nested-vault-fee-model.py):
+        # a vault holding another vault's shares pays a 2%
+        # management fee at both layers. Re-derived here with plain
+        # Fraction arithmetic, independent of the model file. Each
+        # vault 1,000,000 USDC / 1,000,000 shares; the outer vault
+        # holds 1,000,000 inner shares; holder 10,000 outer shares;
+        # fee 2% of supply minted as shares, linear, yield lands
+        # in the inner vault first.
+        def d6(x):
+            n = x * 1_000_000
+            q, r = divmod(n.numerator, n.denominator)
+            if 2 * r >= n.denominator:
+                q += 1
+            return "%d.%06d" % (q // 1_000_000, q % 1_000_000)
+
+        def nested(yield_bps):
+            a_i = Fraction(1_000_000) * (10_000 + yield_bps) / 10_000
+            p_i = a_i / Fraction(1_020_000)
+            a_o = Fraction(1_000_000) * p_i
+            p_o = a_o / Fraction(1_020_000)
+            holder = Fraction(10_000) * a_o / Fraction(1_020_000)
+            return p_i, a_o, p_o, holder, Fraction(20_000) * p_i, \
+                Fraction(20_000) * p_o
+
+        def single(yield_bps):
+            a = Fraction(1_000_000) * (10_000 + yield_bps) / 10_000
+            return Fraction(10_000) * a / Fraction(1_020_000)
+
+        # +10% year: inner price 55/51, outer price 2750/2601.
+        p_i, a_o, p_o, holder, im, om = nested(1000)
+        self.assertEqual((p_i, p_o), (Fraction(55, 51), Fraction(2750, 2601)))
+        self.assertEqual(holder, Fraction(55_000_000, 5202))
+        self.assertEqual(d6(holder), "10572.856594")
+        self.assertEqual(d6(im + om), "42714.340638")
+        self.assertEqual(d6(single(1000)), "10784.313725")
+        self.assertEqual(d6(single(1000) - holder), "211.457132")
+        self.assertEqual(d6(Fraction(11_000) - holder), "427.143406")
+        self.assertEqual(d6(holder - Fraction(10_560)), "12.856594")
+        # Flat year: prices 50/51 and 2500/2601.
+        p_i, a_o, p_o, holder, im, om = nested(0)
+        self.assertEqual((p_i, p_o), (Fraction(50, 51), Fraction(2500, 2601)))
+        self.assertEqual(holder, Fraction(25_000_000, 2601))
+        self.assertEqual(d6(holder), "9611.687812")
+        self.assertEqual(d6(im + om), "38831.218762")
+        self.assertEqual(d6(single(0)), "9803.921569")
+        self.assertEqual(d6(single(0) - holder), "192.233756")
+        self.assertEqual(d6(Fraction(10_000) - holder), "388.312188")
+        self.assertEqual(d6(holder - Fraction(9_600)), "11.687812")
+        # -10% year: prices 15/17 and 250/289.
+        p_i, a_o, p_o, holder, im, om = nested(-1000)
+        self.assertEqual((p_i, p_o), (Fraction(15, 17), Fraction(250, 289)))
+        self.assertEqual(holder, Fraction(2_500_000, 289))
+        self.assertEqual(d6(holder), "8650.519031")
+        self.assertEqual(d6(im + om), "34948.096886")
+        self.assertEqual(d6(single(-1000)), "8823.529412")
+        self.assertEqual(d6(single(-1000) - holder), "173.010381")
+        self.assertEqual(d6(Fraction(9_000) - holder), "349.480969")
+        self.assertEqual(d6(holder - Fraction(8_640)), "10.519031")
+        # Controls: a fee at one layer only == the single vault.
+        self.assertEqual(
+            d6(Fraction(10_000) * Fraction(1_100_000, 1_020_000)),
+            "10784.313725")
+
     def test_audit_payment_block_is_a_container(self):
         # /audit/ is the sales page: the payment facts (price, USDC on
         # Base, address + copy button, email-first instruction) must sit
