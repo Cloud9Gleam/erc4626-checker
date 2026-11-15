@@ -624,6 +624,49 @@ class TestChecker(unittest.TestCase):
         cost_c = 11_000 * USDC - model.holder_claim(H, a1, S0 + fsc)
         self.assertTrue(400 * USDC < cost_a < cost_b + cost_c)
 
+    def test_withdrawal_queue_guide_numbers(self):
+        # Pins /guides/erc4626-withdrawal-queue/ to its model: a queue
+        # answers WHEN you get paid, not how much. FIFO with 300k ahead,
+        # 100k liquid, 50k/day inflow pays 0 now, first dollar day 4,
+        # full day 5; pro-rata pays 14,285.714285 now and the same day 5
+        # in full; zero inflow never clears; a 7-day delay binds at day 7
+        # when liquidity clears day 5 and does not bind when it clears
+        # day 9; a 10% loss while waiting turns 50,000 into 45,000.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "withdrawal-queue-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "withdrawal_queue_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        L = 100_000 * USDC
+        R = 50_000 * USDC
+        I = 50_000 * USDC
+        # No queue: paid now.
+        self.assertEqual(model.fifo(L, 0, R, I), (R, 0, 0))
+        # Deep queue FIFO: 0 now, first day 4, full day 5.
+        self.assertEqual(model.fifo(L, 300_000 * USDC, R, I), (0, 4, 5))
+        # Pro-rata: 14,285.714285 now, remainder 35,714.285715, full day 5.
+        self.assertEqual(model.prorata_immediate(L, 300_000 * USDC, R),
+                         14_285_714_285)
+        self.assertEqual(R - model.prorata_immediate(L, 300_000 * USDC, R),
+                         35_714_285_715)
+        self.assertEqual(model.fifo(L, 300_000 * USDC, R, I)[2], 5)
+        # No inflow: never.
+        self.assertEqual(model.fifo(L, 300_000 * USDC, R, 0),
+                         (0, None, None))
+        # Small queue: paid now.
+        self.assertEqual(model.fifo(L, 20_000 * USDC, R, I), (R, 0, 0))
+        # 7-day delay binds at 7 when liquidity clears day 5, not when
+        # it clears day 9 (500k ahead: first day 8, full day 9).
+        self.assertEqual(model.fifo(L, 500_000 * USDC, R, I), (0, 8, 9))
+        self.assertEqual(max(model.fifo(L, 300_000 * USDC, R, I)[2], 7), 7)
+        self.assertEqual(max(model.fifo(L, 500_000 * USDC, R, I)[2], 7), 9)
+        # Waiting cost: 50,000 shares at 1.00 worth 45,000 at 0.90.
+        self.assertEqual(R * 900_000 // USDC, 45_000 * USDC)
+
     def test_failed_donation_notice_links_slippage_bounds(self):
         # The checker page's failure notice is the funnel entry for a
         # depositor, not just a deployer: when the donation check fails
