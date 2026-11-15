@@ -4361,5 +4361,114 @@ class TestChecker(unittest.TestCase):
         self.assertLessEqual(
             abs(cv.convert_to_assets(100_000 * USDC) - 110_000 * USDC), 2)
 
+    def test_share_transfer_fee_guide_numbers(self):
+        # Pins /guides/erc4626-share-transfer-fee/ to its model: a
+        # vault whose shares take a 1% fee on every transfer. The vault
+        # itself is untouched — totalAssets, totalSupply and the price
+        # are all correct — the loss lives in the share token. Where
+        # the fee goes decides who pays: burned, the price lift refunds
+        # part of it to the holders who stay; to a collector, the full
+        # fee moves from sender to collector. The fee compounds on
+        # every hop, and an integrator that credits the requested
+        # amount books shares it does not hold. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers the guide quotes, on the
+        # checker's own Vault (exact integer arithmetic, OZ virtual
+        # units: assets + 1, supply + 1 at offset 0).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "share-transfer-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "share_transfer_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+
+        # The 1% fee on a 100,000-share transfer is 1,000 shares; the
+        # second hop takes 1% of the 99,000 that arrive, 990 shares.
+        self.assertEqual(model.transfer_fee(100_000 * USDC),
+                         1_000 * USDC)
+        self.assertEqual(model.transfer_fee(99_000 * USDC), 990 * USDC)
+
+        # Case 1: fee shares BURNED — Alice sends 100,000 shares, Bob
+        # receives 99,000. Burning 1,000 shares lifts the price to
+        # 1,000,000/999,000, so Bob redeems 99,099.099099 and Carol's
+        # 900,000 shares are worth 900,900.900900 (+900.900900). All
+        # remaining shares redeem for 999,999.999999 — 0.000001 of
+        # rounding dust stays in the vault. Alice's loss is Carol's
+        # gain plus the dust.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        v.total_supply -= 1_000 * USDC
+        bob = v.convert_to_assets(99_000 * USDC)
+        self.assertEqual(bob, 99_099_099_099)
+        self.assertEqual(bob, 99_000 * USDC * (1_000_000 * USDC + 1)
+                         // (999_000 * USDC + 1))
+        carol = v.convert_to_assets(900_000 * USDC)
+        self.assertEqual(carol, 900_900_900_900)
+        self.assertEqual(carol - 900_000 * USDC, 900_900_900)
+        self.assertEqual(v.convert_to_assets(v.total_supply),
+                         999_999_999_999)
+        self.assertEqual(1_000_000 * USDC - 999_999_999_999, 1)
+        self.assertEqual(100_000 * USDC - bob, 900_900_901)
+
+        # Case 2: fee shares to a COLLECTOR — supply and price never
+        # move. Bob redeems 99,000.000000, the collector's 1,000
+        # shares redeem for 1,000.000000, Carol is untouched.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        self.assertEqual(v.convert_to_assets(99_000 * USDC),
+                         99_000 * USDC)
+        self.assertEqual(v.convert_to_assets(1_000 * USDC),
+                         1_000 * USDC)
+        self.assertEqual(v.convert_to_assets(900_000 * USDC),
+                         900_000 * USDC)
+
+        # Case 3: two hops, burn 1% each — 100,000 -> 99,000 ->
+        # 98,010 shares, 1,990 burned in total (1.99%, not 1%). The
+        # final holder redeems 98,205.428803 and loses 1,794.571197;
+        # Carol's 900,000 are now worth 901,794.571196.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        v.total_supply -= 1_990 * USDC
+        final = v.convert_to_assets(98_010 * USDC)
+        self.assertEqual(final, 98_205_428_803)
+        self.assertEqual(final, 98_010 * USDC * (1_000_000 * USDC + 1)
+                         // (998_010 * USDC + 1))
+        self.assertEqual(100_000 * USDC - final, 1_794_571_197)
+        carol = v.convert_to_assets(900_000 * USDC)
+        self.assertEqual(carol, 901_794_571_196)
+        self.assertEqual(final + carol, 999_999_999_999)
+
+        # Case 4: OTC buy of 100,000 shares for 100,000 USDC — burn
+        # case the buyer redeems 99,099.099099 and loses 900.900901;
+        # collector case redeems 99,000.000000 and loses the full
+        # 1,000. convertToAssets was correct both times.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        v.total_supply -= 1_000 * USDC
+        burn_redeem = v.convert_to_assets(99_000 * USDC)
+        self.assertEqual(burn_redeem, 99_099_099_099)
+        self.assertEqual(100_000 * USDC - burn_redeem, 900_900_901)
+        v2 = ec.Vault(total_assets=1_000_000 * USDC,
+                      total_supply=1_000_000 * USDC, decimals_offset=0)
+        self.assertEqual(v2.convert_to_assets(99_000 * USDC),
+                         99_000 * USDC)
+        self.assertEqual(100_000 * USDC - 99_000 * USDC, 1_000 * USDC)
+
+        # Case 5: integrator over-credit (burn case) — credits
+        # 100,000 shares, receives 99,000. Ledger shortfall 1,000
+        # shares, worth 1,001.001001 USDC at the post-burn price.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        v.total_supply -= 1_000 * USDC
+        shortfall = v.convert_to_assets(1_000 * USDC)
+        self.assertEqual(shortfall, 1_001_001_001)
+        self.assertEqual(shortfall, 1_000 * USDC * (1_000_000 * USDC + 1)
+                         // (999_000 * USDC + 1))
+
 if __name__ == "__main__":
     unittest.main()
