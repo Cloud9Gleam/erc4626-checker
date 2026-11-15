@@ -1161,6 +1161,59 @@ class TestChecker(unittest.TestCase):
         # Control: zero fee pays the full floored gross.
         self.assertEqual(H1 * A // S, 1_000_001_999_997)
 
+    def test_preview_rounding_guide_numbers(self):
+        # Preview-rounding guide (site/preview-rounding-model.py):
+        # preview vs actual rounding mismatch, and a stale quote.
+        # Re-derived here with plain integer arithmetic, independent
+        # of the model file. Vault 1,000,003 / 1,000,000 base units,
+        # price 1.000003.
+        USDC = 1_000_000
+        A, S = 1_000_003 * USDC, 1_000_000 * USDC
+
+        def down(a, b, c):
+            return a * b // c
+
+        def up(a, b, c):
+            return -(-a * b // c)
+
+        # Deposit 3 base assets: exact 2.999991 shares -- preview
+        # (floor) quotes 2, an actual deposit rounding up mints 3.
+        self.assertEqual(Fraction(3) * Fraction(S, A),
+                         Fraction(3_000_000_000_000, 1_000_003_000_000))
+        self.assertEqual((down(3, S, A), up(3, S, A)), (2, 3))
+        # 1,000 dust deposits: preview totals 2,000 base shares,
+        # actual (ceil) totals 3,000 -- 1,000 free base shares.
+        pv_total = ac_total = 0
+        a, s = A, S
+        for _ in range(1000):
+            pv_total += down(3, s, a)
+            ac_total += up(3, s, a)
+            a += 3
+            s += up(3, s, a)
+        self.assertEqual((pv_total, ac_total), (2000, 3000))
+        # Mint 1 base share: exact cost 1.000003 base assets --
+        # previewMint (ceil) quotes 2, an actual mint rounding down
+        # charges 1.
+        self.assertEqual(Fraction(A, S), Fraction(1_000_003, 1_000_000))
+        self.assertEqual((up(1, A, S), down(1, A, S)), (2, 1))
+        # Redeem 3 base shares: exact payout 3.000009 base assets --
+        # previewRedeem (floor) quotes 3, an actual redeem rounding
+        # up pays 4.
+        self.assertEqual(Fraction(3) * Fraction(A, S),
+                         Fraction(3_000_009, 1_000_000))
+        self.assertEqual((down(3, A, S), up(3, A, S)), (3, 4))
+        # Conformant baseline: same rounding both sides, every gap 0.
+        self.assertEqual(down(3, S, A) - down(3, S, A), 0)
+        self.assertEqual(up(1, A, S) - up(1, A, S), 0)
+        self.assertEqual(down(3, A, S) - down(3, A, S), 0)
+        # Stale quote: a 1,000,000 USDC donation moves the price to
+        # 2.000003; 1,000,003 base assets that previewed at 1,000,000
+        # shares execute at 500,000.
+        A1 = A + 1_000_000 * USDC
+        self.assertEqual(Fraction(A1, S), Fraction(2_000_003, 1_000_000))
+        self.assertEqual(down(1_000_003, S, A), 1_000_000)
+        self.assertEqual(down(1_000_003, S, A1), 500_000)
+
     def test_vault_state_seeded_donation(self):
         # A live vault is not a new vault: the checker used to run the
         # donation check only on an empty vault, so every live vault got
