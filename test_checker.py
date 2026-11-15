@@ -1055,6 +1055,61 @@ class TestChecker(unittest.TestCase):
         self.assertAlmostEqual(float((be - 1) * 100), 10.803324099722992,
                                places=6)
 
+    def test_fee_compounding_guide_numbers(self):
+        # Fee-compounding guide (site/fee-compounding-model.py): a 2%/yr
+        # management fee charged on the CURRENT supply, +10%/yr yield,
+        # vault 1,000,000 / 1,000,000, holder 10,000 shares. Re-derived
+        # here with plain Fractions, independent of the model file.
+        A0, S0, H = Fraction(1_000_000), Fraction(1_000_000), Fraction(10_000)
+        FEE, YIELD = Fraction(2, 100), Fraction(1, 10)
+
+        def run(years, fee=FEE, yld=YIELD):
+            A, S = A0, S0
+            for _ in range(years):
+                A *= (1 + yld)
+                S += S * fee
+            return A, S
+
+        # Year 1 = linear: supply 1,020,000, claim 10,784.313725.
+        A1, S1 = run(1)
+        self.assertEqual((A1, S1), (1_100_000, 1_020_000))
+        self.assertAlmostEqual(float(H / S1 * A1), 10784.313725, places=6)
+        self.assertAlmostEqual(float(H / S0 * A1 - H / S1 * A1), 215.686275,
+                               places=6)
+        # Year 5 compounding: supply (51/50)^5, claim 14,586.885265.
+        A5, S5 = run(5)
+        self.assertEqual(A5, 1_610_510)
+        self.assertEqual(S5, Fraction(1_000_000) * Fraction(51, 50) ** 5)
+        self.assertAlmostEqual(float(H / S5 * A5), 14586.885265, places=6)
+        self.assertAlmostEqual(float(H / S0 * A5 - H / S5 * A5), 1518.214735,
+                               places=6)
+        # Linear 5y: supply 1,100,000, claim exactly 14,641, cost 1,464.10.
+        S5_lin = S0 * (1 + FEE * 5)
+        self.assertEqual(H / S5_lin * A5, 14_641)
+        self.assertAlmostEqual(float(H / S5_lin * A5 - H / S5 * A5),
+                               54.114735, places=6)
+        # Manager's 5y claim is 151,821.47 USDC of the 1,610,510 vault.
+        self.assertAlmostEqual(float((S5 - S0) / S5 * A5), 151821.47,
+                               places=2)
+        # Year 5 no yield: claim 9,057.308098, cost 942.691902.
+        A5n, S5n = run(5, yld=Fraction(0))
+        self.assertEqual(A5n, 1_000_000)
+        self.assertAlmostEqual(float(H / S5n * A5n), 9057.308098, places=6)
+        self.assertAlmostEqual(float(H - H / S5n * A5n), 942.691902, places=6)
+        # Linear no-yield 5y: claim 9,090.909091, cost 909.09.
+        self.assertAlmostEqual(float(H / S5_lin * A5n), 9090.909091, places=6)
+        # Year 10: manager owns 17.965170% of the vault, not 16.666667%.
+        A10, S10 = run(10)
+        self.assertAlmostEqual(float(H / S10 * A10), 21277.722175, places=6)
+        self.assertAlmostEqual(float((S10 - S0) / S10 * 100), 17.965170,
+                               places=6)
+        self.assertEqual(Fraction(200_000) / Fraction(1_200_000) * 100,
+                         Fraction(50, 3))
+        # Control: zero fee leaves the full no-fee claim 16,105.10.
+        A5c, S5c = run(5, fee=Fraction(0))
+        self.assertEqual(S5c, S0)
+        self.assertEqual(H / S5c * A5c, Fraction(161051, 10))
+
     def test_vault_state_seeded_donation(self):
         # A live vault is not a new vault: the checker used to run the
         # donation check only on an empty vault, so every live vault got
