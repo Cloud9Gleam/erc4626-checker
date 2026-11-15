@@ -1892,5 +1892,88 @@ class TestChecker(unittest.TestCase):
         self.assertTrue(930 < over < 931)
         self.assertTrue(1018 < over * Fraction(2189, 2000) < 1019)
 
+    def test_leveraged_vault_guide_numbers(self):
+        # Guide #50: leveraged vault -- 100,000 equity / 100,000 shares
+        # at 1.00, borrows 100,000 at 5% a year, gross 200,000, 2x.
+        # Alice holds 10,000 shares. Re-derived here with plain
+        # integer / Fraction arithmetic, independent of the model
+        # file (site/leveraged-vault-model.py).
+        USDC = 1_000_000
+        equity0 = 100_000 * USDC
+        debt = 100_000 * USDC
+        gross0 = 200_000 * USDC
+        supply = 100_000
+        alice = 10_000
+        rate = Fraction(5, 100)
+        # 1: +10% year. Gross 220,000, interest 5,000, equity 115,000,
+        # price 23/20 = 1.15, Alice 11,500; unlevered 11,000.
+        interest = debt * rate
+        self.assertEqual(interest, 5_000 * USDC)
+        equity_up = gross0 * Fraction(11, 10) - debt - interest
+        self.assertEqual(equity_up, 115_000 * USDC)
+        self.assertEqual(Fraction(equity_up, supply), Fraction(23, 20) * USDC)
+        self.assertEqual(alice * Fraction(equity_up, supply), 11_500 * USDC)
+        self.assertEqual(alice * Fraction(equity_up, supply)
+                         - 11_000 * USDC, 500 * USDC)
+        # 2: -10% year. Gross 180,000, equity 75,000, price 3/4 = 0.75,
+        # Alice 7,500; unlevered 9,000, so 1,500 worse.
+        equity_down = gross0 * Fraction(9, 10) - debt - interest
+        self.assertEqual(equity_down, 75_000 * USDC)
+        self.assertEqual(Fraction(equity_down, supply), Fraction(3, 4) * USDC)
+        self.assertEqual(alice * Fraction(equity_down, supply), 7_500 * USDC)
+        self.assertEqual(9_000 * USDC
+                         - alice * Fraction(equity_down, supply),
+                         1_500 * USDC)
+        # 3: flat year. Equity 95,000, price 19/20 = 0.95, Alice 9,500.
+        # Break-even gross yield is 5,000 / 200,000 = 1/40 = 2.5%.
+        equity_flat = gross0 - debt - interest
+        self.assertEqual(equity_flat, 95_000 * USDC)
+        self.assertEqual(Fraction(equity_flat, supply), Fraction(19, 20) * USDC)
+        self.assertEqual(alice * Fraction(equity_flat, supply), 9_500 * USDC)
+        self.assertEqual(interest / gross0, Fraction(1, 40))
+        # 4: liquidation at 80% LTV. Gross 125,000, a -3/8 = -37.5%
+        # fall; equity 25,000, price 1/4, Alice 2,500. At -30% gross
+        # 140,000, LTV 5/7, equity 40,000, price 2/5 = 0.40.
+        liq_gross = debt / Fraction(4, 5)
+        self.assertEqual(liq_gross, 125_000 * USDC)
+        self.assertEqual((gross0 - liq_gross) / gross0, Fraction(3, 8))
+        self.assertEqual(liq_gross - debt, 25_000 * USDC)
+        self.assertEqual(Fraction(liq_gross - debt, supply), Fraction(1, 4) * USDC)
+        self.assertEqual(alice * Fraction(liq_gross - debt, supply),
+                         2_500 * USDC)
+        gross_30 = gross0 * Fraction(7, 10)
+        self.assertEqual(Fraction(debt, gross_30), Fraction(5, 7))
+        self.assertEqual(Fraction(gross_30 - debt, supply), Fraction(2, 5) * USDC)
+        # 5: the accounting bug. Naive price 2.00 vs true 1.00; a
+        # 10,000 deposit mints 5,000 shares worth 5,000, losing 5,000.
+        self.assertEqual(Fraction(gross0, supply), 2 * USDC)
+        self.assertEqual(Fraction(equity0, supply), 1 * USDC)
+        shares_naive = Fraction(10_000 * USDC, 1) / Fraction(gross0, supply)
+        self.assertEqual(shares_naive, 5_000)
+        self.assertEqual(shares_naive * Fraction(equity0, supply),
+                         5_000 * USDC)
+        # 6: year two. After the up year, gross net of interest is
+        # 215,000; +10% -> 236,500, interest 5,000, equity 131,500,
+        # price 263/200 = 1.315, Alice 13,150; unlevered 12,100.
+        gross1_net = gross0 * Fraction(11, 10) - interest
+        self.assertEqual(gross1_net, 215_000 * USDC)
+        equity2 = gross1_net * Fraction(11, 10) - interest - debt
+        self.assertEqual(equity2, 131_500 * USDC)
+        self.assertEqual(Fraction(equity2, supply), Fraction(263, 200) * USDC)
+        self.assertEqual(alice * Fraction(equity2, supply), 13_150 * USDC)
+        self.assertEqual(alice * Fraction(equity2, supply)
+                         - 12_100 * USDC, 1_050 * USDC)
+        # Two -10% years: gross 157,500, equity 52,500, price 21/40
+        # = 0.525, Alice 5,250; unlevered 8,100, gap 2,850.
+        gross_down_net = gross0 * Fraction(9, 10) - interest
+        self.assertEqual(gross_down_net, 175_000 * USDC)
+        equity2_down = gross_down_net * Fraction(9, 10) - interest - debt
+        self.assertEqual(equity2_down, 52_500 * USDC)
+        self.assertEqual(Fraction(equity2_down, supply), Fraction(21, 40) * USDC)
+        self.assertEqual(alice * Fraction(equity2_down, supply), 5_250 * USDC)
+        self.assertEqual(8_100 * USDC
+                         - alice * Fraction(equity2_down, supply),
+                         2_850 * USDC)
+
 if __name__ == "__main__":
     unittest.main()
