@@ -216,10 +216,12 @@ def check_preview_consistency(v: Vault) -> dict:
     out = w.redeem(1_000_000)
     ok = dep == got and mint_assets == paid and red == out
     # dep/got are shares; mint/paid/red/out are base-unit assets. Label
-    # each, or the reader cannot tell which number is which unit.
+    # each, or the reader cannot tell which number is which unit. One
+    # line per operation: a single comma-joined line wraps with the final
+    # "USDC" orphaned alone on its own line at desktop width.
     return {"name": "preview_consistency", "pass": ok,
-            "detail": [f"deposit {_fmt_int(dep)} shares == {_fmt_int(got)} shares, "
-                       f"mint {_fmt_usdc(mint_assets)} USDC == {_fmt_usdc(paid)} USDC, "
+            "detail": [f"deposit {_fmt_int(dep)} shares == {_fmt_int(got)} shares",
+                       f"mint {_fmt_usdc(mint_assets)} USDC == {_fmt_usdc(paid)} USDC",
                        f"redeem {_fmt_usdc(red)} USDC == {_fmt_usdc(out)} USDC"]}
 
 
