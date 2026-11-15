@@ -6328,6 +6328,101 @@ class TestChecker(unittest.TestCase):
         self.assertIn('style="width:80.4%"', build)
         self.assertIn('loss-value">100,000', build)
 
+    def test_referral_fee_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-referral-fee/ to its
+        # model: a 100,000 USDC deposit with a 5% fee, half to the
+        # referrer. In cash the depositor loses exactly 5,000 and the
+        # holders are untouched; paid in shares on top, the price
+        # falls to 440/441, the referrer's 2,500 shares are worth
+        # 2,494.331066, and the existing holders fund 10/11 of the
+        # bonus. Self-referral halves the manager's take.
+        # Importing the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers with Fraction.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "referral-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "referral_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        BASE = 1_000_000 * USDC
+        SUPPLY = 1_000_000 * USDC
+        HOLDER = 10_000 * USDC
+        DEPOSIT = 100_000 * USDC
+
+        def fmt(fr):
+            # Exact 6-decimal USDC, round-half-up.
+            scaled = fr * USDC
+            q, r = divmod(scaled.numerator, scaled.denominator)
+            if 2 * r >= scaled.denominator:
+                q += 1
+            return "%d.%06d" % (q // USDC, q % USDC)
+
+        # (a) Cash split: fee 5,000, referrer 2,500, manager 2,500.
+        fee = DEPOSIT * 5 // 100
+        self.assertEqual(fee, 5_000 * USDC)
+        ref_cash = fee // 2
+        mgr_cash = fee - ref_cash
+        self.assertEqual(ref_cash, 2_500 * USDC)
+        self.assertEqual(mgr_cash, 2_500 * USDC)
+        # Depositor nets 95,000 shares at price 1.00; holder untouched.
+        net = DEPOSIT - fee
+        self.assertEqual(net, 95_000 * USDC)
+        self.assertEqual(Fraction(BASE + net, SUPPLY + net), 1)
+        self.assertEqual(HOLDER, 10_000 * USDC)
+
+        # (b) Bonus on top in shares: price 440/441.
+        price_b = Fraction(BASE + DEPOSIT,
+                           SUPPLY + DEPOSIT + 2_500 * USDC)
+        self.assertEqual(price_b, Fraction(440, 441))
+        ref_worth = 2_500 * USDC * price_b
+        self.assertEqual(fmt(Fraction(ref_worth, USDC)), "2494.331066")
+        dep_loss = DEPOSIT - DEPOSIT * price_b
+        self.assertEqual(fmt(Fraction(dep_loss, USDC)), "226.757370")
+        holder_loss = HOLDER - HOLDER * price_b
+        self.assertEqual(fmt(Fraction(holder_loss, USDC)), "22.675737")
+        existing_loss = SUPPLY - SUPPLY * price_b
+        self.assertEqual(fmt(Fraction(existing_loss, USDC)),
+                         "2267.573696")
+        # Conservation: the two losses fund the referrer exactly.
+        self.assertEqual(dep_loss + existing_loss, ref_worth)
+        self.assertEqual(Fraction(existing_loss, ref_worth),
+                         Fraction(10, 11))
+        self.assertEqual(Fraction(dep_loss, ref_worth), Fraction(1, 11))
+
+        # (c) Self-referral: net loss 2,500, effective fee 2.5%.
+        self.assertEqual(fee - ref_cash, 2_500 * USDC)
+        self.assertEqual(Fraction(fee - ref_cash, DEPOSIT),
+                         Fraction(1, 40))
+        # Manager per 1,000,000 of deposits halves to 25,000.
+        self.assertEqual(1_000_000 * USDC * 5 // 100 // 2,
+                         25_000 * USDC)
+
+        # (d) Shares through a price move: 2,750 at 1.10, 2,250 at 0.90.
+        self.assertEqual(2_500 * USDC * Fraction(11, 10),
+                         2_750 * USDC)
+        self.assertEqual(2_500 * USDC * Fraction(9, 10),
+                         2_250 * USDC)
+
+        # Quoting trap: 5% of the fee is 250, 5% of the deposit 5,000.
+        self.assertEqual(fee * 5 // 100, 250 * USDC)
+        self.assertEqual(DEPOSIT * 5 // 100, 5_000 * USDC)
+        self.assertEqual(DEPOSIT * 5 // 100 - fee * 5 // 100,
+                         4_750 * USDC)
+
+        # Guide markup is present in the built guide source.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('href="/guides/erc4626-referral-fee/"', build)
+        self.assertIn("2,494.331066", build)
+        self.assertIn("440/441", build)
+        self.assertIn("90.909091%", build)
+        self.assertIn("25,000 USDC", build)
+
 
 if __name__ == "__main__":
     unittest.main()
