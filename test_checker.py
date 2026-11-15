@@ -1592,6 +1592,53 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".pay-box code{background:#fff}", build.CSS)
         self.assertIn(".chip{display:inline-block", build.CSS)
 
+    def test_reward_token_guide_numbers(self):
+        # Reward-token guide (site/reward-token-model.py): yield paid
+        # out as a separate token never touches the share price.
+        # Re-derived here with plain integer / Fraction arithmetic,
+        # independent of the model file. Vault 100,000 USDC / 100,000
+        # shares, price 1.00; Alice 50,000 shares, others 50,000.
+        USDC = 1_000_000
+        A0, S0 = 100_000 * USDC, 100_000 * USDC
+        ALICE, OTHERS = 50_000 * USDC, 50_000 * USDC
+        YIELD = 10_000 * USDC
+        # 1: price stays exactly 1.00 through the distribution.
+        self.assertEqual(Fraction(A0, S0), 1)
+        # 2: Bob deposits 100,000 after the yield accrued, before
+        # distribution. No checkpoint: reward/share 0.05, Alice 2,500,
+        # others 2,500, Bob 5,000. With checkpoint: Alice 5,000,
+        # others 5,000, Bob 0. Late entry costs Alice 2,500.
+        S1 = S0 + 100_000 * USDC
+        rps = Fraction(YIELD, S1)
+        self.assertEqual(rps, Fraction(1, 20))
+        self.assertEqual((ALICE * rps, OTHERS * rps, 100_000 * USDC * rps),
+                         (2_500 * USDC, 2_500 * USDC, 5_000 * USDC))
+        self.assertEqual((YIELD * ALICE // S0, YIELD * OTHERS // S0),
+                         (5_000 * USDC, 5_000 * USDC))
+        self.assertEqual(5_000 * USDC - 2_500 * USDC, 2_500 * USDC)
+        # 3: second 10,000 distribution after Bob joined: Alice 2,500,
+        # others 2,500, Bob 5,000 under both policies. Totals:
+        # checkpoint Alice 7,500 / Bob 5,000; no checkpoint Alice
+        # 5,000 / Bob 10,000.
+        rps2 = Fraction(YIELD, S1)
+        self.assertEqual((ALICE * rps2, OTHERS * rps2,
+                          100_000 * USDC * rps2),
+                         (2_500 * USDC, 2_500 * USDC, 5_000 * USDC))
+        self.assertEqual((5_000 * USDC + 2_500 * USDC, 5_000 * USDC),
+                         (7_500 * USDC, 5_000 * USDC))
+        self.assertEqual((2_500 * USDC + 2_500 * USDC,
+                          5_000 * USDC + 5_000 * USDC),
+                         (5_000 * USDC, 10_000 * USDC))
+        # 4: Alice redeems 50,000 shares for 50,000 USDC; her 5,000
+        # REWARD claim is separate -- 10% of the position, walked
+        # away from if never claimed.
+        self.assertEqual(ALICE * Fraction(A0, S0), 50_000 * USDC)
+        self.assertEqual(Fraction(5_000 * USDC, 50_000 * USDC),
+                         Fraction(1, 10))
+        # 5: reward-token price risk: 5,000 REWARD at 0.50 USDC is
+        # worth 2,500 USDC.
+        self.assertEqual(5_000 * USDC * Fraction(1, 2), 2_500 * USDC)
+
 
 if __name__ == "__main__":
     unittest.main()
