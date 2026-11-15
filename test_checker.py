@@ -5187,5 +5187,121 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(Fraction(landed + 90_000 * USDC,
                                   S0 + dave_shares_6), Fraction(9, 10))
 
+    def test_fot_donation_attack_guide_numbers(self):
+        # Pins /guides/erc4626-fot-donation-attack/ to its model: a
+        # 10% transfer tax on a donation attack — four combinations
+        # (offset 0/6 x naive/balance-delta), the 190,000 clean
+        # round-trip floor, and the honest no-tax baselines (same
+        # 10-base-unit seed: 47,619.047614 at offset 0, 0.045450 at
+        # offset 6 — NOT the 333,333.333333 of a 1-base-unit seed).
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fot-donation-attack-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fot_donation_attack_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+        FLOOR = 190_000 * USDC
+
+        def taxed(n):
+            return n * 9 // 10
+
+        def to_shares(assets, s, a, offset):
+            return assets * (s + 10 ** offset) // (a + 1)
+
+        def to_assets(shares, s, a, offset):
+            return shares * (a + 1) // (s + 10 ** offset)
+
+        def attack(offset, naive):
+            a, s = 0, 0
+            recv = taxed(10)
+            atk = to_shares(10 if naive else recv, s, a, offset)
+            a += recv
+            s += atk
+            a += taxed(1_000_000 * USDC)
+            vrecv = taxed(1_000_000 * USDC)
+            vic = to_shares(1_000_000 * USDC if naive else vrecv,
+                            s, a, offset)
+            a += vrecv
+            s += vic
+            sent_v = to_assets(vic, s, a, offset)
+            a -= sent_v
+            s -= vic
+            got_v = taxed(sent_v)
+            sent_a = to_assets(atk, s, a, offset)
+            a -= sent_a
+            s -= atk
+            got_a = taxed(sent_a)
+            return dict(atk=atk, vic=vic, got_v=got_v, got_a=got_a,
+                        dust=a)
+
+        # Four combinations: (offset, naive) -> shares, victim/attacker
+        # redemption, dust. Attacker always loses more than the victim.
+        cases = [
+            (0, True, 10, 12, 845_217_391_308, 704_347_826_091,
+             78_260_869_565),
+            (0, False, 9, 9, 767_368_421_056, 767_368_421_056,
+             94_736_842_105),
+            (6, True, 10_000_000, 12_222_222, 852_631_571_608,
+             697_607_662_182, 77_511_962_464),
+            (6, False, 9_000_000, 9_999_999, 809_999_959_503,
+             729_000_036_454, 90_000_004_500),
+        ]
+        for offset, naive, atk_sh, vic_sh, got_v, got_a, dust in cases:
+            r = attack(offset, naive)
+            self.assertEqual(
+                (r["atk"], r["vic"], r["got_v"], r["got_a"], r["dust"]),
+                (atk_sh, vic_sh, got_v, got_a, dust))
+            vic_loss = 1_000_000 * USDC - got_v
+            atk_loss = 1_000_000 * USDC + 10 - got_a
+            self.assertGreater(atk_loss, vic_loss)
+
+        # Floor deltas: naive vaults leave the victim BETTER than a
+        # clean round trip; fixed vaults worse (+42,631.578944 at
+        # offset 0, +0.040497 at offset 6).
+        self.assertEqual((1_000_000 * USDC - 845_217_391_308) - FLOOR,
+                         -35_217_391_308)
+        self.assertEqual((1_000_000 * USDC - 767_368_421_056) - FLOOR,
+                         42_631_578_944)
+        self.assertEqual((1_000_000 * USDC - 852_631_571_608) - FLOOR,
+                         -42_631_571_608)
+        self.assertEqual((1_000_000 * USDC - 809_999_959_503) - FLOOR,
+                         40_497)
+
+        # The fix makes the victim worse, both offsets.
+        self.assertEqual(232_631_578_944 - 154_782_608_692,
+                         77_848_970_252)
+        self.assertEqual(190_000_040_497 - 147_368_428_392,
+                         42_631_612_105)
+
+        # Gross-up: landing a full 1,000,000 donation costs
+        # 1,111,111.111112 sent, 111,111.111112 burned as tax.
+        send = -(-(1_000_000 * USDC) * 10 // 9)
+        self.assertEqual(send, 1_111_111_111_112)
+        self.assertEqual(taxed(send), 1_000_000 * USDC)
+
+        # Honest no-tax baselines, same 10-base-unit seed, on the
+        # checker's own Vault (not the 333,333.333333 of a
+        # 1-base-unit seed).
+        for offset, vic_loss in ((0, 47_619_047_614), (6, 45_450)):
+            v = ec.Vault(total_assets=0, total_supply=0,
+                         decimals_offset=offset)
+            atk_sh = v.deposit(10)
+            v.donate(1_000_000 * USDC)
+            vic_sh = v.deposit(1_000_000 * USDC)
+            vic_out = v.redeem(vic_sh)
+            self.assertEqual(1_000_000 * USDC - vic_out, vic_loss)
+        v = ec.Vault(total_assets=0, total_supply=0, decimals_offset=0)
+        v.deposit(10)
+        v.donate(1_000_000 * USDC)
+        self.assertEqual(v.deposit(1_000_000 * USDC), 10)
+        self.assertEqual(v.redeem(10), 952_380_952_386)
+
 if __name__ == "__main__":
     unittest.main()
