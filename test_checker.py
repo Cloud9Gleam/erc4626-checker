@@ -5098,5 +5098,94 @@ class TestChecker(unittest.TestCase):
         self.assertAlmostEqual((burned - quote) * 2, shares_for_5000,
                                delta=2)
 
+    def test_strategy_fot_guide_numbers(self):
+        # Pins /guides/erc4626-strategy-fot/ to its model: a 10%
+        # transfer tax on the vault -> strategy leg. The vault sends
+        # 1,000,000 USDC to the strategy, only 900,000 arrives, and
+        # the vault books the position at the amount SENT — so the
+        # price still reads $1.00 while the true price is $0.90, and
+        # the tax is socialised over every holder. Re-derived here
+        # with plain integer / Fraction arithmetic, independent of
+        # the model file (importing it re-runs its assertions).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "strategy-fot-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "strategy_fot_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        A0 = S0 = 1_000_000 * USDC
+        ALICE, CAROL = 100_000 * USDC, 900_000 * USDC
+        TAX = Fraction(1, 10)
+        NET = 1 - TAX
+
+        # 1. Deploy all, naive booking: 900,000 lands, booked $1.00,
+        # true $0.90; Alice true 90,000 (-10,000), Carol 810,000.
+        landed = 1_000_000 * USDC * NET
+        self.assertEqual(landed, 900_000 * USDC)
+        self.assertEqual(Fraction(landed, S0), Fraction(9, 10))
+        self.assertEqual(ALICE * Fraction(landed, S0), 90_000 * USDC)
+        self.assertEqual(CAROL * Fraction(landed, S0), 810_000 * USDC)
+
+        # 2. Round trip: pull 900,000 back, 810,000 arrives; price
+        # $0.81; 190,000 destroyed = 19% = 1 - 0.9^2.
+        back = landed * NET
+        self.assertEqual(back, 810_000 * USDC)
+        self.assertEqual(Fraction(back, S0), Fraction(81, 100))
+        self.assertEqual(A0 - back, 190_000 * USDC)
+
+        # 3. Partial deploy (10% cash buffer): deploy 900,000, land
+        # 810,000, keep 100,000 cash; true assets 910,000, $0.91.
+        landed_3 = 900_000 * USDC * NET
+        true_3 = 100_000 * USDC + landed_3
+        self.assertEqual((landed_3, true_3), (810_000 * USDC,
+                                              910_000 * USDC))
+        self.assertEqual(Fraction(true_3, S0), Fraction(91, 100))
+
+        # 4. Late depositor at the booked $1.00: Dave pays 100,000
+        # for shares truly worth 90,909.090909; subsidy 9,090.909091
+        # (Alice +909.090909, Carol +8,181.818182); true price 10/11.
+        supply_4 = S0 + 100_000 * USDC
+        true_4 = landed + 100_000 * USDC
+        price_4 = Fraction(true_4, supply_4)
+        self.assertEqual(price_4, Fraction(10, 11))
+        dave_true = Fraction(100_000 * USDC) * price_4
+        self.assertEqual(dave_true, Fraction(1_000_000_000_000, 11))
+        self.assertEqual(100_000 * USDC - dave_true,
+                         Fraction(100_000_000_000, 11))
+        self.assertEqual(Fraction(ALICE) * price_4,
+                         Fraction(1_000_000_000_000, 11))
+        self.assertEqual(Fraction(CAROL) * price_4,
+                         Fraction(9_000_000_000_000, 11))
+
+        # 5. Alice redeems 100,000 shares at the booked $1.00 out
+        # of the strategy: the strategy must send 100,000/0.9 =
+        # 1,000,000/9, keeps 7,100,000/9; remaining 900,000 shares
+        # at 71/81 = $0.876543; Carol loses 21,111.111111 = 10,000
+        # Alice extracted above her true claim + 11,111.111111 tax.
+        pull = Fraction(100_000 * USDC) / NET
+        self.assertEqual(pull, Fraction(1_000_000_000_000, 9))
+        strategy_left = Fraction(landed) - pull
+        self.assertEqual(strategy_left, Fraction(7_100_000 * USDC, 9))
+        price_5 = strategy_left / (S0 - ALICE)
+        self.assertEqual(price_5, Fraction(71, 81))
+        pull_tax = pull - 100_000 * USDC
+        self.assertEqual(pull_tax, Fraction(100_000_000_000, 9))
+        carol_loss = (Fraction(CAROL) * Fraction(landed, S0)
+                      - Fraction(CAROL) * price_5)
+        self.assertEqual(carol_loss, 10_000 * USDC + pull_tax)
+
+        # 6. The fix (book at received): price $0.90 at deploy;
+        # Dave deposits 90,000 for 100,000 shares; 990,000 /
+        # 1,100,000 = $0.90, no subsidy.
+        self.assertEqual(Fraction(landed, S0), Fraction(9, 10))
+        dave_shares_6 = Fraction(90_000 * USDC) / Fraction(9, 10)
+        self.assertEqual(dave_shares_6, 100_000 * USDC)
+        self.assertEqual(Fraction(landed + 90_000 * USDC,
+                                  S0 + dave_shares_6), Fraction(9, 10))
+
 if __name__ == "__main__":
     unittest.main()
