@@ -1401,6 +1401,71 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(dep - back, 2_090 * USDC)
         self.assertEqual((dep - back) * 100 // dep, 19)
 
+    def test_async_vault_guide_numbers(self):
+        # Async-vault guide (site/async-vault-model.py): an ERC-7540
+        # style vault prices deposits and redemptions at fulfilment
+        # time, not request time. Re-derived here with plain integer
+        # / Fraction arithmetic, independent of the model file. Vault
+        # 100,000 USDC / 100,000 shares, price 1.00; holder 50,000
+        # shares; pending assets sit in escrow, outside totalAssets.
+        USDC = 1_000_000
+        A0, S0 = 100_000 * USDC, 100_000 * USDC
+        HOLDER = 50_000 * USDC
+
+        def down(a, b, c):
+            return a * b // c
+
+        dep = 11_000 * USDC
+        red = 10_000 * USDC
+        # 1: deposit after +10% yield -- preview 11,000 shares,
+        # fulfil 10,000 (1,000 short, 9.0909%); value unchanged at
+        # 11,000 USDC; vault 121,000 / 110,000, price 1.10.
+        A_up = 110_000 * USDC
+        preview = down(dep, S0, A0)
+        sh_up = down(dep, S0, A_up)
+        self.assertEqual((preview, sh_up),
+                         (11_000 * USDC, 10_000 * USDC))
+        self.assertEqual(preview - sh_up, 1_000 * USDC)
+        self.assertEqual(sh_up * Fraction(A_up, S0), dep)
+        self.assertEqual((A_up + dep, S0 + sh_up),
+                         (121_000 * USDC, 110_000 * USDC))
+        self.assertEqual(Fraction(A_up + dep, S0 + sh_up),
+                         Fraction(11, 10))
+        # 2: deposit after -10% loss -- fulfil 12,222.222222 shares
+        # (1,222.222222 extra); worth 10,999.9999998 USDC, leaving
+        # 0.2 base units of rounding dust; price 0.9000000000018.
+        A_dn = 90_000 * USDC
+        sh_dn = down(dep, S0, A_dn)
+        self.assertEqual(sh_dn, 12_222_222_222)
+        self.assertEqual(sh_dn - preview, 1_222_222_222)
+        value_dn = sh_dn * Fraction(A_dn, S0)
+        self.assertEqual(value_dn, Fraction(10_999_999_999_8, 10))
+        self.assertEqual(dep - value_dn, Fraction(1, 5))
+        self.assertEqual((A_dn + dep, S0 + sh_dn),
+                         (101_000 * USDC, 112_222_222_222))
+        self.assertEqual(Fraction(A_dn + dep, S0 + sh_dn),
+                         Fraction(101_000_000_000, 112_222_222_222))
+        # 3: redemption -- quote 10,000 USDC; +10% pays 11,000
+        # (+1,000), -10% pays 9,000 (-1,000); vault 99,000 / 90,000
+        # and 81,000 / 90,000 respectively, prices 1.10 and 0.90.
+        quote = down(red, A0, S0)
+        pay_up = down(red, A_up, S0)
+        pay_dn = down(red, A_dn, S0)
+        self.assertEqual((quote, pay_up, pay_dn),
+                         (10_000 * USDC, 11_000 * USDC, 9_000 * USDC))
+        self.assertEqual(pay_up - quote, 1_000 * USDC)
+        self.assertEqual(quote - pay_dn, 1_000 * USDC)
+        self.assertEqual((A_up - pay_up, S0 - red),
+                         (99_000 * USDC, 90_000 * USDC))
+        self.assertEqual((A_dn - pay_dn, S0 - red),
+                         (81_000 * USDC, 90_000 * USDC))
+        # 4: pending money earns nothing -- synchronous deposit
+        # before the +10% yield would be worth 12,100 USDC; async
+        # fulfilment is worth 11,000; the wait costs 1,100 USDC.
+        sync_value = dep * Fraction(A_up, S0)
+        self.assertEqual(sync_value, 12_100 * USDC)
+        self.assertEqual(sync_value - dep, 1_100 * USDC)
+
     def test_guide_pages_emit_tech_article_json_ld(self):
         # Guides and research writeups are the site's article content:
         # they must carry TechArticle JSON-LD + og:type article so search
@@ -1517,9 +1582,15 @@ class TestChecker(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertIn(build.PAY_ADDR, m.group(0))
         self.assertIn("Copy payment address", m.group(0))
-        self.assertIn("About 50 USDC, prepaid.", m.group(0))
+        # Firm price: the title already says 50 USDC, so the box must not
+        # hedge with "About". Token/network are labelled chips, not prose.
+        self.assertIn("Price: 50 USDC, prepaid.", m.group(0))
+        self.assertNotIn("About 50 USDC", m.group(0))
+        self.assertIn('<span class="chip">USDC</span>', m.group(0))
+        self.assertIn('<span class="chip">Base</span>', m.group(0))
         self.assertIn(".pay-box{background:#f0fdf4", build.CSS)
         self.assertIn(".pay-box code{background:#fff}", build.CSS)
+        self.assertIn(".chip{display:inline-block", build.CSS)
 
 
 if __name__ == "__main__":
