@@ -1620,6 +1620,46 @@ class TestChecker(unittest.TestCase):
         self.assertIn("box-shadow:0 0 0 3px rgba(10,125,44,.15)", build.CSS)
         self.assertIn("label{display:block;margin:.7em 0;color:#111827}", build.CSS)
 
+    def test_hero_has_attack_flow_diagram(self):
+        # The homepage hero was the site's first visual element of any
+        # kind: before this change it was text only (tenth visual verdict,
+        # 15:39 CST — 0 <img> / 0 <svg> on all four pages, verified
+        # against the live HTML the same run). The diagram must show the
+        # mechanism in three steps, and every number in it must be the
+        # model's own number, not a copy of the paragraph above it.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        # The flow diagram is the hero's only diagram: it must sit
+        # between the hero opening and its CTA link.
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index('Run the free ERC-4626 checker')
+        hero = home[hero_start:hero_end]
+        self.assertIn('<div class="flow"', hero)
+        self.assertEqual(hero.count('<div class="flow-step">'), 3)
+        self.assertEqual(hero.count('class="flow-arrow"'), 2)
+        self.assertIn("Attacker donates", hero)
+        self.assertIn("Share price inflates", hero)
+        self.assertIn("Victim loses", hero)
+        self.assertIn("1,000,000 USDC", hero)
+        self.assertIn("0.909091 USDC", hero)
+        self.assertIn("100,000 USDC", hero)
+        # The loss figure is the model's own worst case, re-derived
+        # here: unprotected vault, 100,000 USDC victim deposit, worst
+        # row over the donation ladder is 909091 base units.
+        noprot = Vault(decimals_offset=0, min_deposit=0)
+        rows = {r["name"]: r for r in run_all(noprot)}["donation_inflation"]["detail"]
+        self.assertEqual(max(r["victim_loss"] for r in rows), 909091)
+        # Layout: horizontal flow on desktop, stacked with down arrows
+        # on a phone viewport.
+        self.assertIn(".flow{display:flex;align-items:stretch", build.CSS)
+        self.assertIn(".flow-step{flex:1;background:#fff", build.CSS)
+        self.assertIn(".flow-arrow{align-self:center", build.CSS)
+        self.assertIn("@media (max-width:640px){.flow{flex-direction:column}"
+                      ".flow-arrow{transform:rotate(90deg)}}", build.CSS)
+
     def test_reward_token_guide_numbers(self):
         # Reward-token guide (site/reward-token-model.py): yield paid
         # out as a separate token never touches the share price.
