@@ -3239,22 +3239,103 @@ class TestChecker(unittest.TestCase):
                            // (900_000 * USDC)), 111_111_111_112)
         self.assertGreater(111_111_111_112, 100_000 * USDC)
 
+    def test_zap_deposit_guide_numbers(self):
+        # Pins /guides/erc4626-zap-deposit/ to its model: a 1,000,000
+        # USDC / 1,000,000 share vault, price $1.00, Alice 100,000
+        # shares, Carol 900,000, Bob zaps 100,000 USDC of token B.
+        # Importing the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers the guide quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "zap-deposit-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "zap_deposit_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Case 1: gross mint, 2% slippage — 98,000 arrives, Bob gets
+        # 100,000 shares; price 549/550 = 0.998182; Bob and Alice each
+        # lose 181.818182, Carol loses 1,636.363637; existing holders
+        # pay 1,818.181819 of the 2,000 slippage.
+        self.assertEqual((100_000 * USDC * 1_000_000)
+                         // (1_000_000 * USDC), 100_000)
+        self.assertEqual(Fraction(1_098_000, 1_100_000),
+                         Fraction(549, 550))
+        self.assertEqual((100_000 * 1_098_000 * USDC) // 1_100_000,
+                         99_818_181_818)
+        self.assertEqual((900_000 * 1_098_000 * USDC) // 1_100_000,
+                         898_363_636_363)
+        self.assertEqual(100_000 * USDC - 99_818_181_818,
+                         181_818_182)
+        self.assertEqual(900_000 * USDC - 898_363_636_363,
+                         1_636_363_637)
+        self.assertEqual(181_818_182 + 181_818_182 + 1_636_363_637,
+                         2_000_000_001)
+        # Case 2: net mint — Bob gets 98,000 shares, price stays $1.00,
+        # Alice and Carol untouched, Bob bears the full 2,000.
+        self.assertEqual((98_000 * USDC * 1_000_000)
+                         // (1_000_000 * USDC), 98_000)
+        self.assertEqual(Fraction(1_098_000, 1_098_000), 1)
+        self.assertEqual((100_000 * 1_098_000 * USDC) // 1_098_000,
+                         100_000 * USDC)
+        # Case 3: big zap, 500,000 at 10% — price 29/30 = 0.966667;
+        # Bob loses 16,666.666667, Alice 3,333.333334, Carol
+        # 30,000.000000; existing holders pay 33,333.333334.
+        self.assertEqual(Fraction(1_450_000, 1_500_000),
+                         Fraction(29, 30))
+        self.assertEqual((500_000 * 1_450_000 * USDC) // 1_500_000,
+                         483_333_333_333)
+        self.assertEqual(500_000 * USDC - 483_333_333_333,
+                         16_666_666_667)
+        self.assertEqual((900_000 * 1_450_000 * USDC) // 1_500_000,
+                         870_000_000_000)
+        # Case 4: minSharesOut 99,000 (1% bound) and 99,500 (0.5%)
+        # both pass a gross mint of 100,000 shares.
+        self.assertGreaterEqual(100_000, 99_000)
+        self.assertGreaterEqual(100_000, 99_500)
+        # Case 5: favourable 2% — price 551/550 = 1.001818; Bob and
+        # Alice each gain 181.818181, Carol gains 1,636.363636.
+        self.assertEqual(Fraction(1_102_000, 1_100_000),
+                         Fraction(551, 550))
+        self.assertEqual((900_000 * 1_102_000 * USDC) // 1_100_000,
+                         901_636_363_636)
+        # Case 6: ten zaps — price $0.99; Alice $99,000, Carol
+        # $891,000, each zapper $99,000.
+        self.assertEqual(Fraction(1_980_000, 2_000_000),
+                         Fraction(99, 100))
+        self.assertEqual((100_000 * 1_980_000 * USDC) // 2_000_000,
+                         99_000 * USDC)
+        self.assertEqual((900_000 * 1_980_000 * USDC) // 2_000_000,
+                         891_000 * USDC)
+        # Case 8: zap out, swap first — price 450/451 = 0.997783;
+        # Alice keeps 2,000 shares worth 1,995.565410 and loses only
+        # 4.434590, while Carol loses 1,995.565411.
+        self.assertEqual(Fraction(900_000, 902_000),
+                         Fraction(450, 451))
+        self.assertEqual((2_000 * 900_000 * USDC) // 902_000,
+                         1_995_565_410)
+        self.assertEqual((900_000 * 900_000 * USDC) // 902_000,
+                         898_004_434_589)
+        self.assertEqual(900_000 * USDC - 898_004_434_589,
+                         1_995_565_411)
+
     def test_gamma_research_page_numbers(self):
         # Pins /research/gamma/ to the study: 27 validated findings
-        # (5H + 9M + 13L), 24 published as verified, payouts summing
-        # to 29,968.33 USDC. The 24 are H-01–H-05 (5),
-        # M-01–M-04 + M-06–M-09 (8) and L-01–L-11 (11); M-05 is a
-        # MISS and H-05 was cut/flagged until this round: it is now
-        # verified (sole submission, 19,249.83 USDC), while L-12/L-13
-        # and M-1(#829) remain cut or flagged.
+        # (5H + 9M + 13L), 25 published as verified, payouts summing
+        # to 30,259.31 USDC. The 25 are H-01–H-05 (5),
+        # M-01–M-04 + M-06–M-09 (8) and L-01–L-11 + L-13 (12); M-05
+        # and L-12 are MISSes.
         from pathlib import Path
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
         start = build.index('add("/research/gamma/"')
         end = build.index('add("/research/domain-hijack/"', start)
         page = build[start:end]
-        self.assertEqual(page.count("<tr><td>"), 24)
-        self.assertIn("29,968.33 USDC", page)
+        self.assertEqual(page.count("<tr><td>"), 25)
+        self.assertIn("30,259.31 USDC", page)
         self.assertIn("27 findings: 5 High, 9 Medium, 13 Low", page)
         # Largest payout (M-08, live on-chain) and the two Highs.
         self.assertIn("3,849.97 USDC", page)
@@ -3264,7 +3345,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("M-05", page)
         self.assertIn("MISS", page)
         self.assertIn("Flagged or cut", page)
-        # Payout arithmetic: H 20,214.19 + M 8,485.06 + L 1,269.08.
+        # Payout arithmetic: H 20,214.19 + M 8,485.06 + L 1,560.06.
         from decimal import Decimal
         highs = [Decimal("95.74"), Decimal("61.42"), Decimal("61.42"),
                  Decimal("745.78"), Decimal("19249.83")]
@@ -3275,9 +3356,9 @@ class TestChecker(unittest.TestCase):
         lows = [Decimal("9.22"), Decimal("78.56"), Decimal("0.93"),
                 Decimal("17.40"), Decimal("53.03"), Decimal("53.03"),
                 Decimal("290.98"), Decimal("290.98"), Decimal("53.03"),
-                Decimal("290.98"), Decimal("130.94")]
+                Decimal("290.98"), Decimal("130.94"), Decimal("290.98")]
         self.assertEqual(sum(highs) + sum(mediums) + sum(lows),
-                         Decimal("29968.33"))
+                         Decimal("30259.31"))
 
 if __name__ == "__main__":
     unittest.main()
