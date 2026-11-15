@@ -1582,15 +1582,26 @@ class TestChecker(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertIn(build.PAY_ADDR, m.group(0))
         self.assertIn("Copy payment address", m.group(0))
-        # Firm price: the title already says 50 USDC, so the box must not
-        # hedge with "About". Token/network are labelled chips, not prose.
-        self.assertIn("Price: 50 USDC, prepaid.", m.group(0))
+        # Firm price as a figure, not a hedged sentence: the title already
+        # says 50 USDC, so the box must not hedge with "About".
+        # Token/network are labelled chips, not prose.
+        self.assertIn('<p class="price-big">50 USDC</p>', m.group(0))
+        self.assertIn("Prepaid", m.group(0))
         self.assertNotIn("About 50 USDC", m.group(0))
         self.assertIn('<span class="chip">USDC</span>', m.group(0))
         self.assertIn('<span class="chip">Base</span>', m.group(0))
         self.assertIn(".pay-box{background:#f0fdf4", build.CSS)
         self.assertIn(".pay-box code{background:#fff}", build.CSS)
         self.assertIn(".chip{display:inline-block", build.CSS)
+        self.assertIn(".price-big{font-size:2.4em", build.CSS)
+        self.assertIn(".price-sub{font-size:.95em", build.CSS)
+        # The order form sits at the bottom of a long page, so a top CTA
+        # must jump straight to it — before the first section heading.
+        self.assertIn('<a class="cta" href="#audit-order">Start an audit',
+                      audit)
+        self.assertLess(audit.index('href="#audit-order"'),
+                        audit.index('<h2>Scope</h2>'))
+        self.assertIn("a.cta{display:inline-block", build.CSS)
 
     def test_reward_token_guide_numbers(self):
         # Reward-token guide (site/reward-token-model.py): yield paid
