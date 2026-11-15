@@ -4581,5 +4581,69 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(1_000_000 * USDC - vic_out, 500_000)
         self.assertEqual(v.total_assets, 1_000_000_500_000)
 
+    def test_hurdle_rate_fee_guide_numbers(self):
+        # /guides/erc4626-hurdle-rate-fee/: 20% performance fee on yield
+        # above a 5% hurdle, minted as shares at the current price.
+        # Vault 1,000,000 USDC / 1,000,000 shares; holder 10,000 = 1%.
+        # Independent Fraction recomputation of hurdle-rate-fee-model.py.
+        from fractions import Fraction
+        USDC = 1_000_000
+
+        def harvest(assets, base, supply):
+            hurdle = base * 500 // 10_000
+            excess = max(0, (assets - base) - hurdle)
+            fee_assets = excess * 2_000 // 10_000
+            fee_shares = fee_assets * supply // assets if assets else 0
+            return fee_assets, fee_shares
+
+        # A: +10% — hurdle 50,000, excess 50,000, fee 10,000 (half the
+        # plain 20,000 no-hurdle fee). Fee shares 9,090.909090, floored.
+        fa, fs = harvest(1_100_000 * USDC, 1_000_000 * USDC, 1_000_000 * USDC)
+        self.assertEqual(fa, 10_000 * USDC)
+        self.assertEqual((1_100_000 - 1_000_000) * USDC * 2_000 // 10_000,
+                         20_000 * USDC)
+        self.assertEqual(fs, 9_090_909_090)
+        # Holder claim after mint: 10,900.900900 USDC, floored.
+        self.assertEqual(10_000 * USDC * 1_100_000 * USDC
+                         // (1_000_000 * USDC + fs), 10_900_900_900)
+        # B: +4% — below the hurdle, fee 0; plain fee would be 8,000.
+        fa, fs = harvest(1_040_000 * USDC, 1_000_000 * USDC, 1_000_000 * USDC)
+        self.assertEqual((fa, fs), (0, 0))
+        self.assertEqual((1_040_000 - 1_000_000) * USDC * 2_000 // 10_000,
+                         8_000 * USDC)
+        # C: +5% exactly — at the hurdle, fee 0.
+        fa, fs = harvest(1_050_000 * USDC, 1_000_000 * USDC, 1_000_000 * USDC)
+        self.assertEqual((fa, fs), (0, 0))
+        # D: +6% — excess 10,000, fee 2,000; holder keeps 10,580.037664.
+        fa, fs = harvest(1_060_000 * USDC, 1_000_000 * USDC, 1_000_000 * USDC)
+        self.assertEqual(fa, 2_000 * USDC)
+        self.assertEqual(fs, 1_886_792_452)
+        self.assertEqual(10_000 * USDC * 1_060_000 * USDC
+                         // (1_000_000 * USDC + fs), 10_580_037_664)
+        # E: two +10% years — annual reset 11,000 vs cumulative 11,500.
+        s1 = 1_000_000 * USDC + 9_090_909_090
+        fa_r, fs_r = harvest(1_210_000 * USDC, 1_100_000 * USDC, s1)
+        self.assertEqual(fa_r, 11_000 * USDC)
+        self.assertEqual(fs_r, 9_173_553_719)
+        total_hurdle = 1_000_000 * USDC * (105 ** 2 - 100 ** 2) // 100 ** 2
+        self.assertEqual(total_hurdle, 102_500 * USDC)
+        total_fee = (max(0, (1_210_000 - 1_000_000) * USDC - total_hurdle)
+                     * 2_000 // 10_000)
+        self.assertEqual(total_fee, 21_500 * USDC)
+        self.assertEqual(total_fee - 10_000 * USDC, 11_500 * USDC)
+        self.assertEqual(11_500 * USDC - fa_r, 500 * USDC)
+        # F: fall then recovery — hurdle-only year-3 fee 9,900; HWM fee 0.
+        fa3, fs3 = harvest(1_089_000 * USDC, 990_000 * USDC, s1)
+        self.assertEqual(fa3, 9_900 * USDC)
+        self.assertEqual(fs3, 9_173_553_719)
+        self.assertEqual(10_000 * USDC * 1_089_000 * USDC // (s1 + fs3),
+                         10_694_667_640)
+        hwm = 1_100_000 * USDC
+        self.assertEqual(max(0, (1_089_000 * USDC - hwm)
+                             - hwm * 500 // 10_000), 0)
+        # Three-year totals: 19,900 in fees on an 89,000 net gain.
+        self.assertEqual(10_000 * USDC + fa3, 19_900 * USDC)
+        self.assertEqual(1_089_000 * USDC - 1_000_000 * USDC, 89_000 * USDC)
+
 if __name__ == "__main__":
     unittest.main()
