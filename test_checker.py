@@ -25,20 +25,25 @@ class TestChecker(unittest.TestCase):
         v = Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)
         results = {r["name"]: r for r in run_all(v)}
         prev = " ".join(results["preview_consistency"]["detail"])
-        self.assertIn("10,000,000,000,000,000 shares", prev)
-        self.assertIn("0.000001 USDC", prev)
+        self.assertIn("10,000,000,000,000,000\u00a0shares", prev)
+        self.assertIn("0.000001\u00a0USDC", prev)
         self.assertEqual(len(results["preview_consistency"]["detail"]), 3)
         fee = results["fee_conservation"]["detail"][0]
         self.assertEqual(
-            fee, "yield 10,000.000000 USDC, fee 1,000.000000 USDC, "
-                 "holder gain 9,000.000000 USDC")
+            fee, "yield 10,000.000000\u00a0USDC, fee 1,000.000000\u00a0USDC, "
+                 "holder gain 9,000.000000\u00a0USDC")
         price = results["share_price_sanity"]["detail"][0]
         self.assertEqual(
-            price, "price per 1,000,000 shares 0.000001 USDC -> 0.000001 USDC")
+            price, "price per 1,000,000\u00a0shares 0.000001\u00a0USDC -> 0.000001\u00a0USDC")
         for r in results.values():
             for line in r["detail"]:
                 if isinstance(line, str):
                     self.assertNotRegex(line, r"\d{10,}")
+                    # Amounts stay bound to their unit: a wrapping line
+                    # breaks at "==" / "," / "->", never leaving a lone
+                    # "USDC" / "shares" on its own line.
+                    self.assertNotIn(" USDC", line)
+                    self.assertNotIn(" shares", line)
 
     def test_empty_vault_first_deposit(self):
         v = Vault(decimals_offset=6, min_deposit=1_000_000)
