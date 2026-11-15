@@ -4470,5 +4470,116 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(shortfall, 1_000 * USDC * (1_000_000 * USDC + 1)
                          // (999_000 * USDC + 1))
 
+    def test_empty_vault_reseed_guide_numbers(self):
+        # Pins /guides/erc4626-empty-vault-reseed/ to its model: a
+        # vault that emptied completely reopens the first-depositor
+        # window. At offset 0 the re-seed attack is mutual destruction
+        # (attacker loses as much as the victim, a third locks); at
+        # offset 6 the victim loses 0.25 on 1,000,000 while the
+        # attacker eats ~500,000; a donation to an empty offset-0
+        # vault bricks deposits outright. Importing the model re-runs
+        # its assertions; the checks below independently re-derive
+        # the headline numbers the guide quotes, on the checker's
+        # own Vault (exact integer arithmetic).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "empty-vault-reseed-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "empty_vault_reseed_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+
+        # 0. Full exit: Alice 100,000 + Carol 900,000 redeem
+        # everything; vault left with 0 assets and 0 shares.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        self.assertEqual(v.redeem(100_000 * USDC), 100_000 * USDC)
+        self.assertEqual(v.redeem(900_000 * USDC), 900_000 * USDC)
+        self.assertEqual(v.total_assets, 0)
+        self.assertEqual(v.total_supply, 0)
+
+        # 1. Clean re-seed, offset 0: 1,000,000 in, 1,000,000 shares,
+        # 1,000,000 out — exact.
+        v = ec.Vault(total_assets=0, total_supply=0, decimals_offset=0)
+        shares = v.deposit(1_000_000 * USDC)
+        self.assertEqual(shares, 1_000_000 * USDC)
+        self.assertEqual(v.redeem(shares), 1_000_000 * USDC)
+
+        # 2. Re-seed attack, offset 0, one victim: 1 bu seed, 1,000,000
+        # donation, victim 1,000,000 -> 1 share-bu; both redeem a
+        # third, a third locks.
+        v = ec.Vault(total_assets=0, total_supply=0, decimals_offset=0)
+        atk = v.deposit(1)
+        v.donate(1_000_000 * USDC)
+        vic = v.deposit(1_000_000 * USDC)
+        self.assertEqual(atk, 1)
+        self.assertEqual(vic, 1)
+        vic_out = v.redeem(vic)
+        atk_out = v.redeem(atk)
+        self.assertEqual(vic_out, 666_666_666_667)
+        self.assertEqual(1_000_000 * USDC - vic_out, 333_333_333_333)
+        self.assertEqual(atk_out, 666_666_666_667)
+        self.assertEqual(1_000_000 * USDC + 1 - atk_out, 333_333_333_334)
+        self.assertEqual(v.total_assets, 666_666_666_667)
+
+        # 3. Two victims: three-way split; the last redeemer keeps
+        # one base unit of rounding.
+        v = ec.Vault(total_assets=0, total_supply=0, decimals_offset=0)
+        atk = v.deposit(1)
+        v.donate(1_000_000 * USDC)
+        vic1 = v.deposit(1_000_000 * USDC)
+        vic2 = v.deposit(1_000_000 * USDC)
+        atk_out = v.redeem(atk)
+        vic1_out = v.redeem(vic1)
+        vic2_out = v.redeem(vic2)
+        self.assertEqual(atk_out, 750_000_000_000)
+        self.assertEqual(1_000_000 * USDC + 1 - atk_out, 250_000_000_001)
+        self.assertEqual(vic1_out, 750_000_000_000)
+        self.assertEqual(1_000_000 * USDC - vic1_out, 250_000_000_000)
+        self.assertEqual(vic2_out, 750_000_000_001)
+        self.assertEqual(1_000_000 * USDC - vic2_out, 249_999_999_999)
+        self.assertEqual(v.total_assets, 750_000_000_000)
+
+        # 4. Re-seed attack, offset 6: victim loses 0.25, attacker
+        # loses 499,999.875, half the pot locks.
+        v = ec.Vault(total_assets=0, total_supply=0, decimals_offset=6)
+        atk = v.deposit(1)
+        v.donate(1_000_000 * USDC)
+        vic = v.deposit(1_000_000 * USDC)
+        self.assertEqual(atk, 1_000_000)
+        self.assertEqual(vic, 1_999_999)
+        vic_out = v.redeem(vic)
+        atk_out = v.redeem(atk)
+        self.assertEqual(vic_out, 999_999_750_000)
+        self.assertEqual(1_000_000 * USDC - vic_out, 250_000)
+        self.assertEqual(atk_out, 500_000_125_001)
+        self.assertEqual(1_000_000 * USDC + 1 - atk_out, 499_999_875_000)
+        self.assertEqual(v.total_assets, 500_000_125_000)
+
+        # 5. Donation bricks an empty offset-0 vault: a 1,000,000
+        # deposit previews 0 shares and reverts; the smallest deposit
+        # that mints anything is one base unit more than the donation.
+        v = ec.Vault(total_assets=0, total_supply=0, decimals_offset=0)
+        v.donate(1_000_000 * USDC)
+        self.assertEqual(v.preview_deposit(1_000_000 * USDC), 0)
+        with self.assertRaises(ValueError):
+            v.deposit(1_000_000 * USDC)
+        self.assertEqual(v.preview_deposit(1_000_000 * USDC + 1), 1)
+
+        # 6. Same donation, offset 6: victim loses 0.50, and
+        # 1,000,000.50 stays locked — stranded, not gifted.
+        v = ec.Vault(total_assets=0, total_supply=0, decimals_offset=6)
+        v.donate(1_000_000 * USDC)
+        vic = v.deposit(1_000_000 * USDC)
+        self.assertEqual(vic, 999_999)
+        vic_out = v.redeem(vic)
+        self.assertEqual(vic_out, 999_999_500_000)
+        self.assertEqual(1_000_000 * USDC - vic_out, 500_000)
+        self.assertEqual(v.total_assets, 1_000_000_500_000)
+
 if __name__ == "__main__":
     unittest.main()
