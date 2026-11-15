@@ -893,6 +893,39 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(-(-1_000_000 * 1_000_000 // 1_000_000),
                          1_000_000)
 
+    def test_fee_basis_guide_numbers(self):
+        # Fee-basis guide (site/fee-basis-model.py): a 2% management fee
+        # collected by minting 2% of the supply transfers only f/(1+f) of
+        # assets. Re-derived here with plain Fractions, independent of
+        # the model file, so the guide's numbers cannot drift silently.
+        # Vault 1,100,000 USDC / 1,000,000 shares, price 1.10.
+        A, S, H = Fraction(1_100_000), Fraction(1_000_000), Fraction(10_000)
+        # (a) Fee taken as assets: exactly 22,000 out, holder keeps 10,780.
+        self.assertEqual(A * Fraction(2, 100), 22_000)
+        self.assertEqual(H * (A - A * Fraction(2, 100)) / S, 10_780)
+        # (b) Fee minted as 2% of supply: price 55/51, manager gets 1/51.
+        m = S * Fraction(2, 100)
+        self.assertEqual(m, 20_000)
+        self.assertEqual(A / (S + m), Fraction(55, 51))
+        self.assertEqual(m * A / (S + m), Fraction(1_100_000, 51))
+        self.assertEqual(m * A / (S + m) / A, Fraction(1, 51))
+        self.assertEqual(H * A / (S + m), Fraction(550_000, 51))
+        # Invariant f/(1+f), price-independent (0.90 case: same 1/51).
+        A2, S2 = Fraction(900_000), Fraction(1_000_000)
+        m2 = S2 * Fraction(2, 100)
+        self.assertEqual(m2 * A2 / (S2 + m2) / A2, Fraction(1, 51))
+        self.assertEqual(H * A2 / (S2 + m2), Fraction(150_000, 17))
+        # (c) Gross-up mint 1,000,000/49 is not an integer; nearest mints
+        # under/over-collect against the quoted 22,000.
+        self.assertEqual(Fraction(2, 100) * S / (1 - Fraction(2, 100)),
+                         Fraction(1_000_000, 49))
+        self.assertNotEqual(Fraction(1_000_000, 49).denominator, 1)
+        self.assertLess(Fraction(20_408) * A / (S + 20_408), 22_000)
+        self.assertGreater(Fraction(20_409) * A / (S + 20_409), 22_000)
+        # Consistency with the fee-accrual guide at price 1.00.
+        self.assertEqual(Fraction(20_000) * Fraction(1_000_000)
+                         / Fraction(1_020_000), Fraction(1_000_000, 51))
+
     def test_vault_state_seeded_donation(self):
         # A live vault is not a new vault: the checker used to run the
         # donation check only on an empty vault, so every live vault got
