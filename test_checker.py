@@ -2226,6 +2226,59 @@ class TestChecker(unittest.TestCase):
                          - alice * Fraction(equity2_down, supply),
                          2_850 * USDC)
 
+    def test_floor_plus_offset_guide_numbers(self):
+        # Guide: floor plus offset -- the two donation defenses
+        # together. Attacker seeds with the smallest deposit allowed,
+        # donates 1,000,000 USDC, victim deposits 100,000 USDC (and,
+        # for the small-victim check, 1,000 USDC), everyone redeems.
+        # Re-derived here with plain integer arithmetic, independent
+        # of the model file (site/floor-plus-offset-model.py).
+        USDC = 1_000_000
+        DON = 1_000_000 * USDC
+        FLOOR = 100 * USDC
+        VIC = 100_000 * USDC
+        SMALL = 1_000 * USDC
+
+        def attack(seed, offset, victim_dep):
+            V = 10 ** offset
+            A, S = 0, 0
+            atk_shares = seed * (S + V) // (A + 1)
+            A += seed
+            S += atk_shares
+            A += DON
+            vic_shares = victim_dep * (S + V) // (A + 1)
+            A += victim_dep
+            S += vic_shares
+            atk_out = atk_shares * (A + 1) // (S + V)
+            A -= atk_out
+            S -= atk_shares
+            vic_out = vic_shares * (A + 1) // (S + V)
+            return victim_dep - vic_out, atk_out - (seed + DON)
+
+        # 1: no defense. Victim loss 909,091 bu = 0.909091 USDC
+        # (the checker's no-protection preset), attacker -90,909 bu.
+        self.assertEqual(attack(1 * USDC, 0, VIC), (909_091, -90_909))
+        # 2: floor alone. Victim loss 1,818 bu = 0.001818 USDC --
+        # a 500-fold cut -- attacker -8,182 bu.
+        self.assertEqual(attack(FLOOR, 0, VIC), (1_818, -8_182))
+        # 3: offset alone. Victim loss 1 bu, attacker -999,999 bu.
+        self.assertEqual(attack(1 * USDC, 6, VIC), (1, -999_999))
+        # 4: both together. Victim loss exactly 0, attacker only
+        # -10,000 bu = -0.010000 USDC -- the floor subsidises the
+        # attacker's exit while finishing the victim's protection.
+        self.assertEqual(attack(FLOOR, 6, VIC), (0, -10_000))
+        # 5: small victim, 1,000 USDC. Floor alone 19 bu, offset
+        # alone 1 bu, both together 0; attacker -9,981 / -999,999 /
+        # -10,000 bu respectively.
+        self.assertEqual(attack(FLOOR, 0, SMALL), (19, -9_981))
+        self.assertEqual(attack(1 * USDC, 6, SMALL), (1, -999_999))
+        self.assertEqual(attack(FLOOR, 6, SMALL), (0, -10_000))
+        # 6: the seed's share count. With offset 6 the 100 USDC seed
+        # mints 10**14 shares, 100x the 10**12 of a 1 USDC seed --
+        # the bigger seed is what buys the attacker's exit back.
+        self.assertEqual(100 * USDC * (0 + 10 ** 6) // 1, 10 ** 14)
+        self.assertEqual(1 * USDC * (0 + 10 ** 6) // 1, 10 ** 12)
+
     def test_pausable_vault_guide_numbers(self):
         # Guide #52: pausable vault -- the pause stops the exits, not
         # the losses. Vault 1,000,000 USDC / 1,000,000 shares, price
