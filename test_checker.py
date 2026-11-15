@@ -5382,5 +5382,128 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(redeem(S0, 1_100_000 * USDC, S0),
                          1_100_000 * USDC)
 
+    def test_donation_management_fee_guide_numbers(self):
+        # Pins /guides/erc4626-donation-management-fee/ to its model:
+        # a 2% management fee charged once at year end at 2% of
+        # beginning-of-year totalAssets, taken as assets; vault
+        # 1,000,000 USDC / 1,000,000 shares at $1.00, Alice 100,000
+        # shares (10%), Carol 900,000 (90%). A donation inflates
+        # totalAssets without minting shares, so the fee is charged
+        # on money that was given away, not earned. Importing the
+        # model re-runs its assertions; the checks below independently
+        # re-derive the headline numbers with plain integer arithmetic.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-management-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_management_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        A0, S0 = 1_000_000 * USDC, 1_000_000
+        ALICE, CAROL = 100_000, 900_000
+
+        def one_year(total, y_num, y_den, donation=0):
+            base = total + donation
+            gross = base + base * y_num // y_den
+            fee = base * 2 // 100
+            return gross, fee, gross - fee
+
+        def value(shares, assets, supply):
+            return shares * assets // supply
+
+        # (1) Control, no donation, 0% yield: fee 20,000, net 980,000.
+        g1, f1, n1 = one_year(A0, 0, 1)
+        self.assertEqual((g1, f1, n1),
+                         (1_000_000 * USDC, 20_000 * USDC, 980_000 * USDC))
+        self.assertEqual(value(ALICE, n1, S0), 98_000 * USDC)
+        self.assertEqual(value(CAROL, n1, S0), 882_000 * USDC)
+
+        # (2) Donation 100,000, 0% yield: fee 22,000, net 1,078,000.
+        # The donation splits 98/2 between holders and manager.
+        g2, f2, n2 = one_year(A0, 0, 1, 100_000 * USDC)
+        self.assertEqual((g2, f2, n2),
+                         (1_100_000 * USDC, 22_000 * USDC, 1_078_000 * USDC))
+        self.assertEqual(f2 - f1, 2_000 * USDC)
+        self.assertEqual(n2 - n1, 98_000 * USDC)
+        self.assertEqual(value(ALICE, n2, S0), 107_800 * USDC)
+        self.assertEqual(value(CAROL, n2, S0), 970_200 * USDC)
+        self.assertEqual(value(ALICE, n2, S0) - value(ALICE, n1, S0),
+                         9_800 * USDC)
+        self.assertEqual(value(CAROL, n2, S0) - value(CAROL, n1, S0),
+                         88_200 * USDC)
+
+        # (3) Donation + 10% yield: gross 1,210,000, fee 22,000,
+        # net 1,188,000; the donation adds 108,000 net.
+        g3, f3, n3 = one_year(A0, 1, 10, 100_000 * USDC)
+        g3c, f3c, n3c = one_year(A0, 1, 10)
+        self.assertEqual((g3, f3, n3),
+                         (1_210_000 * USDC, 22_000 * USDC, 1_188_000 * USDC))
+        self.assertEqual((g3c, f3c, n3c),
+                         (1_100_000 * USDC, 20_000 * USDC, 1_080_000 * USDC))
+        self.assertEqual(n3 - n3c, 108_000 * USDC)
+        self.assertEqual(f3 - f3c, 2_000 * USDC)
+        self.assertEqual(value(ALICE, n3, S0), 118_800 * USDC)
+        self.assertEqual(value(CAROL, n3, S0), 1_069_200 * USDC)
+
+        # (4) Manager self-donates: net -78,000 year one; extra fee
+        # over n years is 100,000 * (1 - 0.98^n), always below 100,000.
+        self.assertEqual(f2 - 100_000 * USDC, -78_000 * USDC)
+        for years in (1, 5, 10, 50):
+            extra = Fraction(100_000) * (1 - Fraction(98, 100) ** years)
+            self.assertLess(extra, 100_000)
+        self.assertEqual(Fraction(100_000) * (1 - Fraction(98, 100) ** 5),
+                         Fraction(960792032, 100_000))
+
+        # (5) Five years compounding: net 994,312.87648 against a
+        # 903,920.7968 control; the donation is worth 90,392.07968
+        # to the holders, the manager took 9,607.92032 of the gift.
+        mult = Fraction(98, 100)
+        v5 = Fraction(1_100_000) * mult ** 5
+        v5c = Fraction(1_000_000) * mult ** 5
+        self.assertEqual(v5, Fraction(99431287648, 100_000))
+        self.assertEqual(v5c, Fraction(9039207968, 10_000))
+        self.assertEqual(v5 - v5c, Fraction(9039207968, 100_000))
+        self.assertEqual(Fraction(100_000) - (v5 - v5c),
+                         Fraction(960792032, 100_000))
+        self.assertEqual(int(v5 * USDC), 994_312_876_480)
+        self.assertEqual(int(v5c * USDC), 903_920_796_800)
+        alice_5 = int(v5 * USDC * ALICE // S0)
+        alice_5c = int(v5c * USDC * ALICE // S0)
+        self.assertEqual(alice_5 - alice_5c, 9_039_207_968)
+        self.assertEqual(10_000 * USDC - (alice_5 - alice_5c),
+                         960_792_032)
+
+        # (6) Timing: donation after the snapshot escapes year one
+        # (fee 20,000, not 22,000); after two years 1,058,400
+        # against 1,056,440 before-snapshot — a 1,960 gap from one day.
+        _, f6a, n6a = one_year(A0, 0, 1)
+        n6a_after = n6a + 100_000 * USDC
+        _, f6b, n6b = one_year(n6a_after, 0, 1)
+        _, f6c, n6c = one_year(n2, 0, 1)
+        self.assertEqual((f6b, n6b), (21_600 * USDC, 1_058_400 * USDC))
+        self.assertEqual((f6c, n6c), (21_560 * USDC, 1_056_440 * USDC))
+        self.assertEqual(n6b - n6c, 1_960 * USDC)
+        self.assertEqual(f6b - f6c, 40 * USDC)
+        self.assertEqual(f6a + f6b, 41_600 * USDC)
+        self.assertEqual(f2 + f6c, 43_560 * USDC)
+
+        # (7) Fee taken by minting shares at $1.10: 20,000 shares,
+        # 1.960784% of the vault, worth 21,568.627451 on redeem —
+        # 431.372549 less than the 22,000 taken as assets.
+        price = Fraction(1_100_000, 1_000_000)
+        fee_shares = Fraction(22_000) / price
+        self.assertEqual(fee_shares, 20_000)
+        manager_pct = fee_shares / (S0 + fee_shares)
+        self.assertEqual(manager_pct, Fraction(20_000, 1_020_000))
+        manager_assets = fee_shares * Fraction(1_100_000, 1_020_000)
+        self.assertEqual(manager_assets, Fraction(1_100_000, 51))
+        self.assertEqual(f"{float(manager_assets):.6f}", "21568.627451")
+        self.assertEqual(f"{float(Fraction(22_000) - manager_assets):.6f}",
+                         "431.372549")
+
 if __name__ == "__main__":
     unittest.main()
