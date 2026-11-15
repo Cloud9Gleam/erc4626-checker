@@ -4581,6 +4581,111 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(1_000_000 * USDC - vic_out, 500_000)
         self.assertEqual(v.total_assets, 1_000_000_500_000)
 
+    def test_fee_on_idle_cash_guide_numbers(self):
+        # Pins /guides/erc4626-fee-on-idle-cash/ to its model: a 2%
+        # management fee charged on totalAssets bills the idle cash
+        # buffer too. At 20% idle the fee takes 4,000 in year one —
+        # a quarter of the year's yield — and 25,440.822222 over
+        # five years; at 50% idle the fee eats 40% of the year's
+        # yield and half the fee is rent. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers the guide quotes, with
+        # exact Fraction arithmetic.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fee-on-idle-cash-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fee_on_idle_cash_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        A0 = 1_000_000 * USDC
+
+        def one_year(total, idle_share, fee_on):
+            idle = total * idle_share
+            deployed = total - idle
+            gross = deployed * 11 // 10 + idle
+            base = total if fee_on == "total" else deployed
+            fee = base // 50
+            return int(gross), int(fee), int(gross - fee)
+
+        # 1. 20% idle, one year: gross 1,080,000; fee 20,000
+        # (4,000 on idle); net 1,060,000, price $1.06, net yield
+        # 6.00%; fee eats 25% of the 80,000 yield. Fee-on-deployed
+        # only: fee 16,000, net 1,064,000. Alice 106,000 vs
+        # 106,400; Carol 954,000 vs 957,600.
+        g, f, n = one_year(A0, Fraction(1, 5), "total")
+        gc, fc, nc = one_year(A0, Fraction(1, 5), "deployed")
+        self.assertEqual((g, f, n),
+                         (1_080_000 * USDC, 20_000 * USDC, 1_060_000 * USDC))
+        self.assertEqual(fc, 16_000 * USDC)
+        self.assertEqual(nc, 1_064_000 * USDC)
+        self.assertEqual(nc - n, 4_000 * USDC)
+        self.assertEqual(Fraction(f, g - A0), Fraction(1, 4))
+        self.assertEqual(100_000 * n // 1_000_000, 106_000 * USDC)
+        self.assertEqual(100_000 * nc // 1_000_000, 106_400 * USDC)
+        self.assertEqual(900_000 * n // 1_000_000, 954_000 * USDC)
+        self.assertEqual(900_000 * nc // 1_000_000, 957_600 * USDC)
+
+        # 2. 50% idle, one year: gross 1,050,000; fee 20,000
+        # (10,000 on idle — half the fee); net 1,030,000, price
+        # $1.03, net yield 3.00%; fee eats 40% of the 50,000
+        # yield. Fee-on-deployed only: fee 10,000, net 1,040,000.
+        # Alice 103,000 vs 104,000; Carol 927,000 vs 936,000.
+        g, f, n = one_year(A0, Fraction(1, 2), "total")
+        gc, fc, nc = one_year(A0, Fraction(1, 2), "deployed")
+        self.assertEqual((g, f, n),
+                         (1_050_000 * USDC, 20_000 * USDC, 1_030_000 * USDC))
+        self.assertEqual(fc, 10_000 * USDC)
+        self.assertEqual(nc, 1_040_000 * USDC)
+        self.assertEqual(nc - n, 10_000 * USDC)
+        self.assertEqual(Fraction(f, g - A0), Fraction(2, 5))
+        self.assertEqual(100_000 * n // 1_000_000, 103_000 * USDC)
+        self.assertEqual(100_000 * nc // 1_000_000, 104_000 * USDC)
+        self.assertEqual(900_000 * n // 1_000_000, 927_000 * USDC)
+        self.assertEqual(900_000 * nc // 1_000_000, 936_000 * USDC)
+
+        # 3. 20% idle, five years, compounding: net multipliers
+        # 1.06 / 1.064 / 1.08. Fee-on-total 1,338,225.5776;
+        # fee-on-deployed-only 1,363,666.399822; no fee
+        # 1,469,328.0768. Cumulative fee-on-idle cost
+        # 25,440.822222. Manager five-year take 131,102.4992 vs
+        # 105,661.676978. Alice pays 2,544.082222; Carol
+        # 22,896.740000.
+        v_total = Fraction(1_000_000) * Fraction(106, 100) ** 5
+        v_deployed = Fraction(1_000_000) * Fraction(1064, 1000) ** 5
+        v_nofee = Fraction(1_000_000) * Fraction(108, 100) ** 5
+        self.assertEqual(v_total, Fraction(13382255776, 10_000))
+        self.assertEqual(v_deployed,
+                         Fraction(1363666399821824, 10 ** 9))
+        self.assertEqual(v_nofee, Fraction(14693280768, 10_000))
+        self.assertEqual(v_deployed - v_total,
+                         Fraction(25440822221824, 10 ** 9))
+        self.assertEqual(v_nofee - v_total,
+                         Fraction(1311024992, 10_000))
+        self.assertEqual(v_nofee - v_deployed,
+                         Fraction(105661676978176, 10 ** 9))
+        self.assertEqual(int(v_total * USDC), 1_338_225_577_600)
+        self.assertEqual(int(v_deployed * USDC), 1_363_666_399_821)
+        self.assertEqual(int(v_nofee * USDC), 1_469_328_076_800)
+        alice_gap = (int(v_deployed * USDC * 100_000 // 1_000_000)
+                     - int(v_total * USDC * 100_000 // 1_000_000))
+        carol_gap = (int(v_deployed * USDC * 900_000 // 1_000_000)
+                     - int(v_total * USDC * 900_000 // 1_000_000))
+        self.assertEqual(alice_gap, 2_544_082_222)
+        self.assertEqual(carol_gap, 22_896_739_999)
+
+        # 4. 0% idle (control): both regimes agree exactly at
+        # gross 1,100,000, fee 20,000, net 1,080,000, $1.08.
+        g, f, n = one_year(A0, Fraction(0), "total")
+        gc, fc, nc = one_year(A0, Fraction(0), "deployed")
+        self.assertEqual((g, f, n), (gc, fc, nc))
+        self.assertEqual((g, f, n),
+                         (1_100_000 * USDC, 20_000 * USDC, 1_080_000 * USDC))
+
     def test_hurdle_rate_fee_guide_numbers(self):
         # /guides/erc4626-hurdle-rate-fee/: 20% performance fee on yield
         # above a 5% hurdle, minted as shares at the current price.
