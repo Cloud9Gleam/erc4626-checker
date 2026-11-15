@@ -5770,5 +5770,114 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(to_shares(500_000 * USDC, S0, 2 * T0, 0),
                          250_000 * USDC)
 
+    def test_operator_allowance_guide_numbers(self):
+        # Pins /guides/erc4626-operator-allowance/ to its model: an
+        # approval is written in shares, not dollars. Approve 60,000
+        # shares, redeem 40,000 -> allowance 20,000 left; a 30,000
+        # try reverts atomically; withdraw spends the shares burned;
+        # a max approval is never spent down; after +10% yield the
+        # same 20,000-share approval moves 21,999.999999 USDC;
+        # deposit/mint for someone else need no approval at all.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers on the
+        # checker's own Vault, with the OZ allowance rule written
+        # out in the test (spend decreases, except max).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "operator-allowance-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "operator_allowance_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+        MAX = 2 ** 256 - 1
+
+        book = {}
+
+        def approve(owner, spender, amount):
+            book[(owner, spender)] = amount
+
+        def spend(owner, spender, shares):
+            allowed = book.get((owner, spender), 0)
+            if allowed < shares:
+                raise ValueError("insufficient allowance")
+            if allowed != MAX:
+                book[(owner, spender)] = allowed - shares
+
+        # 1. Partial redeem: approve 60,000, redeem 40,000.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        alice = 100_000 * USDC
+        approve("alice", "oscar", 60_000 * USDC)
+        spend("alice", "oscar", 40_000 * USDC)
+        out = v.redeem(40_000 * USDC)
+        alice -= 40_000 * USDC
+        self.assertEqual(out, 40_000 * USDC)
+        self.assertEqual(alice, 60_000 * USDC)
+        self.assertEqual(book[("alice", "oscar")], 20_000 * USDC)
+
+        # 2. Over-allowance redeem reverts; nothing moves.
+        with self.assertRaises(ValueError):
+            spend("alice", "oscar", 30_000 * USDC)
+        self.assertEqual(book[("alice", "oscar")], 20_000 * USDC)
+        self.assertEqual(alice, 60_000 * USDC)
+        self.assertEqual(v.total_assets, 960_000 * USDC)
+        self.assertEqual(v.total_supply, 960_000 * USDC)
+
+        # 3. Withdraw on behalf: 10,000 USDC burns 10,000 shares.
+        shares = v.preview_withdraw(10_000 * USDC)
+        spend("alice", "oscar", shares)
+        burned = v.withdraw(10_000 * USDC)
+        self.assertEqual(burned, shares)
+        self.assertEqual(burned, 10_000 * USDC)
+        alice -= burned
+        self.assertEqual(alice, 50_000 * USDC)
+        self.assertEqual(book[("alice", "oscar")], 10_000 * USDC)
+
+        # 4. Infinite approval: redeem the last 50,000; allowance
+        # stays max.
+        approve("alice", "oscar", MAX)
+        spend("alice", "oscar", 50_000 * USDC)
+        out = v.redeem(50_000 * USDC)
+        alice -= 50_000 * USDC
+        self.assertEqual(out, 50_000 * USDC)
+        self.assertEqual(alice, 0)
+        self.assertEqual(book[("alice", "oscar")], MAX)
+
+        # 5. Price moved: +10% yield, 20,000-share approval moves
+        # 21,999.999999 USDC (1 bu short of 22,000), allowance to 0.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        v.donate(100_000 * USDC)
+        self.assertEqual(v.total_assets, 1_100_000 * USDC)
+        alice = 100_000 * USDC
+        carol = 900_000 * USDC
+        approve("alice", "oscar", 20_000 * USDC)
+        spend("alice", "oscar", 20_000 * USDC)
+        out = v.redeem(20_000 * USDC)
+        alice -= 20_000 * USDC
+        self.assertEqual(out, 21_999_999_999)
+        self.assertEqual(22_000 * USDC - out, 1)
+        self.assertEqual(book[("alice", "oscar")], 0)
+        self.assertEqual(alice, 80_000 * USDC)
+
+        # 6. Deposit for someone else: Bob 50,000 in for Carol ->
+        # 45,454.545454 shares, no approval involved.
+        carol_shares = v.deposit(50_000 * USDC)
+        self.assertEqual(carol_shares, 45_454_545_454)
+        carol += carol_shares
+        self.assertEqual(carol, 945_454_545_454)
+        self.assertEqual(book.get(("bob", "carol"), 0), 0)
+
+        # 7. Mint for someone else: 10,000 shares for Dave costs
+        # 11,000.000001 USDC (price 1.10, mint rounds up).
+        paid = v.mint(10_000 * USDC)
+        self.assertEqual(paid, 11_000_000_001)
+        self.assertGreaterEqual(paid, 11_000 * USDC)
+
+
 if __name__ == "__main__":
     unittest.main()
