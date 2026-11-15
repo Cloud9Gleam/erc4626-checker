@@ -2380,5 +2380,75 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(extractable, 350_000 * USDC)
         self.assertEqual((D + flash_fee) - extractable, 650_500 * USDC)
 
+    def test_governance_vote_guide_numbers(self):
+        # Governance-vote guide: votes weighted by raw share balance let
+        # the first depositor buy the vote for one base unit. OZ
+        # conversion rules, rounding down: shares = deposit * (supply +
+        # 10**offset) / (assets + 1); assets = shares * (assets + 1) /
+        # (supply + 10**offset). Independent re-derivation with Fraction
+        # (does not import the site model file); pins every number the
+        # guide prints.
+        USDC = 1_000_000
+        D = 1_000_000 * USDC
+        V = 1_000_000 * USDC
+
+        def sh_for(dep, sup, ast, off=0):
+            return (dep * (sup + 10 ** off)) // (ast + 1)
+
+        def as_for(sh, sup, ast, off=0):
+            return (sh * (ast + 1)) // (sup + 10 ** off)
+
+        # Offset 0: attacker 1 base unit -> 1 share; victim 1,000,000
+        # USDC -> 1 share; vote split 50/50.
+        s_att = sh_for(1, 0, 0)
+        self.assertEqual(s_att, 1)
+        s_vic = sh_for(V, s_att, 1 + D)
+        self.assertEqual(s_vic, 1)
+        self.assertEqual(Fraction(s_att, s_att + s_vic), Fraction(1, 2))
+        # Price per vote: attacker 0.000001 USDC, victim 1,000,000 USDC.
+        self.assertEqual(Fraction(1, USDC), Fraction(1, 1_000_000))
+        self.assertEqual(Fraction(V, USDC), 1_000_000)
+        # Victim twice as large buys only 3 shares: attacker keeps 25%.
+        s_vic2 = sh_for(2 * V, s_att, 1 + D)
+        self.assertEqual(s_vic2, 3)
+        self.assertEqual(Fraction(s_att, s_att + s_vic2), Fraction(1, 4))
+        # Offset 6: attacker 1,000,000 shares for 1 base unit; victim
+        # 1,999,999 shares; attacker vote share 1,000,000/2,999,999.
+        off = 6
+        s_att6 = sh_for(1, 0, 0, off)
+        self.assertEqual(s_att6, 1_000_000)
+        s_vic6 = sh_for(V, s_att6, 1 + D, off)
+        self.assertEqual(s_vic6, 1_999_999)
+        self.assertEqual(Fraction(s_att6, s_att6 + s_vic6),
+                         Fraction(1_000_000, 2_999_999))
+        # Price per vote at offset 6: attacker 1e-12 USDC, victim
+        # 1,000,000/1,999,999 USDC.
+        self.assertEqual(Fraction(1, s_att6 * USDC),
+                         Fraction(1, 10 ** 12))
+        self.assertEqual(Fraction(V, s_vic6 * USDC),
+                         Fraction(1_000_000, 1_999_999))
+        # Value side at offset 6: victim redeems 999,999.75, loss 0.25.
+        assets_after = (1 + D) + V
+        supply_after = s_att6 + s_vic6
+        vic_redeem = as_for(s_vic6, supply_after, assets_after, off)
+        self.assertEqual(vic_redeem, 999_999_750_000)
+        self.assertEqual(V - vic_redeem, 250_000)  # 0.25 USDC
+        # Attacker redeems after the victim exits: 500,000.125001,
+        # net -499,999.875 USDC.
+        att_redeem = as_for(s_att6, s_att6, assets_after - vic_redeem, off)
+        self.assertEqual(att_redeem, 500_000_125_001)
+        self.assertEqual(att_redeem - D - 1, -499_999_875_000)
+        # Value-weighted votes: attacker weight 500,000.125, victim
+        # 999,999.75; cost per unit weight ~2.00 vs ~1.00.
+        att_value = as_for(s_att6, supply_after, assets_after, off)
+        vic_value = as_for(s_vic6, supply_after, assets_after, off)
+        self.assertEqual(att_value, 500_000_125_000)
+        self.assertEqual(vic_value, 999_999_750_000)
+        att_cost = Fraction(D + 1, att_value)
+        vic_cost = Fraction(V, vic_value)
+        self.assertAlmostEqual(float(att_cost), 2.0, places=5)
+        self.assertAlmostEqual(float(vic_cost), 1.0, places=5)
+        self.assertGreater(att_cost, vic_cost)
+
 if __name__ == "__main__":
     unittest.main()
