@@ -4850,5 +4850,102 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(bob_out, 475_000 * USDC)
         self.assertEqual(alice_out, 95_000 * USDC)
 
+    def test_fee_crystallisation_on_exit_guide_numbers(self):
+        # Pins /guides/erc4626-fee-crystallisation-on-exit/ to its
+        # model: a 20% performance fee accrues all year but is only
+        # taken at year-end, and Alice redeems mid-year with 10% of
+        # the vault. Withholding her 2,000 fee share nets her exactly
+        # 108,000 and leaves Carol untouched; minting the fee as
+        # shares lets her escape 1,800.362976 of it; charging nothing
+        # at exit leaves Carol 1,960.396040 worse off; crystallising
+        # first gets her to pay 1,964.285715. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers in raw base units (floor
+        # division, no floats).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fee-crystallisation-on-exit-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fee_crystallisation_on_exit_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Vault 1,000,000 / 1,000,000; Alice 100,000, Carol 900,000;
+        # mid-year +10% -> assets 1,100,000, accrued fee 20,000,
+        # Alice's share 2,000. All values in base units.
+        A = 1_100_000 * USDC          # assets at exit
+        S = 1_000_000 * USDC          # supply at exit
+        ALICE = 100_000 * USDC
+        CAROL = 900_000 * USDC
+        FEE = 20_000 * USDC
+        ALICE_FEE = 2_000 * USDC
+
+        def claim(shares, assets, supply):
+            return shares * assets // supply
+
+        def fee_shares(fee, assets, supply):
+            return fee * supply // assets
+
+        # 0. Gross redemption is 110,000; A nets exactly 108,000.
+        self.assertEqual(claim(ALICE, A, S), 110_000 * USDC)
+        self.assertEqual(claim(ALICE, A, S) - ALICE_FEE, 108_000 * USDC)
+
+        # 1. A, year-end: remaining 18,000 crystallises; Carol
+        # 972,356.435644, manager total 19,643.564355.
+        fs_a = fee_shares(ALICE_FEE, A, S)
+        self.assertEqual(fs_a, 1_818_181_818)
+        a1 = A - 108_000 * USDC
+        s1 = S - ALICE + fs_a
+        self.assertEqual(claim(CAROL, a1, s1), 990_000 * USDC)
+        self.assertEqual(claim(fs_a, a1, s1), 1_999_999_999)
+        fs_a2 = fee_shares(FEE - ALICE_FEE, a1, s1)
+        self.assertEqual(fs_a2, 16_363_636_363)
+        s1b = s1 + fs_a2
+        self.assertEqual(claim(CAROL, a1, s1b), 972_356_435_644)
+        self.assertEqual(claim(fs_a + fs_a2, a1, s1b), 19_643_564_355)
+
+        # 2. B, mint-at-exit: Alice nets 109,800.362976 — she pays
+        # only 199.637024 of her 2,000 and escapes 1,800.362976;
+        # Carol drops to 988,203.266788 (pays 1,796.733212 of it).
+        fs_b = fee_shares(ALICE_FEE, A, S)
+        out_b = claim(ALICE, A, S + fs_b)
+        self.assertEqual(out_b, 109_800_362_976)
+        self.assertEqual(110_000 * USDC - out_b, 199_637_024)
+        self.assertEqual(ALICE_FEE - 199_637_024, 1_800_362_976)
+        a2 = A - out_b
+        s2 = S + fs_b - ALICE
+        self.assertEqual(claim(CAROL, a2, s2), 988_203_266_788)
+        self.assertEqual(990_000 * USDC - claim(CAROL, a2, s2),
+                         1_796_733_212)
+        self.assertEqual(claim(fs_b, a2, s2), 1_996_370_235)
+
+        # 3. C, no exit crystallisation: Alice takes the full
+        # 110,000; year-end Carol is 970,396.039604 — 1,960.396040
+        # worse off than in A.
+        a3 = A - 110_000 * USDC
+        s3 = S - ALICE
+        fs_c = fee_shares(FEE, a3, s3)
+        self.assertEqual(fs_c, 18_181_818_181)
+        s3b = s3 + fs_c
+        self.assertEqual(claim(CAROL, a3, s3b), 970_396_039_604)
+        self.assertEqual(claim(fs_c, a3, s3b), 19_603_960_395)
+        self.assertEqual(972_356_435_644 - 970_396_039_604,
+                         1_960_396_040)
+
+        # 4. D, crystallise first: fee mints 18,181.818181 shares;
+        # Alice redeems 108,035.714285 (pays 1,964.285715, gap
+        # 35.714285); Carol 972,321.428572, manager 19,642.857142.
+        fs_d = fee_shares(FEE, A, S)
+        self.assertEqual(fs_d, 18_181_818_181)
+        out_d = claim(ALICE, A, S + fs_d)
+        self.assertEqual(out_d, 108_035_714_285)
+        self.assertEqual(110_000 * USDC - out_d, 1_964_285_715)
+        a4 = A - out_d
+        s4 = S + fs_d - ALICE
+        self.assertEqual(claim(CAROL, a4, s4), 972_321_428_572)
+        self.assertEqual(claim(fs_d, a4, s4), 19_642_857_142)
+
 if __name__ == "__main__":
     unittest.main()
