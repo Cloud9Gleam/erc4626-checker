@@ -4142,5 +4142,126 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(v.convert_to_assets(100 * USDC), 0)
         self.assertEqual(v.convert_to_assets(1_000 * USDC), 1)
 
+    def test_lockup_guide_numbers(self):
+        # Pins /guides/erc4626-lockup/ to its model: a vault locks
+        # deposited shares for N days while the price keeps moving, so
+        # a lockup converts a timing decision into a forced hold.
+        # Importing the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers the guide quotes,
+        # on the model's own Vault (exact integer arithmetic).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "lockup-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "lockup_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+        Vault = model.Vault
+
+        # Case 1: baseline, no lockup — vault +10% to price 1.10,
+        # Alice redeems 100,000 shares for 110,000.000000 USDC.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.set_assets(1_100_000 * USDC)
+        self.assertEqual(v.redeem(100_000 * USDC), 110_000 * USDC)
+
+        # Case 2: lockup, rise then fall — peak worth 110,000.000000,
+        # locked; falls to 0.88, exits for 88,000.000000: 22,000.000000
+        # of upside evaporates, 12,000.000000 below her deposit.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.set_assets(1_100_000 * USDC)
+        self.assertEqual(v.worth(100_000 * USDC), 110_000 * USDC)
+        v.set_assets(880_000 * USDC)
+        self.assertEqual(v.redeem(100_000 * USDC), 88_000 * USDC)
+        self.assertEqual(110_000 * USDC - 88_000 * USDC, 22_000 * USDC)
+        self.assertEqual(100_000 * USDC - 88_000 * USDC, 12_000 * USDC)
+
+        # Case 3: lockup, fall then recovery — dips to 0.90 (worth
+        # 90,000.000000, cannot cut), recovers to 1.00, exits whole
+        # for 100,000.000000; a panic seller at the dip locks in a
+        # 10,000.000000 loss.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.set_assets(900_000 * USDC)
+        self.assertEqual(v.worth(100_000 * USDC), 90_000 * USDC)
+        v.set_assets(1_000_000 * USDC)
+        self.assertEqual(v.redeem(100_000 * USDC), 100_000 * USDC)
+        self.assertEqual(100_000 * USDC - 90_000 * USDC, 10_000 * USDC)
+
+        # Case 4: dilution while locked — at 0.90 Bob deposits 100,000
+        # and mints 111,111.111111 shares; after a +100,000 recovery
+        # (price 0.99) Alice holds 99,000.000000, Bob 109,999.999999,
+        # Carol 891,000.000000. Without Bob Alice would hold 100,000:
+        # she loses 1,000.000000, Carol 9,000.000000, Bob gains
+        # 9,999.999999; the three holdings sum to total assets minus
+        # 1 base unit of rounding dust.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.set_assets(900_000 * USDC)
+        bob_shares = v.deposit(100_000 * USDC)
+        self.assertEqual(bob_shares, 111_111_111_111)
+        v.set_assets(1_100_000 * USDC)
+        self.assertEqual(v.price(), 990_000)
+        alice = v.worth(100_000 * USDC)
+        bob = v.worth(bob_shares)
+        carol = v.worth(900_000 * USDC)
+        self.assertEqual(alice, 99_000 * USDC)
+        self.assertEqual(bob, 109_999_999_999)
+        self.assertEqual(carol, 891_000 * USDC)
+        self.assertEqual(alice + bob + carol, v.total_assets - 1)
+        self.assertEqual(100_000 * USDC - alice, 1_000 * USDC)
+        self.assertEqual(900_000 * USDC - carol, 9_000 * USDC)
+        self.assertEqual(bob - 100_000 * USDC, 9_999_999_999)
+
+        # Case 5: staggered ladder — 90,000 shares in three 30,000
+        # tranches at 1.10 / 0.95 / 0.88 return 33,000 + 28,500 +
+        # 26,400 = 87,900.000000 against 79,200.000000 all locked to
+        # day 30; the ladder recovers 8,700.000000. The other 10,000
+        # shares stay locked to day 30, worth 8,800 at 0.88.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.set_price(1_100_000)
+        out1 = v.redeem(30_000 * USDC)
+        v.set_price(950_000)
+        out2 = v.redeem(30_000 * USDC)
+        v.set_price(880_000)
+        out3 = v.redeem(30_000 * USDC)
+        self.assertEqual(out1, 33_000 * USDC)
+        self.assertEqual(out2, 28_500 * USDC)
+        self.assertEqual(out3, 26_400 * USDC)
+        self.assertEqual(out1 + out2 + out3, 87_900 * USDC)
+        v2 = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v2.set_price(880_000)
+        self.assertEqual(v2.worth(90_000 * USDC), 79_200 * USDC)
+        self.assertEqual(87_900 * USDC - 79_200 * USDC, 8_700 * USDC)
+        self.assertEqual(v2.worth(10_000 * USDC), 8_800 * USDC)
+
+        # Case 6: 5% early-exit fee at the 1.10 peak — Alice leaves
+        # with 104,500.000000 instead of waiting for 88,000.000000;
+        # early exit wins by 16,500.000000.
+        v = Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.set_assets(1_100_000 * USDC)
+        peak = v.worth(100_000 * USDC)
+        self.assertEqual(peak, 110_000 * USDC)
+        early = peak * 95 // 100
+        self.assertEqual(early, 104_500 * USDC)
+        v.set_assets(880_000 * USDC)
+        waited = v.worth(100_000 * USDC)
+        self.assertEqual(waited, 88_000 * USDC)
+        self.assertEqual(early - waited, 16_500 * USDC)
+
+        # Cross-check against the checker's own Vault (OZ virtual-share
+        # convention: supply + 1, assets + 1 at offset 0). The checker
+        # dusts by at most a few base units; the lockup prices must
+        # match to that.
+        cv = ec.Vault()
+        cv.total_assets = 880_000 * USDC
+        cv.total_supply = 1_000_000 * USDC
+        self.assertLessEqual(
+            abs(cv.convert_to_assets(100_000 * USDC) - 88_000 * USDC), 2)
+        cv.total_assets = 900_000 * USDC
+        self.assertLessEqual(
+            abs(cv.convert_to_assets(100_000 * USDC) - 90_000 * USDC), 2)
+
 if __name__ == "__main__":
     unittest.main()
