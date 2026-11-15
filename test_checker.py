@@ -763,6 +763,61 @@ class TestChecker(unittest.TestCase):
         # Manager rent at 10 jumpers/day: 10,000/day.
         self.assertEqual(10 * (R * 200 // 10_000), 10_000 * USDC)
 
+    def test_basket_redemption_guide_numbers(self):
+        # Pins /guides/erc4626-basket-redemption/ to its model: a
+        # 100,000 USDC + 100 XYZ ($100 each) vault, 110,000 shares at
+        # $1.00. Flooring each asset separately to whole base units
+        # makes the 0-decimal asset round to nothing on small
+        # redemptions. 1 share -> 0.909090 USDC + 0 XYZ, loss
+        # $0.090910 (9.0910%). 11 shares -> 10 USDC + 0 XYZ, loss
+        # $1.00. Clean multiples lose nothing: 11,000 shares ->
+        # 10,000 USDC + 10 XYZ; 1,100 shares -> 1,000 USDC + 1 XYZ.
+        # 1,100 x 1-share redeems leave $100.001 of dust and lift the
+        # price to $1.000918. Worst-case floor loss per redeem is
+        # < $100.000001 (100,000,001x a USDC-only vault). Ceiling
+        # rounding overpays $99.909091 on a $1.00 redemption.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "basket-redemption-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "basket_redemption_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        # One share: 0.909090 USDC + 0 XYZ, loss $0.090910.
+        self.assertEqual(model.redeem_floor(1), (909_090, 0))
+        self.assertEqual(model.loss_usd(1), Fraction(90_910, USDC))
+        # Eleven shares: 10 USDC + 0 XYZ, loss $1.00.
+        self.assertEqual(model.redeem_floor(11), (10 * USDC, 0))
+        self.assertEqual(model.loss_usd(11), 1)
+        # Clean multiples: no loss.
+        self.assertEqual(model.redeem_floor(11_000),
+                         (10_000 * USDC, 10))
+        self.assertEqual(model.loss_usd(11_000), 0)
+        self.assertEqual(model.redeem_floor(1_100),
+                         (1_000 * USDC, 1))
+        self.assertEqual(model.loss_usd(1_100), 0)
+        # Dust accrual: 1,100 x 1-share redeems keep $100.001 and
+        # lift the price to $1.000918 (exact fraction).
+        self.assertEqual(model.loss_usd(1) * 1_100,
+                         Fraction(100_001, 1000))
+        price_left = (Fraction(109_000_001, 1000)
+                      / Fraction(108_900))
+        self.assertEqual(price_left,
+                         Fraction(109_000_001, 108_900_000))
+        self.assertEqual(round(float(price_left), 6), 1.000918)
+        # Bound: < $100.000001 per redeem, 100,000,001x USDC-only.
+        worst = Fraction(1, USDC) + 100
+        self.assertEqual(worst, Fraction(100_000_001, USDC))
+        self.assertTrue(model.loss_usd(1) < worst)
+        self.assertTrue(model.loss_usd(11) < worst)
+        # Ceiling: 1 share overpays $99.909091.
+        self.assertEqual(model.redeem_ceil(1), (909_091, 1))
+        self.assertEqual(model.value_usd(909_091, 1) - 1,
+                         Fraction(99_909_091, USDC))
+
     def test_deposit_into_queue_guide_numbers(self):
         # Pins /guides/erc4626-deposit-into-queue/ to its model: a
         # 50,000 deposit into a vault with a 300,000 queue either pays
