@@ -6221,6 +6221,74 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(ALICE * price(gains, 50_000 * USDC, 10),
                          105_000 * USDC)
 
+    def test_donation_performance_fee_chart_numbers(self):
+        # Pins the gift-split bar chart on
+        # /guides/erc4626-donation-performance-fee/ to its model: a
+        # 100,000 USDC donation above a 1,000,000 USDC high-water mark
+        # accrues the same 20% fee as 100,000 of real yield; minting
+        # the fee shares dilutes the nominal fee, so the manager
+        # redeems 19,642.857141 and Alice keeps 80,357.142859 of the
+        # gift; if Alice redeems before crystallisation she keeps the
+        # whole 100,000 and the manager gets nothing.
+        # Importing the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers with Fraction.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-performance-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_performance_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        BASE = 1_000_000 * USDC
+        SUPPLY = 1_000_000 * USDC
+        GIFT = 100_000 * USDC
+        FEE_NUM, FEE_DEN = 20, 100
+
+        def fmt(fr):
+            # Exact 6-decimal USDC, round-half-up.
+            scaled = fr * USDC
+            q, r = divmod(scaled.numerator, scaled.denominator)
+            if 2 * r >= scaled.denominator:
+                q += 1
+            return "%d.%06d" % (q // USDC, q % USDC)
+
+        assets = BASE + GIFT
+        fee = GIFT * FEE_NUM // FEE_DEN
+        self.assertEqual(fee, 20_000 * USDC)
+        # Fee shares minted at the current price 1.10, floor like the
+        # model (Solidity division truncates, it does not round).
+        fee_shares = fee * SUPPLY // assets
+        self.assertEqual(fmt(Fraction(fee_shares, USDC)), "18181.818181")
+        # Manager redeems fee shares after minting; dilution shaves
+        # 357.142859 off the nominal 20,000. Redeem also floors.
+        mgr = fee_shares * assets // (SUPPLY + fee_shares)
+        self.assertEqual(fmt(Fraction(mgr, USDC)), "19642.857141")
+        self.assertEqual(fmt(Fraction(20_000 * USDC - mgr) / USDC),
+                         "357.142859")
+        # Alice keeps the rest of the gift.
+        alice_gain = GIFT - mgr
+        self.assertEqual(fmt(Fraction(alice_gain, USDC)), "80357.142859")
+        self.assertEqual(mgr + alice_gain, GIFT)
+        # Bar widths, one decimal, normalised to the 100,000 gift.
+        self.assertEqual(round(float(mgr / GIFT) * 100, 1), 19.6)
+        self.assertEqual(round(float(alice_gain / GIFT) * 100, 1), 80.4)
+        # Exit before crystallisation: Alice redeems all 1,100,000.
+        self.assertEqual(Fraction(BASE + GIFT, SUPPLY) * SUPPLY,
+                         1_100_000 * USDC)
+
+        # Chart markup is present in the built guide source.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('loss-value">19,642.857', build)
+        self.assertIn('loss-value">80,357.143', build)
+        self.assertIn('style="width:19.6%"', build)
+        self.assertIn('style="width:80.4%"', build)
+        self.assertIn('loss-value">100,000', build)
+
 
 if __name__ == "__main__":
     unittest.main()
