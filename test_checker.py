@@ -2939,20 +2939,179 @@ class TestChecker(unittest.TestCase):
         self.assertLess(2 - 3, 0)
         self.assertEqual(7 - 3, 4)
 
+    def test_deposit_bonus_guide_numbers(self):
+        # Pins /guides/erc4626-deposit-bonus/ to its model: a
+        # 100,000 USDC / 100,000 share vault, price $1.00.
+        # Carol holds all 100,000 shares; Alice deposits
+        # 100,000 USDC with a 10% bonus. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers the guide quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "deposit-bonus-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "deposit_bonus_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Setup: 100,000 USDC / 100,000 shares, price $1.00.
+        self.assertEqual(Fraction(100_000 * USDC, USDC) / 100_000, 1)
+        # Case 1: bonus minted as shares — Alice gets 100,000
+        # base + 10,000 bonus = 110,000 shares; price 20/21;
+        # Carol's 100,000 shares fall to 95,238,095,238 base
+        # units ($95,238.095238, -$4,761.904762); Alice's
+        # 110,000 shares rise to 104,761,904,761
+        # ($104,761.904761, +$4,761.904761); one base unit
+        # of dust is left unaccounted.
+        self.assertEqual((100_000 * USDC * 100_000) // (100_000 * USDC),
+                         100_000)
+        self.assertEqual(100_000 // 10, 10_000)
+        self.assertEqual(Fraction(200_000, 210_000), Fraction(20, 21))
+        self.assertEqual((100_000 * 200_000 * USDC) // 210_000,
+                         95_238_095_238)
+        self.assertEqual(100_000 * USDC - 95_238_095_238, 4_761_904_762)
+        self.assertEqual((110_000 * 200_000 * USDC) // 210_000,
+                         104_761_904_761)
+        self.assertEqual(104_761_904_761 - 100_000 * USDC, 4_761_904_761)
+        self.assertEqual(95_238_095_238 + 104_761_904_761,
+                         199_999_999_999)
+        # Case 2: bonus paid in a separate reward token —
+        # price stays 1.00, Carol stays 100,000; 10,000
+        # reward tokens are $10,000 at $1.00, $5,000 at $0.50.
+        self.assertEqual(Fraction(200_000, 200_000), 1)
+        self.assertEqual((100_000 * 200_000 * USDC) // 200_000,
+                         100_000 * USDC)
+        self.assertEqual(10_000 * 1, 10_000)
+        self.assertEqual(Fraction(10_000, 2), 5_000)
+        # Case 3: bonus pool exhausted — Bob deposits 100,000
+        # with no bonus and mints 105,000 shares at the diluted
+        # price; his shares are worth exactly 100,000 USDC;
+        # price stays 20/21; Carol and Alice are unchanged.
+        self.assertEqual((100_000 * 210_000) // 200_000, 105_000)
+        self.assertEqual(Fraction(300_000, 315_000), Fraction(20, 21))
+        self.assertEqual((105_000 * 300_000 * USDC) // 315_000,
+                         100_000 * USDC)
+        self.assertEqual((100_000 * 300_000 * USDC) // 315_000,
+                         95_238_095_238)
+        self.assertEqual((110_000 * 300_000 * USDC) // 315_000,
+                         104_761_904_761)
+        # Case 4: yield after the bonus — vault earns 21,000
+        # USDC; price 221/210; Carol's 100,000 shares are worth
+        # 105,238,095,238 base units, against 110,500 USDC
+        # without the bonus (-$5,261.904762); Alice's 110,000
+        # shares are worth 115,761,904,761, against 110,500
+        # USDC without the bonus (+$5,261.904761).
+        self.assertEqual(Fraction(221_000, 210_000), Fraction(221, 210))
+        self.assertEqual((100_000 * 221_000 * USDC) // 210_000,
+                         105_238_095_238)
+        self.assertEqual(Fraction(221_000, 200_000), Fraction(221, 200))
+        self.assertEqual((100_000 * 221_000 * USDC) // 200_000,
+                         110_500 * USDC)
+        self.assertEqual(110_500 * USDC - 105_238_095_238, 5_261_904_762)
+        self.assertEqual((110_000 * 221_000 * USDC) // 210_000,
+                         115_761_904_761)
+        self.assertEqual(115_761_904_761 - 110_500 * USDC, 5_261_904_761)
+    def test_rebasing_shares_guide_numbers(self):
+        # Pins /guides/erc4626-rebasing-shares/ to its model: a
+        # 1,000,000 USDC / 1,000,000 internal share vault, price
+        # $1.00, Alice holding 100,000 internal shares (10%).
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers the
+        # guide quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "rebasing-shares-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "rebasing_shares_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Setup: price $1.00, Alice's displayed balance $100,000.
+        self.assertEqual(Fraction(1_000_000 * USDC, USDC) / 1_000_000, 1)
+        self.assertEqual((100_000 * USDC * 1_000_000 * USDC)
+                         // (1_000_000 * USDC), 100_000 * USDC)
+        # Case 1: +10% yield — Alice $110,000 in both designs; a
+        # new 11,000 USDC deposit mints 10,000,000,000 internal
+        # shares, displayed as $11,000 (price vault: 10,000 shares
+        # at 1.10, same $11,000 claim).
+        self.assertEqual((100_000 * USDC * 1_100_000 * USDC)
+                         // (1_000_000 * USDC), 110_000 * USDC)
+        self.assertEqual(11_000 * Fraction(10, 11), 10_000)
+        self.assertEqual((11_000 * USDC * 1_000_000 * USDC)
+                         // (1_100_000 * USDC), 10_000 * USDC)
+        self.assertEqual((10_000 * USDC * 1_100_000 * USDC)
+                         // (1_000_000 * USDC), 11_000 * USDC)
+        # Case 2: 1,000,000 USDC donation — Alice's balance doubles
+        # to $200,000 (+$100,000, half the donation); Bob deposits
+        # 100,000, mints 50,000,000,000 internal shares, redeems
+        # $100,000 in full: loss $0. Contrast with the checker's
+        # own donation model on an unprotected price vault (new
+        # vault, offset 0, same donation and victim): victim loss
+        # 909,091 base units ($0.909091), attacker net -90,909.
+        self.assertEqual((100_000 * USDC * 2_000_000 * USDC)
+                         // (1_000_000 * USDC), 200_000 * USDC)
+        self.assertEqual((100_000 * USDC * 1_000_000 * USDC)
+                         // (2_000_000 * USDC), 50_000 * USDC)
+        self.assertEqual((50_000 * USDC * 2_100_000 * USDC)
+                         // (1_050_000 * USDC), 100_000 * USDC)
+        from erc4626_checker import Vault, run_all
+        v = Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)
+        checks = run_all(v)
+        d = [c for c in checks if c["name"] == "donation_inflation"][0]
+        self.assertFalse(d["pass"])
+        row_1m = [r for r in d["detail"]
+                  if r["donation"] == 1_000_000_000_000][0]
+        self.assertEqual(row_1m["victim_loss"], 909_091)
+        self.assertEqual(row_1m["attacker_net"], -90_909)
+        # Seeded attacker: 1 USDC in, 1,000,000 USDC donated,
+        # recovers $1.999999 (1,999,999 base units), loses
+        # $999,999.000001.
+        self.assertEqual((1 * USDC * 2_000_001 * USDC)
+                         // (1_000_001 * USDC), 1_999_999)
+        self.assertEqual((1 * USDC + 1_000_000 * USDC) - 1_999_999,
+                         999_999_000_001)
+        # Case 3: the stale snapshot — +10% yield under-reads by
+        # 10,000, -10% over-reads by 10,000; a 75,000 loan at 75%
+        # LTV against the snapshot is really 5/6 = 83.3333% LTV.
+        self.assertEqual(110_000 * USDC - 100_000 * USDC, 10_000 * USDC)
+        self.assertEqual((100_000 * USDC * 900_000 * USDC)
+                         // (1_000_000 * USDC), 90_000 * USDC)
+        self.assertEqual(100_000 * USDC - 90_000 * USDC, 10_000 * USDC)
+        self.assertEqual(100_000 * USDC * 3 // 4, 75_000 * USDC)
+        self.assertEqual(Fraction(75_000 * USDC, 90_000 * USDC),
+                         Fraction(5, 6))
+        # Case 4: the dust floor — 1 internal share shows 1 base
+        # unit after +10% and after a second +10%, 2 only after a
+        # doubling; 1,000,000 dust holders trap $0.10 per rebase.
+        self.assertEqual((1 * 1_100_000 * USDC) // (1_000_000 * USDC), 1)
+        self.assertEqual((1 * 1_210_000 * USDC) // (1_000_000 * USDC), 1)
+        self.assertEqual((1 * 2_000_000 * USDC) // (1_000_000 * USDC), 2)
+        self.assertEqual(Fraction(1 * 1_100_000 * USDC, 1_000_000 * USDC),
+                         Fraction(11, 10))
+        self.assertEqual(1_000_000 * (Fraction(11, 10) - 1), 100_000)
+
     def test_gamma_research_page_numbers(self):
         # Pins /research/gamma/ to the study: 27 validated findings
-        # (5H + 9M + 13L), 23 published as verified, payouts summing
-        # to 10,718.50 USDC. The 23 are H-01–H-04 (4),
+        # (5H + 9M + 13L), 24 published as verified, payouts summing
+        # to 29,968.33 USDC. The 24 are H-01–H-05 (5),
         # M-01–M-04 + M-06–M-09 (8) and L-01–L-11 (11); M-05 is a
-        # MISS and H-05, L-12/L-13, M-1(#829) are cut or flagged.
+        # MISS and H-05 was cut/flagged until this round: it is now
+        # verified (sole submission, 19,249.83 USDC), while L-12/L-13
+        # and M-1(#829) remain cut or flagged.
         from pathlib import Path
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
         start = build.index('add("/research/gamma/"')
         end = build.index('add("/research/domain-hijack/"', start)
         page = build[start:end]
-        self.assertEqual(page.count("<tr><td>"), 23)
-        self.assertIn("10,718.50 USDC", page)
+        self.assertEqual(page.count("<tr><td>"), 24)
+        self.assertIn("29,968.33 USDC", page)
         self.assertIn("27 findings: 5 High, 9 Medium, 13 Low", page)
         # Largest payout (M-08, live on-chain) and the two Highs.
         self.assertIn("3,849.97 USDC", page)
@@ -2962,10 +3121,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn("M-05", page)
         self.assertIn("MISS", page)
         self.assertIn("Flagged or cut", page)
-        # Payout arithmetic: H 964.36 + M 8,485.06 + L 1,269.08.
+        # Payout arithmetic: H 20,214.19 + M 8,485.06 + L 1,269.08.
         from decimal import Decimal
         highs = [Decimal("95.74"), Decimal("61.42"), Decimal("61.42"),
-                 Decimal("745.78")]
+                 Decimal("745.78"), Decimal("19249.83")]
         mediums = [Decimal("122.04"), Decimal("122.04"),
                    Decimal("378.89"), Decimal("41.97"),
                    Decimal("505.19"), Decimal("1732.48"),
@@ -2975,7 +3134,7 @@ class TestChecker(unittest.TestCase):
                 Decimal("290.98"), Decimal("290.98"), Decimal("53.03"),
                 Decimal("290.98"), Decimal("130.94")]
         self.assertEqual(sum(highs) + sum(mediums) + sum(lows),
-                         Decimal("10718.50"))
+                         Decimal("29968.33"))
 
 if __name__ == "__main__":
     unittest.main()
