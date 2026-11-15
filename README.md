@@ -62,9 +62,10 @@ fails the donation check, offset 6 + minimum passes it.
 - Model only: it checks the accounting rules, not a deployed contract's
   live state, permissions, oracle, or strategy code.
 - No verified buyer. This is the free core of ranked idea #1
-  (2026-11-03 low-cost ideas writeup). A paid check pack, if any,
-  is a separate later decision — no payment address is published here.
-- Kill line (from that writeup): 30 days after publishing + posting,
-  zero stars, zero downloads, zero tips, zero inbound -> shelve.
-- Not published yet: publishing to the spare GitHub account and the
-  tip-address choice are the two remaining decisions, not smuggled in.
+  (2026-11-03 low-cost ideas writeup). The paid option is a human
+  review of a live vault — the vault micro-audit, up to 15 files,
+  50 USDC prepaid, written report in 72 hours — offered on the
+  hosted site, not in this repo: https://check.n1netw3n.live/audit/
+- Kill line (from that writeup): published 2026-11-06; 30 days after
+  publishing + posting, zero stars, zero downloads, zero tips, zero
+  inbound -> shelve (2026-12-06).
