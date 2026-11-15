@@ -1,4 +1,5 @@
 import unittest
+from fractions import Fraction
 
 from erc4626_checker import Vault, run_all, check_donation
 
@@ -826,6 +827,44 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+    def test_exit_fee_guide_numbers(self):
+        # Exit-fee guide (site/exit-fee-model.py): a 5% fee on redemption.
+        # Re-derived here with plain integer arithmetic, independent of
+        # the model file, so the guide's numbers cannot drift silently.
+        # Vault 1,000,000 assets / 1,000,000 shares, price exactly 1.00.
+        USDC = 1_000_000
+        A, S = 1_000_000 * USDC, 1_000_000 * USDC
+        shares = 100_000 * USDC
+        gross = shares * A // S
+        fee = gross * 500 // 10_000
+        self.assertEqual((gross, fee, gross - fee),
+                         (100_000 * USDC, 5_000 * USDC, 95_000 * USDC))
+        # Fee retained in the vault: price rises to exactly 181/180.
+        self.assertEqual(Fraction(A - (gross - fee), S - shares),
+                         Fraction(181, 180))
+        # Second exiter at the new price nets 527.777778 more than the first.
+        gross2 = shares * (A - (gross - fee)) // (S - shares)
+        fee2 = gross2 * 500 // 10_000
+        self.assertEqual((gross2, fee2, gross2 - fee2),
+                         (100_555_555_555, 5_027_777_777, 95_527_777_778))
+        # Withdraw side: minimal shares to net exactly 100,000 USDC.
+        want = 100_000 * USDC
+
+        def net(sh):
+            g = sh * A // S
+            return g - g * 500 // 10_000
+
+        s = -(-want * 10_000 // (10_000 - 500))  # ceil gross, price 1.00
+        while s > 0 and net(s - 1) >= want:
+            s -= 1
+        self.assertEqual(s, 105_263_157_894)
+        self.assertGreaterEqual(net(s), want)
+        self.assertLess(net(s - 1), want)
+        # Fee paid out to a manager instead: price stays exactly 1.00.
+        self.assertEqual(Fraction(A - gross, S - shares), 1)
+        # Dust redemption: 1 USDC gross nets 0.95 USDC.
+        self.assertEqual(USDC - USDC * 500 // 10_000, 950_000)
+
     def test_vault_state_seeded_donation(self):
         # A live vault is not a new vault: the checker used to run the
         # donation check only on an empty vault, so every live vault got
