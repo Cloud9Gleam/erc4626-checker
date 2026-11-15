@@ -1429,6 +1429,34 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("TechArticle", checker)
         self.assertIn('<meta property="og:type" content="website">', checker)
 
+    def test_audit_payment_block_is_a_container(self):
+        # /audit/ is the sales page: the payment facts (price, USDC on
+        # Base, address + copy button, email-first instruction) must sit
+        # inside one styled container, not float bare on the page.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertIn('<div class="pay-box">', audit)
+        self.assertLess(audit.index('<div class="pay-box">'),
+                        audit.index('<div class="pay-row">'))
+        self.assertLess(audit.index('<div class="pay-box">'),
+                        audit.index('id="pay-addr"'))
+        # The box closes only after the email-first instruction, so the
+        # whole payment block (price line, address row, instruction) is
+        # inside it; the pay-row's own </div> comes first and must not
+        # end the match.
+        m = re.search(r'<div class="pay-box">.*?<p>Email first.*?</p>\s*</div>',
+                      audit, re.S)
+        self.assertIsNotNone(m)
+        self.assertIn(build.PAY_ADDR, m.group(0))
+        self.assertIn("Copy payment address", m.group(0))
+        self.assertIn("About 50 USDC, prepaid.", m.group(0))
+        self.assertIn(".pay-box{background:#f0fdf4", build.CSS)
+        self.assertIn(".pay-box code{background:#fff}", build.CSS)
+
 
 if __name__ == "__main__":
     unittest.main()
