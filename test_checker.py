@@ -1795,5 +1795,102 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(10_000 * USDC // 100, 100 * USDC)
         self.assertEqual(5_000 * USDC // (100 * USDC), 50)
 
+    def test_share_classes_guide_numbers(self):
+        # Guide #50: two share classes, one vault -- A pays 2%, B pays
+        # 0.5%. Each class holds 500,000 shares / 500,000 USDC at launch,
+        # price 1.00. Alice holds 10,000 shares. Re-derived here with
+        # plain integer / Fraction arithmetic, independent of the model
+        # file (site/share-classes-model.py).
+        USDC = 1_000_000
+        # Two share classes, one vault: A pays 2%, B pays 0.5%. Each
+        # class holds 500,000 shares / 500,000 USDC at launch, price 1.00.
+        # Alice holds 10,000 shares. All values from
+        # site/share-classes-model.py (exact Fractions).
+        # 1: year 1, +10% gross. A fee 11,000 -> 539,000, price 539/500 =
+        # 1.078; B fee 2,750 -> 547,250, price 2189/2000 = 1.0945. Alice:
+        # 10,780 in A vs 10,945 in B, a 165 difference after one year.
+        self.assertEqual(550_000 * USDC * 2 // 100, 11_000 * USDC)
+        self.assertEqual(550_000 * USDC - 11_000 * USDC, 539_000 * USDC)
+        self.assertEqual(Fraction(539_000 * USDC, 500_000),
+                         Fraction(539, 500) * USDC)
+        self.assertEqual(10_000 * Fraction(539_000 * USDC, 500_000),
+                         10_780 * USDC)
+        self.assertEqual(550_000 * USDC // 200, 2_750 * USDC)
+        self.assertEqual(550_000 * USDC - 2_750 * USDC, 547_250 * USDC)
+        self.assertEqual(Fraction(547_250 * USDC, 500_000),
+                         Fraction(2189, 2000) * USDC)
+        self.assertEqual(10_000 * Fraction(547_250 * USDC, 500_000),
+                         10_945 * USDC)
+        self.assertEqual(10_945 * USDC - 10_780 * USDC, 165 * USDC)
+        # 2: year 2, another +10%. A fee 11,858 -> 581,042, price
+        # 290521/250000 = 1.162084; B fee 3,009.875 -> 598,965.125,
+        # price 1.19793025. Alice: 11,620.84 vs 11,979.3025, gap 358.4625.
+        self.assertEqual(592_900 * USDC * 2 // 100, 11_858 * USDC)
+        self.assertEqual(592_900 * USDC - 11_858 * USDC, 581_042 * USDC)
+        self.assertEqual(Fraction(581_042 * USDC, 500_000),
+                         Fraction(290521, 250000) * USDC)
+        self.assertEqual(10_000 * Fraction(581_042 * USDC, 500_000),
+                         Fraction(1162084, 100) * USDC)
+        self.assertEqual(Fraction(601975, 200) * USDC,
+                         Fraction(3009875, 1000) * USDC)
+        self.assertEqual(Fraction(601975 * USDC) - Fraction(601975, 200) * USDC,
+                         Fraction(4791721, 8) * USDC)
+        self.assertEqual(10_000 * Fraction(4791721, 8) * USDC / 500_000,
+                         Fraction(119793025, 10000) * USDC)
+        self.assertEqual(Fraction(119793025, 10000) * USDC
+                         - Fraction(1162084, 100) * USDC,
+                         Fraction(28677, 80) * USDC)
+        # 3: down year -10% from launch. Both classes still pay: A fee
+        # 9,000 -> 441,000, price 0.882; B fee 2,250 -> 447,750, price
+        # 0.8955. Alice: 8,820 vs 8,955, a 135 difference in a losing year.
+        self.assertEqual(450_000 * USDC * 2 // 100, 9_000 * USDC)
+        self.assertEqual(450_000 * USDC - 9_000 * USDC, 441_000 * USDC)
+        self.assertEqual(Fraction(441_000 * USDC, 500_000),
+                         Fraction(441, 500) * USDC)
+        self.assertEqual(10_000 * Fraction(441_000 * USDC, 500_000),
+                         8_820 * USDC)
+        self.assertEqual(450_000 * USDC // 200, 2_250 * USDC)
+        self.assertEqual(450_000 * USDC - 2_250 * USDC, 447_750 * USDC)
+        self.assertEqual(Fraction(447_750 * USDC, 500_000),
+                         Fraction(1791, 2000) * USDC)
+        self.assertEqual(10_000 * Fraction(447_750 * USDC, 500_000),
+                         8_955 * USDC)
+        self.assertEqual(8_955 * USDC - 8_820 * USDC, 135 * USDC)
+        # 4: ten years at +10% a year. A ends near 21,192.76, B near
+        # 24,669.35; B/A ratio near 1.164046 -- "only 1.5% a year"
+        # compounds to B ending about 16.40% ahead.
+        a10 = 10_000 * Fraction(539, 500) ** 10
+        b10 = 10_000 * Fraction(2189, 2000) ** 10
+        self.assertTrue(21_192 < a10 < 21_193)
+        self.assertTrue(24_669 < b10 < 24_670)
+        self.assertTrue(3476 < b10 - a10 < 3477)
+        self.assertTrue(Fraction(1164, 1000) < b10 / a10
+                        < Fraction(1165, 1000))
+        # 5: pooled-fee bug. Correct year-1 fees total 13,750; taken from
+        # pooled totalAssets and split 50/50, each class loses 6,875, so
+        # both sit at 543,125, price 21725/20000 = 1.08625. A gains 4,125
+        # against its correct 539,000; B loses 4,125 against its correct
+        # 547,250 -- 0.7539% of B's value moves to A in one year.
+        self.assertEqual(11_000 * USDC + 2_750 * USDC, 13_750 * USDC)
+        self.assertEqual(13_750 * USDC // 2, 6_875 * USDC)
+        self.assertEqual(550_000 * USDC - 6_875 * USDC, 543_125 * USDC)
+        self.assertEqual(Fraction(543_125 * USDC, 500_000),
+                         Fraction(21725, 20000) * USDC)
+        self.assertEqual(543_125 * USDC - 539_000 * USDC, 4_125 * USDC)
+        self.assertEqual(547_250 * USDC - 543_125 * USDC, 4_125 * USDC)
+        self.assertEqual(Fraction(4125, 547250), Fraction(33, 4378))
+        # 6: converting A to B at NAV. Alice's 10,000 A shares are worth
+        # 10,780 after year 1; at B's price 1.0945 that buys 21,560,000 /
+        # 2,189 = 9,849.246... B shares. A stale launch price of 1.00
+        # would mint 10,780 B shares: 2,037,420/2,189 = 930.753... shares
+        # too many, worth about 1,018.71 USDC.
+        conv = Fraction(10_780 * USDC, 1) / (Fraction(2189, 2000) * USDC)
+        self.assertEqual(conv, Fraction(21_560_000, 2189))
+        self.assertTrue(9849 < conv < 9850)
+        over = 10_780 - conv
+        self.assertEqual(over, Fraction(2037420, 2189))
+        self.assertTrue(930 < over < 931)
+        self.assertTrue(1018 < over * Fraction(2189, 2000) < 1019)
+
 if __name__ == "__main__":
     unittest.main()
