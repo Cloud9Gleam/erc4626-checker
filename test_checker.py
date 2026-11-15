@@ -2179,5 +2179,49 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(atk_out - (atk_in + 1_000_000 * USDC),
                          -90_909)
 
+    def test_donation_loss_chart(self):
+        # The donation table shows four losses that are not monotonic in
+        # the donation (1B loses less than 1M) — easy to miss in a column
+        # of decimals. The bar chart under the table makes the shape
+        # visible: bars scaled to the worst row, red where the row breaches
+        # the pass bound. The chart adds no new numbers; every figure is
+        # the model's own, and the bar widths are pinned here.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # No protection: losses 0 / 6 / 909091 / 99890 base units.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("loss-chart", html)
+        self.assertIn("Bars are scaled to the worst row in this table", html)
+        self.assertEqual(html.count("loss-fill fail"), 2)
+        self.assertEqual(html.count("loss-fill pass"), 2)
+        self.assertIn("width:100.0%", html)
+        self.assertIn("width:11.0%", html)
+        self.assertIn("0.909091", html)
+        # Seeded vault: losses [1, 1, 1, 13] — all within bound, all green.
+        A50 = 50_000_000_000_000
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                    vault_assets=A50, vault_supply=A50),
+            vic=100_000_000_000, off=0, mn=0, fee=0, vassets=A50, vshares=A50)
+        self.assertEqual(html.count("loss-fill fail"), 0)
+        self.assertEqual(html.count("loss-fill pass"), 4)
+        self.assertIn("width:7.7%", html)
+        # Offset 18: every loss is 0 — bars all zero width, chart still there.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertIn("loss-chart", html)
+        self.assertEqual(html.count("width:0.0%"), 4)
+        # Giant minimum deposit: every row errors, no number to chart.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=10 ** 21,
+                          perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
+        self.assertNotIn("loss-chart", html)
+
 if __name__ == "__main__":
     unittest.main()
