@@ -1,6 +1,6 @@
 """CLI entry point for the ERC-4626 accounting checker.
 
-Run the five exact-integer checks against a vault model described by
+Run the six exact-integer checks against a vault model described by
 its parameters, and exit non-zero when any check fails, so CI can gate
 on it:
 
