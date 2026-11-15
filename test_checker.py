@@ -2223,5 +2223,46 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
 
+
+    def test_smoothed_nav_guide_numbers(self):
+        # Smoothed-NAV guide: 30-day moving-average reported price.
+        # Vault 1,000,000 USDC / 1,000,000 shares, price 1.00.
+        # Independent re-derivation with Fraction (does not import the
+        # site model file); pins every number the guide prints.
+        USDC = 1_000_000
+        # -20% day: reported = (29 x 1.00 + 0.80) / 30 = 149/150.
+        rep_loss = (29 * Fraction(1) + Fraction(4, 5)) / 30
+        self.assertEqual(rep_loss, Fraction(149, 150))
+        payout = Fraction(100_000) * rep_loss
+        self.assertEqual(payout, Fraction(298_000, 3))  # 99,333.333333
+        overpay = payout - Fraction(80_000)
+        self.assertEqual(overpay, Fraction(58_000, 3))  # 19,333.333333
+        rem_price = (Fraction(800_000) - payout) / Fraction(900_000)
+        self.assertEqual(rem_price, Fraction(1051, 1350))  # 0.778519
+        # +20% day: reported = (29 x 1.00 + 1.20) / 30 = 151/150.
+        rep_gain = (29 * Fraction(1) + Fraction(6, 5)) / 30
+        self.assertEqual(rep_gain, Fraction(151, 150))
+        shares_base = (100_000 * USDC * 150) // 151
+        self.assertEqual(shares_base, 99_337_748_344)  # 99,337.748344
+        shares = Fraction(shares_base, USDC)
+        true_price = Fraction(1_300_000) / (Fraction(1_000_000) + shares)
+        bob_value = shares * true_price
+        # 117,469.879518 to 6dp; gain 17,469.879518.
+        self.assertLess(abs(bob_value - Fraction(117_469_879_518, USDC)),
+                        Fraction(1, USDC))
+        self.assertLess(abs((bob_value - 100_000)
+                            - Fraction(17_469_879_518, USDC)),
+                        Fraction(1, USDC))
+        # Run: half the vault redeems at the smoothed price.
+        run_payout = Fraction(500_000) * rep_loss
+        self.assertEqual(run_payout, Fraction(1_490_000, 3))  # 496,666.666667
+        run_price = (Fraction(800_000) - run_payout) / Fraction(500_000)
+        self.assertEqual(run_price, Fraction(91, 150))  # 0.606667
+        # Convergence: reported price k days after the shock.
+        for k, want in ((10, Fraction(14, 15)), (29, Fraction(121, 150)),
+                        (30, Fraction(4, 5))):
+            got = ((30 - k) * Fraction(1) + k * Fraction(4, 5)) / 30
+            self.assertEqual(got, want)
+
 if __name__ == "__main__":
     unittest.main()
