@@ -926,6 +926,45 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(Fraction(20_000) * Fraction(1_000_000)
                          / Fraction(1_020_000), Fraction(1_000_000, 51))
 
+    def test_deposit_fee_guide_numbers(self):
+        # Deposit-fee guide (site/deposit-fee-model.py): a 5% front-end
+        # load on a 100,000 USDC deposit into a 1,000,000 / 1,000,000
+        # vault at price 1.00. Re-derived here with plain Fractions,
+        # independent of the model file.
+        A, S, H = Fraction(1_000_000), Fraction(1_000_000), Fraction(10_000)
+        D, FEE = Fraction(100_000), Fraction(5, 100)
+        fee, net = D * FEE, D - D * FEE
+        self.assertEqual(fee, 5_000)
+        self.assertEqual(net, 95_000)
+        # (a) Fee to the manager: price stays 1.00, loss exactly 5,000.
+        self.assertEqual((A + net) / (S + net), 1)
+        self.assertEqual(net * 1, 95_000)
+        self.assertEqual(D - net, 5_000)
+        # (b) Fee retained: price 220/219, depositor loses 1,000,000/219.
+        price_b = (A + D) / (S + net)
+        self.assertEqual(price_b, Fraction(220, 219))
+        self.assertEqual(net * price_b, Fraction(20_900_000, 219))
+        self.assertEqual(D - net * price_b, Fraction(1_000_000, 219))
+        self.assertEqual(H * price_b, Fraction(2_200_000, 219))
+        self.assertEqual(H * price_b - 10_000, Fraction(10_000, 219))
+        # Conservation: depositor loss == existing holders' total gain.
+        self.assertEqual(D - net * price_b, S * (price_b - 1))
+        # Recapture: depositor's own share of the retained fee, 95,000/219.
+        self.assertEqual(net / (S + net) * fee, Fraction(95_000, 219))
+        # Front-end vs back-end exactly equal at price 1.10 and 0.90.
+        for p1, expect in ((Fraction(11, 10), 104_500),
+                           (Fraction(9, 10), 85_500)):
+            self.assertEqual(net * p1, expect)
+            self.assertEqual(D * p1 * (1 - FEE), expect)
+        # Gross vs net quoting: 105,000 deposit, 5% of net is 1/21.
+        D2 = Fraction(105_000)
+        self.assertEqual(D2 / (1 + FEE), 100_000)
+        self.assertEqual(D2 - D2 / (1 + FEE), 5_000)
+        self.assertEqual((D2 - D2 / (1 + FEE)) / D2, Fraction(1, 21))
+        self.assertEqual(D2 * FEE, 5_250)
+        self.assertEqual(D2 - D2 * FEE, 99_750)
+        self.assertEqual(D2 / (1 + FEE) - (D2 - D2 * FEE), 250)
+
     def test_vault_state_seeded_donation(self):
         # A live vault is not a new vault: the checker used to run the
         # donation check only on an empty vault, so every live vault got
