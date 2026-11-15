@@ -271,16 +271,57 @@ def check_share_price_sanity(v: Vault) -> dict:
                        f"{_fmt_usdc(price_after)}{NBSP}USDC"]}
 
 
+def check_minimum_viable_deposit(v: Vault, vault_assets: int = 0,
+                                 vault_supply: int = 0) -> dict:
+    """Smallest deposit that mints at least one share, at the vault's
+    live price. Deposit rounds down, so below a threshold a deposit
+    mints zero shares: at $1,000 a share a 1 USDC deposit buys nothing,
+    and the rounding-errors guide measured the same trap as a
+    1-base-unit deposit minting zero shares. PASS = a 1 USDC deposit
+    mints at least one share after the vault's own minimum-deposit
+    floor. The closed form is exact: shares = floor(a * S' / A')
+    with S' = supply + virtual shares and A' = assets + virtual
+    assets, so shares >= 1 exactly when a >= ceil(A' / S'). A
+    decimals offset raises S' and shrinks the threshold.
+
+    vault_assets / vault_supply seed the vault with the deposits
+    already in it (base units / shares, default 0 = a new vault).
+    A half-filled state needs no refusal here, unlike the donation
+    check: assets with no shares is a donated-to empty vault, and
+    the preview math is still defined there."""
+    w = _fresh(total_assets=vault_assets, total_supply=vault_supply,
+               decimals_offset=v.decimals_offset, min_deposit=v.min_deposit)
+    s_prime = w.total_supply + w.virtual_shares
+    a_prime = w.total_assets + w.virtual_assets
+    # ceil(A' / S') in exact integers.
+    min_assets = -(-a_prime // s_prime)
+    one_usdc_mints = w.preview_deposit(1_000_000)
+    effective = max(v.min_deposit, min_assets)
+    ok = effective <= 1_000_000
+    detail = [f"1{NBSP}USDC mints {_fmt_int(one_usdc_mints)}{NBSP}shares",
+              f"smallest deposit minting 1 share: {_fmt_usdc(min_assets)}{NBSP}USDC"]
+    if min_assets > 1:
+        detail.append(f"largest zero-share deposit: {_fmt_usdc(min_assets - 1)}{NBSP}USDC")
+    else:
+        detail.append("no zero-share deposit: 1 base unit mints 1 share")
+    if v.min_deposit > min_assets:
+        detail.append(f"min-deposit floor {_fmt_usdc(v.min_deposit)}{NBSP}USDC binds: "
+                      f"effective minimum {_fmt_usdc(effective)}{NBSP}USDC")
+    return {"name": "minimum_viable_deposit", "pass": ok, "detail": detail}
+
+
 def run_all(v: Vault, victim_deposit: int = 100_000_000_000,
             vault_assets: int = 0, vault_supply: int = 0) -> list[dict]:
-    """Run all five checks. victim_deposit is the donation-check scenario
+    """Run all six checks. victim_deposit is the donation-check scenario
     size (base units, default 100,000 USDC): the vault a user is testing
     may expect much smaller or larger typical deposits than the default.
     vault_assets / vault_supply are the deposits already in the vault
     before the attack (base units / shares, default 0 = a new vault);
-    only the donation check uses them."""
+    only the donation and minimum-viable-deposit checks use them."""
     return [check_rounding(v),
             check_donation(v, victim_deposit=victim_deposit,
                            vault_assets=vault_assets, vault_supply=vault_supply),
+            check_minimum_viable_deposit(v, vault_assets=vault_assets,
+                                         vault_supply=vault_supply),
             check_preview_consistency(v),
             check_fee_conservation(v), check_share_price_sanity(v)]
