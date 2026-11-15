@@ -965,6 +965,55 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(D2 - D2 * FEE, 99_750)
         self.assertEqual(D2 / (1 + FEE) - (D2 - D2 * FEE), 250)
 
+    def test_fee_net_vs_gross_guide_numbers(self):
+        # Fee net-vs-gross guide (site/fee-net-vs-gross-model.py): a 2%
+        # management fee on a 1,000,000 / 1,000,000 vault at price 1.00.
+        # Re-derived here with plain Fractions, independent of the model
+        # file. Continuous-accrual figure uses math.exp with tolerance.
+        import math
+        A, S, H = Fraction(1_000_000), Fraction(1_000_000), Fraction(10_000)
+        FEE = Fraction(2, 100)
+        # (a) Gross basis: fee 20,000, price 0.98, holder 9,800, loss 200.
+        fee_gross = A * FEE
+        self.assertEqual(fee_gross, 20_000)
+        self.assertEqual((A - fee_gross) / S, Fraction(49, 50))
+        self.assertEqual(H * (A - fee_gross) / S, 9_800)
+        # (b) Net basis: fee = A*f/(1+f) = 1,000,000/51, price 50/51.
+        fee_net = A * FEE / (1 + FEE)
+        self.assertEqual(fee_net, Fraction(1_000_000, 51))
+        self.assertEqual((A - fee_net) / S, Fraction(50, 51))
+        self.assertEqual(H * (A - fee_net) / S, Fraction(500_000, 51))
+        self.assertEqual(H - H * (A - fee_net) / S, Fraction(10_000, 51))
+        self.assertEqual(fee_gross - fee_net, Fraction(20_000, 51))
+        self.assertEqual(H * (A - fee_net) / S - H * (A - fee_gross) / S,
+                         Fraction(200, 51))
+        # Identity: net basis == minting 2% of supply (fee-basis guide).
+        self.assertEqual(fee_net, Fraction(1_000_000, 51))
+        # Gross-up rate: r/(1+r) = 2% gives r = 1/49 = 2.040816...%.
+        rate = FEE / (1 - FEE)
+        self.assertEqual(rate, Fraction(1, 49))
+        self.assertEqual(A * rate / (1 + rate), 20_000)
+        # Two years: gross holder 9,604; net holder 9,611.687812...
+        self.assertEqual(H * (1 - FEE) ** 2, 9_604)
+        self.assertAlmostEqual(float(H * Fraction(100, 102) ** 2),
+                               9611.687812379854, places=6)
+        self.assertAlmostEqual(float(H * Fraction(100, 102) ** 2 - 9_604),
+                               7.687812379854, places=6)
+        # Five years: gross holder 9,039.207968; net 9,057.308098.
+        self.assertAlmostEqual(float(H * (1 - FEE) ** 5),
+                               9039.207968, places=6)
+        self.assertAlmostEqual(float(H * Fraction(100, 102) ** 5),
+                               9057.30809829916, places=6)
+        self.assertAlmostEqual(float(H * Fraction(100, 102) ** 5
+                                     - H * (1 - FEE) ** 5),
+                               18.100130299159, places=6)
+        # Continuous accrual sits between net and gross.
+        fee_cont = float(A) * (1 - math.exp(-0.02))
+        self.assertAlmostEqual(fee_cont, 19801.326693244748, places=6)
+        self.assertAlmostEqual(float(H) * (1 - math.exp(-0.02)),
+                               198.01326693244746, places=6)
+        self.assertTrue(float(fee_net) < fee_cont < float(fee_gross))
+
     def test_vault_state_seeded_donation(self):
         # A live vault is not a new vault: the checker used to run the
         # donation check only on an empty vault, so every live vault got
