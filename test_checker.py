@@ -4046,5 +4046,101 @@ class TestChecker(unittest.TestCase):
             abs(cv.convert_to_assets(100_000 * USDC)
                 - 90_000 * USDC), 2)
 
+    def test_offset_upgrade_guide_numbers(self):
+        # Pins /guides/erc4626-offset-upgrade/ to its model: a UUPS /
+        # proxy upgrade swaps in an implementation returning a different
+        # decimalsOffset, repricing every outstanding share. Importing
+        # the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers the guide quotes,
+        # on the checker's own Vault (the offset IS the OZ convention).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "offset-upgrade-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "offset_upgrade_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+
+        # Case 1: 0 -> 6 on the 1,000,000 USDC vault — Alice's 100,000
+        # shares fall 100,000.000000 -> 99,999.900000 (loses 0.10);
+        # all shares redeem for 999,999.000001, stranding 0.999999.
+        # Sequential redemption agrees: Alice 99,999.900000, Carol
+        # 899,999.100001, 999,999 base units left, supply zero.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        self.assertEqual(v.convert_to_assets(100_000 * USDC),
+                         100_000 * USDC)
+        v.decimals_offset = 6
+        self.assertEqual(v.convert_to_assets(100_000 * USDC),
+                         99_999_900_000)
+        self.assertEqual(v.convert_to_assets(1_000_000 * USDC),
+                         999_999_000_001)
+        v2 = ec.Vault(total_assets=1_000_000 * USDC,
+                      total_supply=1_000_000 * USDC, decimals_offset=6)
+        self.assertEqual(v2.redeem(100_000 * USDC), 99_999_900_000)
+        self.assertEqual(v2.redeem(900_000 * USDC), 899_999_100_001)
+        self.assertEqual(v2.total_assets, 999_999)
+        self.assertEqual(v2.total_supply, 0)
+
+        # Case 2: same upgrade on a 1,000 USDC vault — Alice's 100
+        # shares fall 100.000000 -> 99.900100 (loses 0.099900, 0.0999%);
+        # all shares redeem for 999.001000, stranding 0.999000.
+        v = ec.Vault(total_assets=1_000 * USDC,
+                     total_supply=1_000 * USDC, decimals_offset=0)
+        v.decimals_offset = 6
+        self.assertEqual(v.convert_to_assets(100 * USDC), 99_900_100)
+        self.assertEqual(v.convert_to_assets(1_000 * USDC), 999_001_000)
+
+        # Case 3: 0 -> 18 on the big vault — Alice's 100,000 shares
+        # fall to 0.099999 (loses 99,999.900001, 99.9999%); all shares
+        # redeem for 0.999999, stranding 999,999.000001.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        v.decimals_offset = 18
+        self.assertEqual(v.convert_to_assets(100_000 * USDC), 99_999)
+        self.assertEqual(v.convert_to_assets(1_000_000 * USDC), 999_999)
+
+        # Case 4: reverse 6 -> 0 — Alice's 100,000 shares rise
+        # 99,999.900000 -> 100,000.000000 (gains 0.10); Bob deposits
+        # 100,000 USDC after and mints 100,000.000000 shares against
+        # 100,000.099999 before — 99,999 fewer shares.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=6)
+        self.assertEqual(v.convert_to_assets(100_000 * USDC),
+                         99_999_900_000)
+        self.assertEqual(v.preview_deposit(100_000 * USDC),
+                         100_000_099_999)
+        v.decimals_offset = 0
+        self.assertEqual(v.convert_to_assets(100_000 * USDC),
+                         100_000 * USDC)
+        self.assertEqual(v.preview_deposit(100_000 * USDC),
+                         100_000 * USDC)
+
+        # Case 5: after 0 -> 18, Bob deposits 1,000,000 USDC and mints
+        # 1,000,000,999,998,999,999 shares; redeeming returns
+        # 999,999.999999 (loses 1 base unit). Pre-upgrade holders can
+        # still only redeem 0.999999; restoring the offset to 0 returns
+        # Alice's 100,000 shares to 100,000.000000.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=18)
+        minted = v.deposit(1_000_000 * USDC)
+        self.assertEqual(minted, 1_000_000_999_998_999_999)
+        self.assertEqual(v.redeem(minted), 999_999_999_999)
+        self.assertEqual(v.convert_to_assets(1_000_000 * USDC), 999_999)
+        v.decimals_offset = 0
+        self.assertEqual(v.convert_to_assets(100_000 * USDC),
+                         100_000 * USDC)
+
+        # Case 6: small vault at offset 18 — Alice's 100 shares redeem
+        # for exactly 0; all shares together for 0.000001 USDC.
+        v = ec.Vault(total_assets=1_000 * USDC,
+                     total_supply=1_000 * USDC, decimals_offset=18)
+        self.assertEqual(v.convert_to_assets(100 * USDC), 0)
+        self.assertEqual(v.convert_to_assets(1_000 * USDC), 1)
+
 if __name__ == "__main__":
     unittest.main()
