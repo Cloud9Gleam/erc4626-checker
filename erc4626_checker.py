@@ -180,7 +180,19 @@ def check_donation(v: Vault, victim_deposit: int = 100_000_000_000,
     the vault already holds many shares. A live 50M USDC vault at offset 0
     therefore passes the same bound a new vault fails — the protection
     there is the existing deposits, not the offset, and a drained vault
-    behaves like a new one again."""
+    behaves like a new one again.
+
+    A half-filled state is not a vault: assets with no shares, or
+    shares with no assets, cannot exist — the first is a vault that
+    issued nothing for its deposits, the second is shares worth
+    nothing. Running the attack on either anyway would report a
+    verdict about a vault that cannot exist (shares-only used to
+    report ALL PASS). Refuse the check instead of inventing one."""
+    if (vault_assets == 0) != (vault_supply == 0):
+        err = "incomplete vault state: assets and shares must both be set"
+        rows = [{"donation": d, "attacker_net": None, "victim_loss": None,
+                 "error": err} for d in donations]
+        return {"name": "donation_inflation", "pass": False, "detail": rows}
     rows = []
     ok = True
     for d in donations:
