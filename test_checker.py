@@ -715,6 +715,47 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(R - R * 900_000 // USDC, 5_000 * USDC)
         self.assertGreater(R - R * 900_000 // USDC, R * 200 // 10_000)
 
+    def test_priority_fee_destination_guide_numbers(self):
+        # Pins /guides/erc4626-priority-fee/ to its model: where the
+        # jump fee goes decides who it compensates. Vault 1,000,000
+        # assets / 1,000,000 shares, price 1.0; a 50k jumper pays a 2%
+        # fee (1,000) and is settled day 0 for 49,000. Fee to the vault
+        # leaves 951,000 / 950,000, price 1.001053, and a waiting 50k
+        # holder at 50,052.631578. Fee to the manager leaves 950,000 /
+        # 950,000, price 1.0, holder unchanged at 50,000, manager +1,000.
+        # Scaled 3% fee (1,500) to the vault: 951,500 / 950,000, holder
+        # 50,078.947368. Liquid left for the queue: 51,000 fee to the
+        # vault vs 50,000 fee to the manager. Ten jumpers a day at
+        # 1,000 each is 10,000/day of manager rent.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "priority-fee-destination-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "priority_fee_destination_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        A = 1_000_000 * USDC
+        S = 1_000_000 * USDC
+        R = 50_000 * USDC
+        H = 50_000 * USDC
+        # Fee to the vault: holder 50,052.631578.
+        self.assertEqual(model.holder_value(A - 49_000 * USDC,
+                                            S - R, H),
+                         50_052 * USDC + 631_578)
+        # Fee to the manager: holder unchanged, manager +1,000.
+        self.assertEqual(model.holder_value(A - R, S - R, H), H)
+        # Scaled 3% fee to the vault: holder 50,078.947368.
+        self.assertEqual(model.holder_value(A - 48_500 * USDC,
+                                            S - R, H),
+                         50_078 * USDC + 947_368)
+        # Liquid left: 51,000 vs 50,000.
+        self.assertEqual(100_000 * USDC - 49_000 * USDC, 51_000 * USDC)
+        self.assertEqual(100_000 * USDC - R, 50_000 * USDC)
+        # Manager rent at 10 jumpers/day: 10,000/day.
+        self.assertEqual(10 * (R * 200 // 10_000), 10_000 * USDC)
+
     def test_failed_donation_notice_links_slippage_bounds(self):
         # The checker page's failure notice is the funnel entry for a
         # depositor, not just a deployer: when the donation check fails
