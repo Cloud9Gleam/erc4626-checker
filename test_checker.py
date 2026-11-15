@@ -6418,6 +6418,44 @@ class TestChecker(unittest.TestCase):
         build = (Path.home() / "workspace/taskmarket/site/build.py"
                  ).read_text()
         self.assertIn('href="/guides/erc4626-referral-fee/"', build)
+
+    def test_referral_fee_chart_numbers(self):
+        # Pins the who-pays bar chart on /guides/erc4626-referral-fee/
+        # to the (b) split: the referrer's 2,500 minted shares are
+        # worth 2,494.331066, funded 10/11 by the existing holders
+        # (2,267.573696) and 1/11 by the depositor (226.757370).
+        # Re-derived with plain Fractions, independent of the model
+        # file, so the chart's numbers cannot drift silently.
+        from fractions import Fraction
+        from pathlib import Path
+
+        price = Fraction(440, 441)
+        ref_worth = Fraction(2500) * price
+        holders_loss = Fraction(1000000) * (1 - price)
+        dep_loss = Fraction(100000) * (1 - price)
+        self.assertEqual(holders_loss + dep_loss, ref_worth)
+        self.assertEqual(holders_loss / ref_worth, Fraction(10, 11))
+        self.assertEqual(dep_loss / ref_worth, Fraction(1, 11))
+        # Bar widths, one decimal, as a share of the referrer's gain.
+        self.assertEqual(round(float(holders_loss / ref_worth) * 100, 1),
+                         90.9)
+        self.assertEqual(round(float(dep_loss / ref_worth) * 100, 1), 9.1)
+
+        # Chart markup is present in the guide source. The width
+        # assertions ride on the full row, so the 90.9% width (also
+        # used by the profit-unlock and fee-basis charts) cannot
+        # false-positive.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('loss-label">Referrer</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:100.0%"', build)
+        self.assertIn('loss-label">Holders</span><span '
+                      'class="loss-track"><span class="loss-fill fail" '
+                      'style="width:90.9%"', build)
+        self.assertIn('loss-label">Depositor</span><span '
+                      'class="loss-track"><span class="loss-fill fail" '
+                      'style="width:9.1%"', build)
         self.assertIn("2,494.331066", build)
         self.assertIn("440/441", build)
         self.assertIn("90.909091%", build)
