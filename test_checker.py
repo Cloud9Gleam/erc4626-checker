@@ -4947,5 +4947,156 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(claim(CAROL, a4, s4), 972_321_428_572)
         self.assertEqual(claim(fs_d, a4, s4), 19_642_857_142)
 
+    def test_withdraw_slippage_guide_numbers(self):
+        # Pins /guides/erc4626-withdraw-slippage/ to its model: a
+        # previewWithdraw quote is not a commitment — a loss landing
+        # between quote and execution burns more shares for the same
+        # fixed assets, a 1% max-in refuses the bad exit instead, a
+        # donation is a discount to a withdrawer, and a redemption
+        # queue ahead cannot reprice a single share. Importing the
+        # model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers the guide
+        # quotes, on the checker's own Vault (exact integer
+        # arithmetic).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "withdraw-slippage-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "withdraw_slippage_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+        ASK = 50_000 * USDC
+
+        def fresh():
+            return ec.Vault(total_assets=1_000_000 * USDC,
+                            total_supply=1_000_000 * USDC,
+                            decimals_offset=0)
+
+        # 0. Clean withdraw: quote and execution agree exactly.
+        v = fresh()
+        self.assertEqual(v.preview_withdraw(ASK), 50_000 * USDC)
+        self.assertEqual(v.withdraw(ASK), 50_000 * USDC)
+
+        # 1. Loss of 50,000 (5%) between quote and execution:
+        # burn 52,631.578948 — 2,631.578948 more than quoted.
+        v = fresh()
+        quote = v.preview_withdraw(ASK)
+        v.total_assets -= 50_000 * USDC
+        burned = v.withdraw(ASK)
+        self.assertEqual((quote, burned, burned - quote),
+                         (50_000 * USDC, 52_631_578_948,
+                          2_631_578_948))
+
+        # 2. Max-in 1% (50,500): the 52,631.578948 execution is
+        # above the bound, so it reverts; she keeps shares worth
+        # 95,000.
+        v = fresh()
+        quote = v.preview_withdraw(ASK)
+        max_in = quote * 101 // 100
+        v.total_assets -= 50_000 * USDC
+        burned = v.preview_withdraw(ASK)
+        self.assertEqual(max_in, 50_500 * USDC)
+        self.assertEqual(burned, 52_631_578_948)
+        self.assertGreater(burned, max_in)
+
+        # 3. Loss inside tolerance: 5,000 loss (0.5%) burns
+        # 50,251.256282, inside the 50,500 cap — executes, she pays
+        # 251.256282 extra shares.
+        v = fresh()
+        quote = v.preview_withdraw(ASK)
+        max_in = quote * 101 // 100
+        v.total_assets -= 5_000 * USDC
+        burned = v.withdraw(ASK)
+        self.assertEqual(burned, 50_251_256_282)
+        self.assertLessEqual(burned, max_in)
+        self.assertEqual(burned - quote, 251_256_282)
+
+        # 4. Donation windfall: 50,000 donated burns 47,619.047620
+        # — 2,380.952380 fewer than quoted, one base unit above the
+        # exact quote (previewWithdraw rounds up), below the cap.
+        v = fresh()
+        quote = v.preview_withdraw(ASK)
+        max_in = quote * 101 // 100
+        v.donate(50_000 * USDC)
+        burned = v.withdraw(ASK)
+        self.assertEqual(burned, 47_619_047_620)
+        self.assertEqual(quote - burned, 2_380_952_380)
+        self.assertLessEqual(burned, max_in)
+
+        # 5. Transient loss: blocked at 52,631.578948, recovers
+        # +50,000, withdraws the full 50,000 quote — the cap saved
+        # 2,631.578948 shares.
+        v = fresh()
+        quote = v.preview_withdraw(ASK)
+        max_in = quote * 101 // 100
+        v.total_assets -= 50_000 * USDC
+        blocked = v.preview_withdraw(ASK)
+        v.donate(50_000 * USDC)
+        burned = v.withdraw(ASK)
+        self.assertEqual(blocked, 52_631_578_948)
+        self.assertGreater(blocked, max_in)
+        self.assertEqual(burned, 50_000 * USDC)
+        self.assertEqual(blocked - burned, 2_631_578_948)
+
+        # 6. Queue: Bob redeems 500,000 shares first for 475,000;
+        # Alice still burns exactly 52,631.578948 — the queue cannot
+        # reprice her.
+        v = fresh()
+        v.total_assets -= 50_000 * USDC
+        bob_out = v.redeem(500_000 * USDC)
+        alice_burned = v.withdraw(ASK)
+        self.assertEqual(bob_out, 475_000 * USDC)
+        self.assertEqual(alice_burned, 52_631_578_948)
+
+    def test_withdraw_slippage_loss_accounting(self):
+        # Pins the loss accounting in /guides/erc4626-withdraw-slippage/:
+        # the 2,631.578948 extra shares are NOT "her 10% share of the
+        # loss priced at the new $0.95 rate" — that would be 5,263.157894
+        # shares. The extra burn is about half her $5,000 loss; the
+        # other half is the devaluation of the shares she keeps.
+        # (Guards the 2x prose error fixed in the guide 2026-11-16.)
+        import erc4626_checker as ec
+        USDC = 1_000_000
+        ASK = 50_000 * USDC
+
+        def fresh():
+            return ec.Vault(total_assets=1_000_000 * USDC,
+                            total_supply=1_000_000 * USDC,
+                            decimals_offset=0)
+
+        # After the 50,000 loss: she burns 52,631.578948 shares for
+        # her 50,000 USDC and keeps 47,368.421052.
+        v = fresh()
+        quote = v.preview_withdraw(ASK)
+        v.total_assets -= 50_000 * USDC
+        burned = v.withdraw(ASK)
+        kept = 100_000 * USDC - burned
+        self.assertEqual((quote, burned, burned - quote),
+                         (50_000 * USDC, 52_631_578_948, 2_631_578_948))
+        self.assertEqual(kept, 47_368_421_052)
+
+        # The shares she keeps redeem for 44,999.999999 USDC — one base
+        # unit short of the nominal 45,000 (OZ virtual-share dust).
+        # Received + kept = 94,999.999999: her $5,000 loss, to the
+        # base unit.
+        kept_value = v.redeem(kept)
+        self.assertEqual(kept_value, 44_999_999_999)
+        self.assertEqual(ASK + kept_value, 94_999_999_999)
+
+        # Refutation of the old prose: $5,000 of value buys 5,263.157894
+        # shares at the new $0.95 price — roughly twice the extra burn,
+        # not equal to it. The extra burn is about half that.
+        v2 = fresh()
+        v2.total_assets -= 50_000 * USDC
+        shares_for_5000 = v2.convert_to_shares(5_000 * USDC)
+        self.assertEqual(shares_for_5000, 5_263_157_894)
+        self.assertNotEqual(burned - quote, shares_for_5000)
+        self.assertAlmostEqual((burned - quote) * 2, shares_for_5000,
+                               delta=2)
+
 if __name__ == "__main__":
     unittest.main()
