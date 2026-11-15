@@ -2327,5 +2327,58 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(net_fifo, 99_834_283_334)
         self.assertEqual(net_fifo - net_reset, 4_833_333_334)
 
+    def test_share_price_collateral_guide_numbers(self):
+        # Share-price-as-collateral guide: donate to inflate the price you
+        # borrow against. Vault 1,000,000 USDC / 1,000,000 shares, price
+        # 1.00; lending market values shares at the live price, LTV 75%.
+        # Independent re-derivation with Fraction (does not import the
+        # site model file); pins every number the guide prints.
+        USDC = 1_000_000
+        A = 1_000_000 * USDC
+        S = 1_000_000 * USDC
+        D = 1_000_000 * USDC
+        LTV = Fraction(3, 4)
+        # Donation doubles the price: (A + D) / S = 2.00.
+        self.assertEqual(Fraction(A + D, S), 2)
+        for shares, coll, borrow, net in (
+                (100_000 * USDC, 200_000 * USDC,
+                 150_000 * USDC, -950_000 * USDC),
+                (900_000 * USDC, 1_800_000 * USDC,
+                 1_350_000 * USDC, -550_000 * USDC)):
+            f = Fraction(shares, S)
+            collateral = f * (A + D)
+            self.assertEqual(collateral, coll)
+            self.assertEqual(collateral * LTV, borrow)
+            self.assertEqual(collateral * LTV - D - f * A, net)
+        # Limit case: 999,999 of 1,000,000 shares.
+        f999 = Fraction(999_999 * USDC, S)
+        coll999 = f999 * (A + D)
+        self.assertEqual(coll999, 1_999_998 * USDC)
+        borrow999 = coll999 * LTV
+        self.assertEqual(borrow999, Fraction(2_999_997, 2) * USDC)
+        self.assertEqual(borrow999 - D - f999 * A,
+                         Fraction(-1_000_001, 2) * USDC)  # -500,000.5
+        # General formula, both terms negative at every fraction.
+        for shares in (100_000 * USDC, 900_000 * USDC, 999_999 * USDC):
+            f = Fraction(shares, S)
+            formula = f * (LTV - 1) * A + (f * LTV - 1) * D
+            direct = f * (A + D) * LTV - D - f * A
+            self.assertEqual(formula, direct)
+            self.assertLess(f * (LTV - 1) * A, 0)
+            self.assertLess((f * LTV - 1) * D, 0)
+        # f = 100% floor: -(1 - LTV) * (A + D) = -500,000.
+        self.assertEqual(-(1 - LTV) * (A + D), -500_000 * USDC)
+        # Flash-loan variant: 0.05% fee on 1,000,000 = 500; due 1,000,500.
+        # Most extractable in one tx: borrow 150,000 + redeem own shares
+        # at 2.00 = 200,000; total 350,000; short 650,500.
+        flash_fee = (D * 5) // 10_000
+        self.assertEqual(flash_fee, 500 * USDC)
+        self.assertEqual(D + flash_fee, 1_000_500 * USDC)
+        redeem_own = (100_000 * USDC) * 2
+        self.assertEqual(redeem_own, 200_000 * USDC)
+        extractable = 150_000 * USDC + redeem_own
+        self.assertEqual(extractable, 350_000 * USDC)
+        self.assertEqual((D + flash_fee) - extractable, 650_500 * USDC)
+
 if __name__ == "__main__":
     unittest.main()
