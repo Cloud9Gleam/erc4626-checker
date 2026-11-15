@@ -2648,5 +2648,98 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(model.depeg_cost, 31_500)
         self.assertEqual(model.yield_usd - model.depeg_cost, 18_500)
 
+    def test_stale_oracle_guide_numbers(self):
+        # Pins /guides/erc4626-stale-oracle/ to its model: a
+        # 1,000 ETH / 3,000,000 share vault priced at the oracle's
+        # $3,000. When the market moves and the feed does not, the
+        # first mover extracts value from the holders who stay; a
+        # TWAP dampens the loss but a freshness gate removes it.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "stale-oracle-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "stale_oracle_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        # Setup: 1,000 ETH / 3,000,000 shares, oracle $3,000,
+        # share $1.00; redeeming 300,000 shares pays $300,000.
+        self.assertEqual(model.ETH_BALANCE, 1_000)
+        self.assertEqual(model.SHARES_TOTAL, 3_000_000)
+        self.assertEqual(model.ETH_PRICE_ORACLE, 3_000)
+        self.assertEqual(model.share_price_usd(model.ETH_BALANCE,
+                                               model.SHARES_TOTAL,
+                                               model.ETH_PRICE_ORACLE), 1)
+        self.assertEqual(model.redeem_usdc(300_000, model.ETH_BALANCE,
+                                           model.SHARES_TOTAL,
+                                           model.ETH_PRICE_ORACLE), 300_000)
+        # Market $2,700 (-10%), oracle stale $3,000: 300,000 shares
+        # pay $300,000 against a true $270,000; extraction $30,000.
+        # Vault sells 1,000/9 ETH, keeps 8,000/9; remaining shares
+        # fall to 8/9; holders lose the same $30,000 (recomputed).
+        p_down = Fraction(2_700)
+        true_down = Fraction(300_000, 3_000_000) * 1_000 * p_down
+        self.assertEqual(true_down, 270_000)
+        self.assertEqual(model.redeem_usdc(300_000, model.ETH_BALANCE,
+                                           model.SHARES_TOTAL,
+                                           model.ETH_PRICE_ORACLE)
+                         - true_down, 30_000)
+        self.assertEqual(Fraction(300_000) / p_down, Fraction(1_000, 9))
+        self.assertEqual(Fraction(1_000) - Fraction(1_000, 9),
+                         Fraction(8_000, 9))
+        self.assertEqual(model.share_price_usd(Fraction(8_000, 9),
+                                               2_700_000, p_down),
+                         Fraction(8, 9))
+        self.assertEqual(Fraction(2_700_000, 3_000_000) * 1_000 * p_down
+                         - Fraction(8_000, 9) * p_down, 30_000)
+        # Market $3,300 (+10%), oracle stale $3,000: a $300,000
+        # deposit mints 300,000 shares; the vault buys 1,000/11 ETH.
+        # At the updated $3,300 the share is 12/11 and the attacker's
+        # shares are worth 3,600,000/11, a gain of 300,000/11.
+        p_up = Fraction(3_300)
+        self.assertEqual(Fraction(300_000)
+                         / model.share_price_usd(model.ETH_BALANCE,
+                                                 model.SHARES_TOTAL,
+                                                 model.ETH_PRICE_ORACLE),
+                         300_000)
+        self.assertEqual(Fraction(300_000) / p_up, Fraction(1_000, 11))
+        self.assertEqual(model.share_price_usd(Fraction(12_000, 11),
+                                               3_300_000, p_up),
+                         Fraction(12, 11))
+        self.assertEqual(Fraction(300_000) * Fraction(12, 11),
+                         Fraction(3_600_000, 11))
+        self.assertEqual(Fraction(3_600_000, 11) - 300_000,
+                         Fraction(300_000, 11))
+        # A 2% drift to $2,940 still extracts $6,000 on the same
+        # redemption; remaining shares fall to 44/45 (true $0.98).
+        p_small = Fraction(2_940)
+        true_small = Fraction(300_000, 3_000_000) * 1_000 * p_small
+        self.assertEqual(true_small, 294_000)
+        self.assertEqual(model.redeem_usdc(300_000, model.ETH_BALANCE,
+                                           model.SHARES_TOTAL,
+                                           model.ETH_PRICE_ORACLE)
+                         - true_small, 6_000)
+        self.assertEqual(model.share_price_usd(
+            Fraction(1_000) - Fraction(300_000) / p_small,
+            2_700_000, p_small), Fraction(44, 45))
+        # TWAP: 30 minutes, $2,700 for 5 minutes -> $2,950; the
+        # redemption pays $295,000, extraction $25,000 = 5/6 of
+        # the $30,000 stale-oracle loss.
+        twap = (Fraction(25) * 3_000 + Fraction(5) * 2_700) / 30
+        self.assertEqual(twap, 2_950)
+        self.assertEqual(model.twap_price, twap)
+        self.assertEqual(model.redeem_usdc(300_000, model.ETH_BALANCE,
+                                           model.SHARES_TOTAL, twap),
+                         295_000)
+        self.assertEqual(Fraction(295_000) - true_down, 25_000)
+        self.assertEqual(Fraction(25_000, 30_000), Fraction(5, 6))
+        # Freshness gate (heartbeat 3,600 s): 3,599 s and 3,600 s
+        # pass, 3,601 s reverts.
+        self.assertEqual(model.HEARTBEAT, 3_600)
+        self.assertTrue(model.fresh(3_599))
+        self.assertTrue(model.fresh(3_600))
+        self.assertFalse(model.fresh(3_601))
 if __name__ == "__main__":
     unittest.main()
