@@ -1603,6 +1603,23 @@ class TestChecker(unittest.TestCase):
                         audit.index('<h2>Scope</h2>'))
         self.assertIn("a.cta{display:inline-block", build.CSS)
 
+    def test_checker_form_is_a_styled_panel(self):
+        # The checker form must read as a grouped panel, not a flat list
+        # of default inputs: panel background + border, label/input
+        # spacing, a prominent submit button, and a visible focus ring.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn("#checker-form{display:grid", build.CSS)
+        self.assertIn("background:#f9fafb;border:1px solid #e5e7eb", build.CSS)
+        self.assertIn("#checker-form input,#checker-form select{width:100%;margin-top:.3em}",
+                      build.CSS)
+        self.assertIn("#checker-form button{grid-column:1 / -1;justify-self:start;"
+                      "margin-top:.7em", build.CSS)
+        self.assertIn("box-shadow:0 0 0 3px rgba(10,125,44,.15)", build.CSS)
+        self.assertIn("label{display:block;margin:.7em 0;color:#111827}", build.CSS)
+
     def test_reward_token_guide_numbers(self):
         # Reward-token guide (site/reward-token-model.py): yield paid
         # out as a separate token never touches the share price.
