@@ -3629,5 +3629,94 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(total_in, att_out + vic_out + left_a)
         self.assertEqual(left_a - 1_000 * USDC, 999_000_999_184)
 
+    def test_loss_recognition_guide_numbers(self):
+        # Pins /guides/erc4626-loss-recognition/ to its model: a vault
+        # of 1,000,000 USDC / 1,000,000 shares at $1.00 with a 50,000
+        # USDC loss already taken but not yet recognized. Importing the
+        # model re-runs its assertions; the checks below independently
+        # re-derive the headline numbers the guide quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "loss-recognition-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "loss_recognition_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        LOSS = 50_000 * USDC
+
+        def md(a, b, c):
+            return (a * b) // c
+
+        # Case 1: deposit 100,000 just before recognition. At the stale
+        # $1.00 it mints 100,000 shares; after recognition the vault is
+        # 1,050,000 / 1,100,000, price 0.954545, and the newcomer is
+        # worth 95,454.545454 — absorbing 4,545.454546 of a loss it did
+        # not fund. Existing holders keep 954,545.454545, offloading
+        # 4,545.454545 onto the newcomer (1 base unit of rounding dust
+        # stays in the vault).
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        self.assertEqual(v.deposit(100_000 * USDC), 100_000 * USDC)
+        v.recognize(LOSS)
+        self.assertEqual(md(100_000 * USDC, v.total_assets, v.supply),
+                         95_454_545_454)
+        self.assertEqual(md(1_000_000 * USDC, v.total_assets, v.supply),
+                         954_545_454_545)
+        self.assertEqual(100_000 * USDC - 95_454_545_454, 4_545_454_546)
+        self.assertEqual(954_545_454_545 - 950_000 * USDC, 4_545_454_545)
+        # Exact fraction: 50,000 * 100,000 / 1,100,000 = 50,000/11.
+        self.assertEqual(Fraction(50_000 * 100_000, 1_100_000),
+                         Fraction(50_000, 11))
+        # Case 2: deposit just after recognition buys at $0.95.
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.recognize(LOSS)
+        self.assertEqual(v.price(), 950_000)
+        self.assertEqual(v.deposit(100_000 * USDC), 105_263_157_894)
+        self.assertEqual(md(105_263_157_894, v.total_assets, v.supply),
+                         99_999_999_999)
+        self.assertEqual(md(1_000_000 * USDC, v.total_assets, v.supply),
+                         950_000 * USDC)
+        # Case 3: redeem 100,000 shares before recognition escapes
+        # 5,000; Carol's 900,000 shares are worth 850,000 with Alice
+        # out (bears the full 50,000) vs 855,000 with Alice in.
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        self.assertEqual(v.redeem(100_000 * USDC), 100_000 * USDC)
+        w = model.Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        w.recognize(LOSS)
+        self.assertEqual(w.redeem(100_000 * USDC), 95_000 * USDC)
+        v2 = model.Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v2.redeem(100_000 * USDC)
+        v2.recognize(LOSS)
+        self.assertEqual(md(900_000 * USDC, v2.total_assets, v2.supply),
+                         850_000 * USDC)
+        self.assertEqual(md(900_000 * USDC, w.total_assets, w.supply),
+                         855_000 * USDC)
+        # Case 4: half the loss recognized first — price 0.975, the
+        # deposit buys 102,564.102564 shares, worth 97,674.418604 after
+        # full recognition, absorbing 2,325.581396 (about half the edge).
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v.recognize(LOSS // 2)
+        self.assertEqual(v.price(), 975_000)
+        self.assertEqual(v.deposit(100_000 * USDC), 102_564_102_564)
+        v.recognize(LOSS // 2)
+        self.assertEqual(md(102_564_102_564, v.total_assets, v.supply),
+                         97_674_418_604)
+        self.assertEqual(100_000 * USDC - 97_674_418_604, 2_325_581_396)
+        self.assertEqual(md(1_000_000 * USDC, v.total_assets, v.supply),
+                         952_325_581_395)
+        # Case 5: a 500,000 deposit before recognition absorbs a third
+        # of the loss, 16,666.666667; existing holders keep 966,666.666666.
+        v = model.Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        self.assertEqual(v.deposit(500_000 * USDC), 500_000 * USDC)
+        v.recognize(LOSS)
+        self.assertEqual(md(500_000 * USDC, v.total_assets, v.supply),
+                         483_333_333_333)
+        self.assertEqual(500_000 * USDC - 483_333_333_333, 16_666_666_667)
+        self.assertEqual(md(1_000_000 * USDC, v.total_assets, v.supply),
+                         966_666_666_666)
+
 if __name__ == "__main__":
     unittest.main()
