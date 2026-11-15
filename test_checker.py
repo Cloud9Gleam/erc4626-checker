@@ -3767,5 +3767,100 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(md(1_000_000 * USDC, v.total_assets, v.supply),
                          966_666_666_666)
 
+    def test_vault_migration_guide_numbers(self):
+        # Pins /guides/erc4626-vault-migration/ to its model: V1
+        # 1,000,000 USDC / 1,000,000 shares at $1.00, Alice 100,000
+        # shares, Carol 900,000, V2 starts empty. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers the guide quotes.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "vault-migration-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "vault_migration_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+
+        def setup_carol_migrated():
+            # Carol migrates first (live): V2 holds her 900,000 /
+            # 900,000; V1 is left with Alice's 100,000 / 100,000.
+            v1 = model.Vault(1_000_000 * USDC, 1_000_000 * USDC)
+            v2 = model.Vault(0, 0)
+            v2.total_assets = 900_000 * USDC
+            v2.supply = 900_000 * USDC
+            v1.total_assets -= 900_000 * USDC
+            v1.supply -= 900_000 * USDC
+            return v1, v2
+
+        # Case 1: clean migration at the live ratio preserves value
+        # exactly — Alice 100,000 V1 -> 100,000 V2, Carol 900,000 ->
+        # 900,000, V2 price $1.00, V1 empty.
+        v1 = model.Vault(1_000_000 * USDC, 1_000_000 * USDC)
+        v2 = model.Vault(0, 0)
+        self.assertEqual(model.migrate_live(v1, v2, 100_000 * USDC),
+                         100_000 * USDC)
+        self.assertEqual(model.migrate_live(v1, v2, 900_000 * USDC),
+                         900_000 * USDC)
+        self.assertEqual(v2.total_assets, 1_000_000 * USDC)
+        self.assertEqual(v2.supply, 1_000_000 * USDC)
+        self.assertEqual(v2.price(), USDC)
+        self.assertEqual(v1.total_assets, 0)
+        self.assertEqual(v1.supply, 0)
+        # Case 2: fixed ratio 1.00, V1 +10% before Alice migrates
+        # late. Her shares were worth 110,000; she mints 100,000 V2
+        # shares worth 101,000 — loses 9,000. Carol's 900,000 V2
+        # shares are worth 909,000 — gains 9,000. V2 price $1.01.
+        v1, v2 = setup_carol_migrated()
+        v1.yield_(10_000 * USDC)
+        self.assertEqual(v1.worth(100_000 * USDC), 110_000 * USDC)
+        self.assertEqual(model.migrate_fixed(v1, v2, 100_000 * USDC, 1, 1),
+                         100_000 * USDC)
+        self.assertEqual(v2.total_assets, 1_010_000 * USDC)
+        self.assertEqual(v2.supply, 1_000_000 * USDC)
+        self.assertEqual(v2.price(), 1_010_000)
+        self.assertEqual(v2.worth(900_000 * USDC), 909_000 * USDC)
+        self.assertEqual(v2.worth(100_000 * USDC), 101_000 * USDC)
+        self.assertEqual(v2.worth(900_000 * USDC)
+                         + v2.worth(100_000 * USDC), v2.total_assets)
+        # Case 3: fixed ratio 1.00, V1 -10% — the mirror. Alice's
+        # shares were worth 90,000; she mints 100,000 V2 shares worth
+        # 99,000 — gains 9,000. Carol's are worth 891,000 — loses
+        # 9,000. V2 price $0.99.
+        v1, v2 = setup_carol_migrated()
+        v1.loss(10_000 * USDC)
+        self.assertEqual(v1.worth(100_000 * USDC), 90_000 * USDC)
+        self.assertEqual(model.migrate_fixed(v1, v2, 100_000 * USDC, 1, 1),
+                         100_000 * USDC)
+        self.assertEqual(v2.total_assets, 990_000 * USDC)
+        self.assertEqual(v2.price(), 990_000)
+        self.assertEqual(v2.worth(900_000 * USDC), 891_000 * USDC)
+        self.assertEqual(v2.worth(100_000 * USDC), 99_000 * USDC)
+        # Case 4: live ratio on the case-2 setup — Alice mints 110,000
+        # V2 shares worth 110,000, Carol keeps 900,000, V2 price $1.00.
+        v1, v2 = setup_carol_migrated()
+        v1.yield_(10_000 * USDC)
+        self.assertEqual(model.migrate_live(v1, v2, 100_000 * USDC),
+                         110_000 * USDC)
+        self.assertEqual(v2.total_assets, 1_010_000 * USDC)
+        self.assertEqual(v2.supply, 1_010_000 * USDC)
+        self.assertEqual(v2.price(), USDC)
+        self.assertEqual(v2.worth(900_000 * USDC), 900_000 * USDC)
+        self.assertEqual(v2.worth(110_000 * USDC), 110_000 * USDC)
+        # Case 5: Dave misses the window — 50,000 V1 shares are worth
+        # 50,000 in time and 0 after the residual is swept.
+        v1 = model.Vault(1_050_000 * USDC, 1_050_000 * USDC)
+        v2 = model.Vault(0, 0)
+        v2.total_assets = 1_000_000 * USDC
+        v2.supply = 1_000_000 * USDC
+        v1.total_assets -= 1_000_000 * USDC
+        v1.supply -= 1_000_000 * USDC
+        self.assertEqual(v1.worth(50_000 * USDC), 50_000 * USDC)
+        v1.total_assets = 0
+        v1.supply = 0
+        self.assertEqual(v1.worth(50_000 * USDC), 0)
+
 if __name__ == "__main__":
     unittest.main()
