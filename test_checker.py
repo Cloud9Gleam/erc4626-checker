@@ -756,6 +756,49 @@ class TestChecker(unittest.TestCase):
         # Manager rent at 10 jumpers/day: 10,000/day.
         self.assertEqual(10 * (R * 200 // 10_000), 10_000 * USDC)
 
+    def test_deposit_into_queue_guide_numbers(self):
+        # Pins /guides/erc4626-deposit-into-queue/ to its model: a
+        # 50,000 deposit into a vault with a 300,000 queue either pays
+        # the queue first (queue 250,000, clears day 3, depositor's own
+        # redemption first day 3 / full day 4) or is invested first
+        # (queue untouched at 300,000, clears day 4, depositor's own
+        # redemption first day 4 / full day 5). Both keep price 1.0
+        # because redeemed shares burn on payment. With inflow only
+        # from new deposits, policy A needs 6 x 50,000 deposits to
+        # clear 300,000, policy B never clears. Paying the queue
+        # without burning shares drops the price to 0.952381 and a
+        # 50,000 deposit is worth 47,619.047619.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "deposit-into-queue-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "deposit_into_queue_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+        A = 1_000_000 * USDC
+        S = 1_000_000 * USDC
+        L = 100_000 * USDC
+        Q = 300_000 * USDC
+        D = 50_000 * USDC
+        I = 50_000 * USDC
+        # Baseline queue clears day 4; policy A day 3, policy B day 4.
+        self.assertEqual(model.queue_clear_day(L, Q, I), 4)
+        self.assertEqual(model.queue_clear_day(L, Q - D, I), 3)
+        # Depositor redeems right after depositing: A (3, 4), B (4, 5).
+        self.assertEqual(model.fifo_days(L, Q - D, D, I), (0, 3, 4))
+        self.assertEqual(model.fifo_days(L, Q, D, I), (0, 4, 5))
+        # Price stays 1.0 under both policies (shares burn on payment).
+        self.assertEqual(model.share_price(A + D - D, S + D - D), USDC)
+        self.assertEqual(model.share_price(A + D, S + D), USDC)
+        # Inflow only from deposits: A needs 6 deposits; B never clears.
+        self.assertEqual(Q // D, 6)
+        self.assertIsNone(model.queue_clear_day(L, Q, 0))
+        # No share burn: price 0.952380, deposit worth 47,619.047619.
+        self.assertEqual(model.share_price(A, S + D), 952_380)
+        self.assertEqual(D * A // (S + D), 47_619 * USDC + 47_619)
+
     def test_failed_donation_notice_links_slippage_bounds(self):
         # The checker page's failure notice is the funnel entry for a
         # depositor, not just a deployer: when the donation check fails
