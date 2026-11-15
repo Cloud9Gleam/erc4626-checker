@@ -1337,6 +1337,98 @@ class TestChecker(unittest.TestCase):
                         if r["victim_loss"] is not None)
             self.assertEqual((worst, res["pass"]), (want_worst, want_pass))
 
+    def test_fot_underlying_guide_numbers(self):
+        # Fee-on-transfer-underlying guide (site/fot-underlying-model.py):
+        # a 10% transfer tax breaks the "amount asked == amount
+        # received" assumption at the vault's edges. Re-derived here
+        # with plain integer / Fraction arithmetic, independent of the
+        # model file. Vault 100,000 USDC / 100,000 shares, price 1.00;
+        # holder 50,000 shares; 10% tax on every transfer.
+        USDC = 1_000_000
+        A0, S0 = 100_000 * USDC, 100_000 * USDC
+        HOLDER = 50_000 * USDC
+
+        def down(a, b, c):
+            return a * b // c
+
+        def taxed(amount):
+            return amount * 9_000 // 10_000
+
+        dep = 11_000 * USDC
+        received = taxed(dep)
+        self.assertEqual(received, 9_900 * USDC)
+        # 1: mint on the amount asked -- 11,000 shares for 9,900
+        # received; price 109,900/111,000; holder 50,000 shares fall
+        # to 49,504.504504 USDC; depositor's shares worth 10,890.99.
+        sh_naive = down(dep, S0, A0)
+        A1, S1 = A0 + received, S0 + sh_naive
+        self.assertEqual((sh_naive, A1, S1),
+                         (11_000 * USDC, 109_900 * USDC, 111_000 * USDC))
+        self.assertEqual(Fraction(A1, S1), Fraction(1099, 1110))
+        self.assertEqual(HOLDER * Fraction(A1, S1),
+                         Fraction(50_000 * 109_900, 111_000) * USDC)
+        self.assertEqual(int(HOLDER * Fraction(A1, S1)), 49_504_504_504)
+        self.assertEqual(int(sh_naive * Fraction(A1, S1)), 10_890_990_990)
+        # 2: mint on the amount received -- 9,900 shares; price stays
+        # 1.00; holder untouched; depositor bears the full 1,100 tax.
+        sh_fixed = down(received, S0, A0)
+        A2, S2 = A0 + received, S0 + sh_fixed
+        self.assertEqual((sh_fixed, A2, S2),
+                         (9_900 * USDC, 109_900 * USDC, 109_900 * USDC))
+        self.assertEqual(Fraction(A2, S2), Fraction(1, 1))
+        self.assertEqual(HOLDER * Fraction(A2, S2), HOLDER)
+        self.assertEqual(dep - sh_fixed, 1_100 * USDC)
+        # 3: preview mismatch -- preview 11,000 shares, execution
+        # 9,900: 1,100 shares short, worth 1,100 USDC at price 1.00.
+        preview = down(dep, S0, A0)
+        self.assertEqual((preview, sh_fixed),
+                         (11_000 * USDC, 9_900 * USDC))
+        self.assertEqual((preview - sh_fixed) * Fraction(A2, S2),
+                         1_100 * USDC)
+        # 4: withdrawal -- redeem 10,000 shares, vault sends 10,000,
+        # holder receives 9,000: 1,000 short of the previewRedeem
+        # quote; vault books clean at 90,000 / 90,000, price 1.00.
+        sent = 10_000 * USDC
+        got = taxed(sent)
+        self.assertEqual((sent, got), (10_000 * USDC, 9_000 * USDC))
+        self.assertEqual(sent - got, 1_000 * USDC)
+        self.assertEqual((A0 - sent, S0 - sent),
+                         (90_000 * USDC, 90_000 * USDC))
+        # 5: round trip -- 11,000 in, 9,900 shares, 8,910 out: loss
+        # 2,090 USDC, 19% (1 - 0.9^2), with no price movement.
+        back = taxed(sh_fixed)
+        self.assertEqual(back, 8_910 * USDC)
+        self.assertEqual(dep - back, 2_090 * USDC)
+        self.assertEqual((dep - back) * 100 // dep, 19)
+
+    def test_guide_pages_emit_tech_article_json_ld(self):
+        # Guides and research writeups are the site's article content:
+        # they must carry TechArticle JSON-LD + og:type article so search
+        # engines classify them as articles. The checker keeps its
+        # SoftwareApplication node and the home page stays a plain page.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        guide = build.page("Rebasing underlying", "desc", "kw", "<p>x</p>",
+                           "/guides/erc4626-rebasing-underlying/")
+        self.assertIn('"@type": "TechArticle"', guide)
+        self.assertIn('"headline": "Rebasing underlying"', guide)
+        self.assertIn('"mainEntityOfPage": "https://check.n1netw3n.live'
+                      '/guides/erc4626-rebasing-underlying/"', guide)
+        self.assertIn('<meta property="og:type" content="article">', guide)
+        research = build.page("Twyne", "desc", "kw", "<p>x</p>",
+                              "/research/twyne/")
+        self.assertIn('"@type": "TechArticle"', research)
+        self.assertIn('<meta property="og:type" content="article">', research)
+        home = build.page("Home", "desc", "kw", "<p>x</p>", "/")
+        self.assertNotIn("TechArticle", home)
+        self.assertIn('<meta property="og:type" content="website">', home)
+        checker = build.page("Checker", "desc", "kw", "<p>x</p>", "/checker/")
+        self.assertIn('"@type": "SoftwareApplication"', checker)
+        self.assertNotIn("TechArticle", checker)
+        self.assertIn('<meta property="og:type" content="website">', checker)
+
 
 if __name__ == "__main__":
     unittest.main()
