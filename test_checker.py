@@ -1725,5 +1725,64 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(10_000 * USDC * 2 // 100, 200 * USDC)
         self.assertEqual(100_000 * USDC * 1 // 100, 1_000 * USDC)
 
+    def test_insurance_reserve_guide_numbers(self):
+        # Guide #49: insurance-reserve vault -- a 5,000 USDC reserve held
+        # outside totalAssets tops the vault up after a loss, up to the
+        # reserve balance. Vault 100,000 USDC / 100,000 shares, price 1.00;
+        # Alice holds 50,000 shares. Re-derived here with plain integer /
+        # Fraction arithmetic, independent of the model file.
+        USDC = 1_000_000
+        # 1: loss -3,000, reserve pays all 3,000: assets back to 100,000,
+        # price 1.00, reserve left 2,000. Alice loses 0; without the
+        # reserve she would hold 48,500 (price 0.97), losing 1,500.
+        self.assertEqual(min(3_000 * USDC, 5_000 * USDC), 3_000 * USDC)
+        self.assertEqual(5_000 * USDC - 3_000 * USDC, 2_000 * USDC)
+        self.assertEqual(100_000 * USDC - 3_000 * USDC + 3_000 * USDC,
+                         100_000 * USDC)
+        self.assertEqual(50_000 * Fraction(97_000 * USDC, 100_000),
+                         48_500 * USDC)
+        # 2: loss -10,000, reserve has 2,000 left: pays 2,000, assets
+        # 92,000, price 23/25 = 0.92, Alice 46,000. Without the reserve
+        # the price would be 0.90 and Alice would hold 45,000.
+        self.assertEqual(min(10_000 * USDC, 2_000 * USDC), 2_000 * USDC)
+        self.assertEqual(100_000 * USDC - 10_000 * USDC + 2_000 * USDC,
+                         92_000 * USDC)
+        self.assertEqual(Fraction(92_000 * USDC, 100_000),
+                         Fraction(23, 25) * USDC)
+        self.assertEqual(50_000 * Fraction(92_000 * USDC, 100_000),
+                         46_000 * USDC)
+        self.assertEqual(50_000 * Fraction(90_000 * USDC, 100_000),
+                         45_000 * USDC)
+        # 3: gain +4,000. Refill-first: reserve 4,000, vault stays 92,000,
+        # price 0.92. Distribute-first: reserve 0, vault 96,000, price
+        # 24/25 = 0.96. Alice redeeming 50,000 shares gets 46,000 vs
+        # 48,000 -- a 2,000 difference. The next -4,000 loss makes both
+        # policies converge at 92,000 / 0.92.
+        self.assertEqual(min(0 + 4_000 * USDC, 5_000 * USDC), 4_000 * USDC)
+        self.assertEqual(Fraction(96_000 * USDC, 100_000),
+                         Fraction(24, 25) * USDC)
+        self.assertEqual(48_000 * USDC - 46_000 * USDC, 2_000 * USDC)
+        self.assertEqual(92_000 * USDC - 4_000 * USDC + 4_000 * USDC,
+                         92_000 * USDC)
+        self.assertEqual(96_000 * USDC - 4_000 * USDC + 0,
+                         92_000 * USDC)
+        # 4: one big loss -50,000 with a full 5,000 reserve: assets 55,000,
+        # price 11/20 = 0.55, Alice 27,500. Without the reserve: price
+        # 0.50, Alice 25,000 -- the reserve saves 2,500 of a 25,000 loss.
+        self.assertEqual(min(50_000 * USDC, 5_000 * USDC), 5_000 * USDC)
+        self.assertEqual(100_000 * USDC - 50_000 * USDC + 5_000 * USDC,
+                         55_000 * USDC)
+        self.assertEqual(Fraction(55_000 * USDC, 100_000),
+                         Fraction(11, 20) * USDC)
+        self.assertEqual(50_000 * Fraction(55_000 * USDC, 100_000),
+                         27_500 * USDC)
+        self.assertEqual(27_500 * USDC - 25_000 * USDC, 2_500 * USDC)
+        self.assertEqual(Fraction(5_000, 100_000), Fraction(1, 20))
+        # 5: funding: 5,000 / 0.5% = 1,000,000 USDC of deposits; 1% of a
+        # 10,000 annual yield = 100/year, so 5,000 takes 50 years.
+        self.assertEqual(5_000 * USDC * 1000 // 5, 1_000_000 * USDC)
+        self.assertEqual(10_000 * USDC // 100, 100 * USDC)
+        self.assertEqual(5_000 * USDC // (100 * USDC), 50)
+
 if __name__ == "__main__":
     unittest.main()
