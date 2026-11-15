@@ -3472,5 +3472,87 @@ class TestChecker(unittest.TestCase):
                          * (Fraction(1, 10) - Fraction(4, 100)),
                          Fraction(12, 1000))
 
+    def test_harvest_gas_guide_numbers(self):
+        # Pins /guides/erc4626-harvest-gas/ to its model: a 1,000,000
+        # USDC / 1,000,000 share vault, price $1.00, Alice 100,000
+        # shares, Carol 900,000, strategy accrues 10,000 USDC of
+        # yield a month, every harvest costs 50 USDC of gas paid
+        # from the vault. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers the guide quotes.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "harvest-gas-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "harvest_gas_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Case 1: one monthly harvest — 10,000 yield minus 50 gas =
+        # 9,950 net, total 1,009,950, price 20199/20000 = 1.00995
+        # vs 1.01 with no gas; Alice 100,995 (pays 5), Carol
+        # 908,955 (pays 45); gas 0.5% of the month's yield.
+        self.assertEqual(Fraction(1_009_950, 1_000_000),
+                         Fraction(20199, 20000))
+        self.assertEqual((100_000 * 1_009_950 * USDC) // 1_000_000,
+                         100_995 * USDC)
+        self.assertEqual((900_000 * 1_009_950 * USDC) // 1_000_000,
+                         908_955 * USDC)
+        self.assertEqual(101_000 * USDC - 100_995 * USDC, 5 * USDC)
+        self.assertEqual(909_000 * USDC - 908_955 * USDC, 45 * USDC)
+        self.assertEqual(Fraction(50, 10_000), Fraction(1, 200))
+        # Case 2: frequency tax, one year, same 120,000 yield —
+        # monthly net 119,400 (price 5597/5000 = 1.1194, gas 0.5%),
+        # weekly net 117,400 (5587/5000 = 1.1174, gas 13/600),
+        # daily net 101,750 (4407/4000 = 1.10175, gas 73/480);
+        # daily costs 17,650 more than monthly, Alice's share 1,765.
+        self.assertEqual(Fraction(1_119_400, 1_000_000),
+                         Fraction(5597, 5000))
+        self.assertEqual(Fraction(1_117_400, 1_000_000),
+                         Fraction(5587, 5000))
+        self.assertEqual(Fraction(1_101_750, 1_000_000),
+                         Fraction(4407, 4000))
+        self.assertEqual(Fraction(600, 120_000), Fraction(1, 200))
+        self.assertEqual(Fraction(2_600, 120_000), Fraction(13, 600))
+        self.assertEqual(Fraction(18_250, 120_000), Fraction(73, 480))
+        self.assertEqual(18_250 * USDC - 600 * USDC, 17_650 * USDC)
+        self.assertEqual((100_000 * 1_119_400 * USDC) // 1_000_000,
+                         111_940 * USDC)
+        self.assertEqual((100_000 * 1_101_750 * USDC) // 1_000_000,
+                         110_175 * USDC)
+        # Case 3: small vault, 10,000 USDC / 10,000 shares —
+        # monthly harvest nets 50 (total 10,050, price 201/200 =
+        # 1.005 vs 1.01 no gas, gas 50% of yield); weekly harvests
+        # net -350/13 each, 52 weeks = -1,400 exactly, vault ends
+        # 8,600, price 43/50 = 0.86, down 14% in a year.
+        self.assertEqual(Fraction(10_050, 10_000), Fraction(201, 200))
+        self.assertEqual(Fraction(1_200, 52), Fraction(300, 13))
+        self.assertEqual(Fraction(300, 13) - 50, Fraction(-350, 13))
+        self.assertEqual(52 * Fraction(-350, 13), -1_400)
+        self.assertEqual(Fraction(8_600, 10_000), Fraction(43, 50))
+        # Case 4: Alice redeems before the harvest — takes 101,000
+        # at the $1.01 pre-harvest price; post-harvest total
+        # 908,950 over 900,000 shares, price 18179/18000; Carol
+        # pays the whole 50, 5 more than if Alice had stayed.
+        self.assertEqual(Fraction(1_010_000, 1_000_000),
+                         Fraction(101, 100))
+        self.assertEqual(Fraction(908_950, 900_000),
+                         Fraction(18179, 18000))
+        self.assertEqual(908_955 * USDC - 908_950 * USDC, 5 * USDC)
+        # Case 5: breakeven rule — accrued 100, gas 50% of the
+        # harvest (total 1,000,050, price 20001/20000 = 1.00005);
+        # accrued 1,000, gas 5% (total 1,000,950, price 20019/20000
+        # = 1.00095); accrued 10,000, gas 0.5%.
+        self.assertEqual(Fraction(1_000_050, 1_000_000),
+                         Fraction(20001, 20000))
+        self.assertEqual(Fraction(1_000_950, 1_000_000),
+                         Fraction(20019, 20000))
+        self.assertEqual(Fraction(50, 100), Fraction(1, 2))
+        self.assertEqual(Fraction(50, 1_000), Fraction(1, 20))
+        self.assertEqual(Fraction(50, 10_000), Fraction(1, 200))
+
 if __name__ == "__main__":
     unittest.main()
