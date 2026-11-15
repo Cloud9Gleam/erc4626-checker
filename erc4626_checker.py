@@ -159,16 +159,27 @@ def check_rounding(v: Vault, amounts=(1_000_000, 100_000_000, 10_000_000_000)) -
 
 def check_donation(v: Vault, victim_deposit: int = 100_000_000_000,
                    donations=(1_000_000, 1_000_000_000, 1_000_000_000_000,
-                              1_000_000_000_000_000)) -> dict:
+                              1_000_000_000_000_000),
+                   vault_assets: int = 0, vault_supply: int = 0) -> dict:
     """Attacker deposits min, donates D, victim deposits, both redeem.
     PASS = attacker never profits and victim loss <= 1000 base units
     (0.001 USDC at 6 decimals -- the bound the 2026-11-03 AlphaPrimer
     forge audit observed: victim loss at most 0.000999 USDC at every
-    donation scale) and <= 0.1% of the victim deposit."""
+    donation scale) and <= 0.1% of the victim deposit.
+
+    vault_assets / vault_supply seed the vault with the deposits already
+    in it before the attack (0 / 0 = a new vault, the default). Existing
+    deposits dilute the donation: the victim's loss is bounded by about
+    one share's value at the inflated price, and one share is cheap when
+    the vault already holds many shares. A live 50M USDC vault at offset 0
+    therefore passes the same bound a new vault fails — the protection
+    there is the existing deposits, not the offset, and a drained vault
+    behaves like a new one again."""
     rows = []
     ok = True
     for d in donations:
-        w = _fresh(decimals_offset=v.decimals_offset, min_deposit=v.min_deposit)
+        w = _fresh(total_assets=vault_assets, total_supply=vault_supply,
+                   decimals_offset=v.decimals_offset, min_deposit=v.min_deposit)
         atk_in = max(v.min_deposit, 1_000_000)
         try:
             atk_shares = w.deposit(atk_in)
@@ -239,10 +250,16 @@ def check_share_price_sanity(v: Vault) -> dict:
                        f"{_fmt_usdc(price_after)} USDC"]}
 
 
-def run_all(v: Vault, victim_deposit: int = 100_000_000_000) -> list[dict]:
+def run_all(v: Vault, victim_deposit: int = 100_000_000_000,
+            vault_assets: int = 0, vault_supply: int = 0) -> list[dict]:
     """Run all five checks. victim_deposit is the donation-check scenario
     size (base units, default 100,000 USDC): the vault a user is testing
-    may expect much smaller or larger typical deposits than the default."""
-    return [check_rounding(v), check_donation(v, victim_deposit=victim_deposit),
+    may expect much smaller or larger typical deposits than the default.
+    vault_assets / vault_supply are the deposits already in the vault
+    before the attack (base units / shares, default 0 = a new vault);
+    only the donation check uses them."""
+    return [check_rounding(v),
+            check_donation(v, victim_deposit=victim_deposit,
+                           vault_assets=vault_assets, vault_supply=vault_supply),
             check_preview_consistency(v),
             check_fee_conservation(v), check_share_price_sanity(v)]
