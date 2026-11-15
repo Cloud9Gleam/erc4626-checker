@@ -5878,6 +5878,155 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(paid, 11_000_000_001)
         self.assertGreaterEqual(paid, 11_000 * USDC)
 
+    def test_permit_deposit_guide_numbers(self):
+        # Pins /guides/erc4626-permit-deposit/ to its model: a permit
+        # is written in assets, not shares. One signature deposits
+        # 50,000 USDC for 50,000 shares, nonce 0 -> 1; an expired
+        # permit and a replayed nonce both revert atomically; a
+        # permit names one spender; a 100,000 permit spent 40,000
+        # leaves 60,000 spendable with no new signature, nonce still
+        # spent; a max permit never decreases; after +10% yield a
+        # 20,000 USDC permit buys only 18,181.818181 shares.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers on the
+        # checker's own Vault, with the EIP-2612 permit rule written
+        # out in the test (deadline, nonce, allowance; max never
+        # decreases).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "permit-deposit-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "permit_deposit_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+        MAX = 2 ** 256 - 1
+        NOW = 1_700_000_000
+        VAULT = "vault"
+
+        allowances = {}
+        nonces = {}
+
+        def permit(owner, spender, value, deadline, nonce, now):
+            if deadline < now:
+                raise ValueError("permit expired")
+            if nonce != nonces.get(owner, 0):
+                raise ValueError("invalid nonce")
+            nonces[owner] = nonce + 1
+            allowances[(owner, spender)] = value
+
+        def spend(owner, spender, amount):
+            allowed = allowances.get((owner, spender), 0)
+            if allowed < amount:
+                raise ValueError("insufficient allowance")
+            if allowed != MAX:
+                allowances[(owner, spender)] = allowed - amount
+
+        def deposit_with_permit(v, owner, spender, value, deadline,
+                                nonce, now, assets, wallet):
+            permit(owner, spender, value, deadline, nonce, now)
+            spend(owner, spender, assets)
+            wallet[owner] -= assets
+            return v.deposit(assets)
+
+        # 1. Happy path: permit 50,000 USDC, deposit -> 50,000
+        # shares, nonce 0 -> 1, allowance 0.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        wallet = {"alice": 100_000 * USDC, "bob": 100_000 * USDC,
+                  "carol": 100_000 * USDC}
+        shares_book = {}
+        shares = deposit_with_permit(
+            v, "alice", VAULT, 50_000 * USDC, NOW + 3600, 0, NOW,
+            50_000 * USDC, wallet)
+        shares_book["alice"] = shares
+        self.assertEqual(shares, 50_000 * USDC)
+        self.assertEqual(nonces.get("alice"), 1)
+        self.assertEqual(allowances.get(("alice", VAULT)), 0)
+        self.assertEqual(wallet["alice"], 50_000 * USDC)
+
+        # 2. Expired deadline reverts; nothing moves.
+        with self.assertRaises(ValueError) as ctx:
+            deposit_with_permit(
+                v, "bob", VAULT, 50_000 * USDC, NOW - 1, 0, NOW,
+                50_000 * USDC, wallet)
+        self.assertEqual(str(ctx.exception), "permit expired")
+        self.assertEqual(nonces.get("bob", 0), 0)
+        self.assertEqual(allowances.get(("bob", VAULT), 0), 0)
+        self.assertEqual(wallet["bob"], 100_000 * USDC)
+        self.assertEqual(v.total_assets, 1_050_000 * USDC)
+
+        # 3. Replay of the nonce-0 permit reverts; nothing moves.
+        with self.assertRaises(ValueError) as ctx:
+            permit("alice", VAULT, 50_000 * USDC, NOW + 3600, 0, NOW)
+        self.assertEqual(str(ctx.exception), "invalid nonce")
+        self.assertEqual(nonces.get("alice"), 1)
+        self.assertEqual(allowances.get(("alice", VAULT)), 0)
+
+        # 4. Wrong spender: Carol permits "other", the vault pulls
+        # against its own (zero) allowance and reverts.
+        permit("carol", "other", 30_000 * USDC, NOW + 3600, 0, NOW)
+        self.assertEqual(allowances.get(("carol", "other")),
+                         30_000 * USDC)
+        with self.assertRaises(ValueError) as ctx:
+            spend("carol", VAULT, 30_000 * USDC)
+        self.assertEqual(str(ctx.exception), "insufficient allowance")
+        self.assertEqual(allowances.get(("carol", VAULT), 0), 0)
+        self.assertEqual(wallet["carol"], 100_000 * USDC)
+
+        # 5. Partial use: permit 100,000 (nonce 1), deposit 40,000
+        # -> nonce 1 -> 2 even though 60,000 allowance remains; the
+        # leftover spends with no new signature.
+        wallet["alice"] += 50_000 * USDC
+        shares = deposit_with_permit(
+            v, "alice", VAULT, 100_000 * USDC, NOW + 3600, 1, NOW,
+            40_000 * USDC, wallet)
+        shares_book["alice"] += shares
+        self.assertEqual(shares, 40_000 * USDC)
+        self.assertEqual(nonces.get("alice"), 2)
+        self.assertEqual(allowances.get(("alice", VAULT)),
+                         60_000 * USDC)
+        spend("alice", VAULT, 60_000 * USDC)
+        wallet["alice"] -= 60_000 * USDC
+        shares = v.deposit(60_000 * USDC)
+        shares_book["alice"] += shares
+        self.assertEqual(shares, 60_000 * USDC)
+        self.assertEqual(allowances.get(("alice", VAULT)), 0)
+        self.assertEqual(nonces.get("alice"), 2)
+        self.assertEqual(shares_book["alice"], 150_000 * USDC)
+        self.assertEqual(wallet["alice"], 0)
+
+        # 6. Unlimited permit: deposit 10,000, allowance stays max.
+        wallet["alice"] += 10_000 * USDC
+        shares = deposit_with_permit(
+            v, "alice", VAULT, MAX, NOW + 3600, 2, NOW,
+            10_000 * USDC, wallet)
+        shares_book["alice"] += shares
+        self.assertEqual(shares, 10_000 * USDC)
+        self.assertEqual(allowances.get(("alice", VAULT)), MAX)
+        self.assertEqual(nonces.get("alice"), 3)
+
+        # 7. Price moved: +10% yield, a 20,000 USDC permit buys only
+        # 18,181.818181 shares (1,818.181819 fewer than 20,000).
+        # Fresh vault AND fresh token, as in the model.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        nonces.clear()
+        allowances.clear()
+        v.donate(100_000 * USDC)
+        self.assertEqual(v.total_assets, 1_100_000 * USDC)
+        wallet = {"alice": 20_000 * USDC}
+        shares = deposit_with_permit(
+            v, "alice", VAULT, 20_000 * USDC, NOW + 3600, 0, NOW,
+            20_000 * USDC, wallet)
+        self.assertEqual(shares, 18_181_818_181)
+        self.assertEqual(20_000 * USDC - shares, 1_818_181_819)
+        self.assertEqual(allowances.get(("alice", VAULT)), 0)
+        self.assertEqual(wallet["alice"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
