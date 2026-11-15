@@ -1,5 +1,5 @@
 name: 'ERC-4626 accounting checks'
-description: 'Run the five exact-integer ERC-4626 accounting checks against a vault model (rounding, donation inflation, preview consistency, fee conservation, share-price sanity). Fails the step when any check fails.'
+description: 'Run the six exact-integer ERC-4626 accounting checks against a vault model (rounding, donation inflation, minimum viable deposit, preview consistency, fee conservation, share-price sanity). Fails the step when any check fails.'
 author: 'Hatch Worker'
 inputs:
   decimals-offset:
