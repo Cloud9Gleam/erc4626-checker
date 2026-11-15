@@ -1110,6 +1110,57 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(S5c, S0)
         self.assertEqual(H / S5c * A5c, Fraction(161051, 10))
 
+    def test_redeem_fee_basis_guide_numbers(self):
+        # Redeem-fee-basis guide (site/redeem-fee-basis-model.py): a 5%
+        # fee on redemption, charged on the payout in assets vs charged
+        # in shares. Re-derived here with plain integer arithmetic,
+        # independent of the model file. Vault 1,000,003 / 1,000,000
+        # base units, price 1.000003, fee 5%.
+        USDC = 1_000_000
+        A, S = 1_000_003 * USDC, 1_000_000 * USDC
+
+        def fee_on_assets(shares):
+            gross = shares * A // S
+            fee = gross * 5 // 100
+            return gross, fee, gross - fee
+
+        def fee_in_shares(shares, ceil_fee=False):
+            if ceil_fee:
+                fee_shares = -(-shares * 5 // 100)
+            else:
+                fee_shares = shares * 5 // 100
+            return fee_shares, (shares - fee_shares) * A // S
+
+        # Big redeem, 999,999 shares: (a) nets 950,001.899998,
+        # (b) nets 950,001.899997 -- the whole gap is 1 base unit.
+        H1 = 999_999 * USDC
+        self.assertEqual(fee_on_assets(H1),
+                         (1_000_001_999_997, 50_000_099_999,
+                          950_001_899_998))
+        self.assertEqual(fee_in_shares(H1),
+                         (49_999_950_000, 950_001_899_997))
+        self.assertEqual(fee_in_shares(H1, ceil_fee=True),
+                         fee_in_shares(H1))
+        self.assertEqual(fee_on_assets(H1)[2] - fee_in_shares(H1)[1], 1)
+        # Exact net is 950,001.89999715 USDC: both designs round it.
+        self.assertEqual(Fraction(H1) * Fraction(A, S) * Fraction(95, 100),
+                         Fraction(19_000_037_999_943, 20))
+        # Mid redeem, 10,000 shares: both designs pay exactly
+        # 9,500.028500 -- gap 0, the usual case.
+        H2 = 10_000 * USDC
+        self.assertEqual(fee_on_assets(H2),
+                         (10_000_030_000, 500_001_500, 9_500_028_500))
+        self.assertEqual(fee_in_shares(H2),
+                         (500_000_000, 9_500_028_500))
+        # Dust redeem, 19 base units of shares: floor on either side
+        # pays 19 (fee 0 -- the fee vanishes); ceil on the fee shares
+        # pays 18 (fee enforced).
+        self.assertEqual(fee_on_assets(19), (19, 0, 19))
+        self.assertEqual(fee_in_shares(19), (0, 19))
+        self.assertEqual(fee_in_shares(19, ceil_fee=True), (1, 18))
+        # Control: zero fee pays the full floored gross.
+        self.assertEqual(H1 * A // S, 1_000_001_999_997)
+
     def test_vault_state_seeded_donation(self):
         # A live vault is not a new vault: the checker used to run the
         # donation check only on an empty vault, so every live vault got
