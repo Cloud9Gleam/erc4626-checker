@@ -9237,6 +9237,159 @@ class TestChecker(unittest.TestCase):
             self.assertIn(needle, section)
         self.assertIn("cannot repay its own loan", section)
 
+    def test_donation_idle_cash_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-idle-cash/
+        # to its model: a 100,000 USDC donation lands in a vault
+        # that keeps a cash buffer; the gift is split like
+        # everything else, so part of it never gets deployed.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers in
+        # base units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-idle-cash-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_idle_cash_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        # (0) Control, no donation, 20% fraction buffer: gross
+        # 1,080,000, Alice 108,000. Reused from the idle-cash-drag
+        # guide as the control, not a new measurement.
+        g0 = F(1_000_000 * U) * F(4, 5) * F(11, 10) \
+            + F(1_000_000 * U) * F(1, 5)
+        self.assertEqual(g0, 1_080_000 * U)
+        self.assertEqual(model.g0, g0)
+        self.assertEqual(model.share_value(model.ALICE, g0,
+                                           model.S0),
+                         108_000 * U)
+        # (1) Donation at year start, 20% fraction buffer: total
+        # 1,100,000, idle 220,000, deployed 880,000 -> 968,000,
+        # gross 1,188,000, Alice 118,800 -- capture 10,800, drag
+        # 200 (20% idle x 100,000 gift x 10% yield x 10% share).
+        g1 = F(1_100_000 * U) * F(4, 5) * F(11, 10) \
+            + F(1_100_000 * U) * F(1, 5)
+        self.assertEqual(g1, 1_188_000 * U)
+        self.assertEqual(model.g1, g1)
+        self.assertEqual(model.share_value(model.ALICE, g1,
+                                           model.S0),
+                         118_800 * U)
+        self.assertEqual(F(118_800 * U) - F(108_000 * U),
+                         10_800 * U)
+        self.assertEqual(F(1, 5) * 100_000 * U * F(1, 10)
+                         * F(1, 10), 200 * U)
+        # (2) Donation at year start, fixed-dollar 200,000 buffer:
+        # buffer already full, whole donation deployed: 900,000
+        # -> 990,000, gross 1,190,000, Alice 119,000 -- capture
+        # the full 11,000. Policy alone moves 200 (Alice) and
+        # 1,800 (Carol) against case (1).
+        g2 = F(900_000 * U) * F(11, 10) + 200_000 * U
+        self.assertEqual(g2, 1_190_000 * U)
+        self.assertEqual(model.g2, g2)
+        self.assertEqual(model.share_value(model.ALICE, g2,
+                                           model.S0),
+                         119_000 * U)
+        self.assertEqual(F(119_000 * U) - F(118_800 * U), 200 * U)
+        self.assertEqual(F(1_071_000 * U) - F(1_069_200 * U),
+                         1_800 * U)
+        # (3) Donation, 50% fraction buffer: baseline 1,050,000,
+        # Alice 105,000; with donation 1,155,000, Alice 115,500
+        # -- capture 10,500, drag 500.
+        g3b = F(1_000_000 * U) * F(1, 2) * F(11, 10) \
+            + F(1_000_000 * U) * F(1, 2)
+        g3 = F(1_100_000 * U) * F(1, 2) * F(11, 10) \
+            + F(1_100_000 * U) * F(1, 2)
+        self.assertEqual((g3b, g3), (1_050_000 * U, 1_155_000 * U))
+        self.assertEqual(model.g3, g3)
+        self.assertEqual(model.share_value(model.ALICE, g3,
+                                           model.S0),
+                         115_500 * U)
+        self.assertEqual(F(115_500 * U) - F(105_000 * U),
+                         10_500 * U)
+        self.assertEqual(F(11_000 * U) - F(10_500 * U), 500 * U)
+        # (4) Donation mid-year, after deployment: the gift sits
+        # idle the rest of the year, gross 1,180,000, Alice
+        # 118,000 -- timing costs her 800 against case (1).
+        g4 = 880_000 * U + 200_000 * U + 100_000 * U
+        self.assertEqual(g4, 1_180_000 * U)
+        self.assertEqual(model.g4, g4)
+        self.assertEqual(model.share_value(model.ALICE, g4,
+                                           model.S0),
+                         118_000 * U)
+        self.assertEqual(F(118_800 * U) - F(118_000 * U), 800 * U)
+        # (5) Five years, 20% fraction buffer: total
+        # 1,100,000 x 1.08^5 = 1,616,260.884480, Alice
+        # 161,626.088448. No-donation five years 1,469,328.0768,
+        # Alice 146,932.80768. The gift contributes 14,693.280768
+        # to Alice; fully deployed it would have contributed
+        # 16,105.10 -- drag 1,411.819232 on her gift (14,118.19232
+        # in total).
+        m5 = F(108, 100) ** 5
+        self.assertEqual(m5, F(14348907, 9765625))
+        g5 = F(1_100_000 * U) * m5
+        self.assertEqual(g5, 1_616_260_884_480)
+        self.assertEqual(model.g5, g5)
+        a5 = g5 * F(1, 10)
+        self.assertEqual(a5, 161_626_088_448)
+        g5n = F(1_000_000 * U) * m5
+        self.assertEqual(g5n, 1_469_328_076_800)
+        a5n = g5n * F(1, 10)
+        self.assertEqual(a5n, 146_932_807_680)
+        self.assertEqual(a5 - a5n, 14_693_280_768)
+        gift_full = F(100_000 * U) * F(11, 10) ** 5
+        self.assertEqual(gift_full, 161_051_000_000)
+        self.assertEqual(gift_full * F(1, 10), 16_105_100_000)
+        self.assertEqual(gift_full * F(1, 10) - (a5 - a5n),
+                         1_411_819_232)
+        self.assertEqual(gift_full - F(100_000 * U) * m5,
+                         14_118_192_320)
+        # (6) Control for (5), fully deployed five years:
+        # 1,100,000 x 1.10^5 = 1,771,561.0, Alice 177,156.10.
+        # Buffer costs Alice 15,530.011552 in total: 1,411.819232
+        # on the donation plus 14,118.19232 on the original vault.
+        g6 = F(1_100_000 * U) * F(11, 10) ** 5
+        self.assertEqual(g6, 1_771_561_000_000)
+        self.assertEqual(model.g6, g6)
+        a6 = g6 * F(1, 10)
+        self.assertEqual(a6, 177_156_100_000)
+        self.assertEqual(a6 - a5, 15_530_011_552)
+        self.assertEqual(F(1_411_819_232) + F(14_118_192_320),
+                         F(15_530_011_552))
+
+        # Chart widths: Alice's capture by buffer policy, scaled
+        # to the full deployed value 11,000 (one decimal, the
+        # site's convention).
+        self.assertEqual(round(float(F(11_000, 11_000) * 100), 1),
+                         100.0)
+        self.assertEqual(round(float(F(10_800, 11_000) * 100), 1),
+                         98.2)
+        self.assertEqual(round(float(F(10_500, 11_000) * 100), 1),
+                         95.5)
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-donation-idle-cash/"')
+        section = build[start:start + 9000]
+        for needle in ("10,800", "11,000", "10,500",
+                       "1,411.819232", "15,530.011552",
+                       "1,616,260.884480", "161,626.088448",
+                       "1,190,000", "118,800",
+                       "width:98.2%", "width:100.0%",
+                       "width:95.5%"):
+            self.assertIn(needle, section)
+        self.assertIn("the gift that sits in the buffer", section)
+        # The duplicate add() written by the parallel round must
+        # be gone: only one add() for this path in build.py.
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-idle-cash/"'),
+            1)
+
 
 
 if __name__ == "__main__":
