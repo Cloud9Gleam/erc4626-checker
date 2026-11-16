@@ -5743,6 +5743,133 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(mint_cost(SHARES, 1_575_000 * USDC,
                                    1_500_000 * USDC), 10_500 * USDC)
 
+    def test_donation_vault_migration_guide_numbers(self):
+        # Pins /guides/erc4626-donation-vault-migration/ to its
+        # model: a donation landing mid-migration routes by order
+        # and by which vault it lands in. V1 1,000,000 USDC /
+        # 1,000,000 shares at $1.00; Alice 100,000 shares (10%),
+        # Carol 900,000 (90%); V2 empty at $1.00; gift 100,000.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive every headline number with
+        # plain Fraction arithmetic on redeem-then-deposit.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-vault-migration-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_vault_migration_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        BASE = 1_000_000 * USDC
+        SUPPLY = 1_000_000 * USDC
+        ALICE = 100_000 * USDC
+        CAROL = 900_000 * USDC
+        GIFT = 100_000 * USDC
+
+        def price(base, supply):
+            return Fraction(base, supply)
+
+        def migrate(v1_base, v1_supply, v2_base, v2_supply, shares):
+            # Redeem `shares` from V1 at its price, deposit the
+            # proceeds into V2 at its price; returns ((v1_base,
+            # v1_supply), (v2_base, v2_supply), v2_shares_minted).
+            assets = shares * price(v1_base, v1_supply)
+            v1_base -= assets
+            v1_supply -= shares
+            minted = assets / price(v2_base, v2_supply) \
+                if v2_supply else assets
+            v2_base += assets
+            v2_supply += minted
+            return (v1_base, v1_supply), (v2_base, v2_supply), minted
+
+        def value(shares, base, supply):
+            return shares * price(base, supply)
+
+        # S1: gift in V1 before anyone migrates — proportional.
+        # Alice redeems 110,000, Carol 990,000.
+        v1 = (BASE + GIFT, SUPPLY)
+        self.assertEqual(price(*v1), Fraction(11, 10))
+        v2 = (0, 0)
+        (_, v2, a1) = migrate(v1[0], v1[1], v2[0], v2[1], ALICE)
+        v1 = (v1[0] - 110_000 * USDC, v1[1] - ALICE)
+        (_, v2, c1) = migrate(v1[0], v1[1], v2[0], v2[1], CAROL)
+        self.assertEqual((a1, c1), (110_000 * USDC, 990_000 * USDC))
+        self.assertEqual(v2, (1_100_000 * USDC, 1_100_000 * USDC))
+        self.assertEqual(value(a1, *v2), 110_000 * USDC)
+        self.assertEqual(value(c1, *v2), 990_000 * USDC)
+
+        # S2: Alice migrates first, gift in V1 — Carol takes all.
+        v1 = (BASE, SUPPLY)
+        v2 = (0, 0)
+        (_, v2, a2) = migrate(v1[0], v1[1], v2[0], v2[1], ALICE)
+        self.assertEqual(a2, 100_000 * USDC)
+        v1 = (v1[0] - 100_000 * USDC, v1[1] - ALICE)
+        v1 = (v1[0] + GIFT, v1[1])
+        self.assertEqual(price(*v1), Fraction(10, 9))
+        (_, v2, c2) = migrate(v1[0], v1[1], v2[0], v2[1], CAROL)
+        self.assertEqual(c2, 1_000_000 * USDC)
+        self.assertEqual(value(a2, *v2), 100_000 * USDC)
+        self.assertEqual(value(c2, *v2), 1_000_000 * USDC)
+        self.assertEqual(110_000 * USDC - 100_000 * USDC,
+                         10_000 * USDC)
+
+        # S3: Alice migrates first, gift in V2 — Alice takes all.
+        v1 = (BASE, SUPPLY)
+        v2 = (0, 0)
+        (_, v2, a3) = migrate(v1[0], v1[1], v2[0], v2[1], ALICE)
+        self.assertEqual(a3, 100_000 * USDC)
+        v2 = (v2[0] + GIFT, v2[1])
+        self.assertEqual(price(*v2), 2)
+        v1 = (v1[0] - 100_000 * USDC, v1[1] - ALICE)
+        (_, v2, c3) = migrate(v1[0], v1[1], v2[0], v2[1], CAROL)
+        self.assertEqual(c3, 450_000 * USDC)
+        self.assertEqual(v2, (1_100_000 * USDC, 550_000 * USDC))
+        self.assertEqual(value(a3, *v2), 200_000 * USDC)
+        self.assertEqual(value(c3, *v2), 900_000 * USDC)
+        self.assertEqual(200_000 * USDC - 110_000 * USDC,
+                         90_000 * USDC)
+
+        # S4: loss mirror of S2 — 100,000 loss in V1 after Alice
+        # left; Carol bears the whole loss.
+        v1 = (BASE, SUPPLY)
+        v2 = (0, 0)
+        (_, v2, a4) = migrate(v1[0], v1[1], v2[0], v2[1], ALICE)
+        v1 = (v1[0] - 100_000 * USDC, v1[1] - ALICE)
+        v1 = (v1[0] - GIFT, v1[1])
+        self.assertEqual(price(*v1), Fraction(8, 9))
+        (_, v2, c4) = migrate(v1[0], v1[1], v2[0], v2[1], CAROL)
+        self.assertEqual(c4, 800_000 * USDC)
+        self.assertEqual(value(a4, *v2), 100_000 * USDC)
+        self.assertEqual(value(c4, *v2), 800_000 * USDC)
+
+        # S5: loss mirror of S3 — 50,000 loss in V2 after Alice
+        # joined; Alice bears the whole loss.
+        v1 = (BASE, SUPPLY)
+        v2 = (0, 0)
+        (_, v2, a5) = migrate(v1[0], v1[1], v2[0], v2[1], ALICE)
+        v2 = (v2[0] - 50_000 * USDC, v2[1])
+        self.assertEqual(price(*v2), Fraction(1, 2))
+        v1 = (v1[0] - 100_000 * USDC, v1[1] - ALICE)
+        (_, v2, c5) = migrate(v1[0], v1[1], v2[0], v2[1], CAROL)
+        self.assertEqual(c5, 1_800_000 * USDC)
+        self.assertEqual(v2, (950_000 * USDC, 1_900_000 * USDC))
+        self.assertEqual(value(a5, *v2), 50_000 * USDC)
+        self.assertEqual(value(c5, *v2), 900_000 * USDC)
+
+        # S6: both migrate first, gift in V2 — same as S1.
+        v1 = (BASE, SUPPLY)
+        v2 = (0, 0)
+        (_, v2, a6) = migrate(v1[0], v1[1], v2[0], v2[1], ALICE)
+        v1 = (v1[0] - 100_000 * USDC, v1[1] - ALICE)
+        (_, v2, c6) = migrate(v1[0], v1[1], v2[0], v2[1], CAROL)
+        v2 = (v2[0] + GIFT, v2[1])
+        self.assertEqual(price(*v2), Fraction(11, 10))
+        self.assertEqual(value(a6, *v2), 110_000 * USDC)
+        self.assertEqual(value(c6, *v2), 990_000 * USDC)
+
     def test_supply_cap_guide_numbers(self):
         # Pins /guides/erc4626-supply-cap/ to its model: a vault
         # caps totalSupply at 1,000,000 whole shares (10**12 raw
@@ -10317,6 +10444,116 @@ class TestChecker(unittest.TestCase):
         # Chart widths: redeemer-after 100.0%, depositor-before
         # 4,761.904761 / 10,000 = 47.619...% -> 47.6%.
         self.assertEqual(round(float(F(100_000, 21) / 10_000 * 100), 1), 47.6)
+
+
+    def test_donation_stale_quote_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-stale-quote/
+        # to its model: vault 1,000,000 USDC / 1,000,000 shares at
+        # $1.00, Alice 10,000 shares; Bob redeems 100,000 shares
+        # (quoted 100,000), Carol deposits 100,000 USDC (quoted
+        # 100,000 shares); a 100,000 USDC donation lands between
+        # reports, so the quote stays $1.00 while the true price
+        # is $1.10. Importing the model re-runs its assertions;
+        # the checks below independently re-derive the headline
+        # numbers in plain USDC units. Display strings follow the
+        # site's truncation to 6 decimals (t6r), not half-up
+        # rounding — the 19:03 model round wrote the depositor's
+        # excess as 9,090.909091 (rounded); the exact value is
+        # 100,000/11 = 9,090.90909090..., truncated 9,090.909090,
+        # and the guide uses the truncated form, as the
+        # donation-async-vault guide does.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-stale-quote-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_stale_quote_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        A0, S0, H = F(1_000_000), F(1_000_000), F(10_000)
+        DONATION = F(100_000)
+        R, DEP = F(100_000), F(100_000)
+        QUOTE, TRUE = F(1), F(11, 10)
+
+        def t6r(fr):
+            q = (fr * U).numerator // (fr * U).denominator
+            return f"{q // U}.{q % U:06d}"
+
+        # (1) Control, no donation: redeem at the quote is exact.
+        self.assertEqual(R * QUOTE, 100_000)
+        self.assertEqual(R * (A0 / S0), 100_000)
+
+        # (2) Redeem at the stale quote after the donation: Bob
+        # is paid 100,000 for 110,000 of value — he loses 10,000,
+        # exactly D x (R / S0); Alice rises to 11,111.111111.
+        paid2 = R * QUOTE
+        self.assertEqual(paid2, 100_000)
+        self.assertEqual(R * TRUE, 110_000)
+        self.assertEqual(R * TRUE - paid2, DONATION * R / S0)
+        self.assertEqual(R * TRUE - paid2, 10_000)
+        a2, s2 = A0 + DONATION - paid2, S0 - R
+        self.assertEqual((a2, s2), (1_000_000, 900_000))
+        self.assertEqual(a2 / s2, F(10, 9))
+        alice2 = H * (a2 / s2)
+        self.assertEqual(alice2, F(100_000, 9))
+        self.assertEqual(t6r(alice2), "11111.111111")
+        self.assertEqual(t6r(alice2 - 11_000), "111.111111")
+        # Alice's total gain from before the gift is 10,000/9:
+        # 1,000 gift share + 1,000/9 of Bob's underpayment.
+        self.assertEqual(alice2 - H, F(10_000, 9))
+
+        # (3) Deposit at the stale quote after the donation:
+        # Carol mints 100,000 shares; fair is 90,909.090909 —
+        # 9,090.909090 too many, worth 9,090.909090; Alice
+        # falls 90.909090.
+        minted3 = DEP / QUOTE
+        fair3 = DEP / TRUE
+        self.assertEqual(minted3, 100_000)
+        self.assertEqual(fair3, F(1_000_000, 11))
+        self.assertEqual(t6r(fair3), "90909.090909")
+        self.assertEqual(t6r(minted3 - fair3), "9090.909090")
+        a3, s3 = A0 + DONATION + DEP, S0 + minted3
+        self.assertEqual((a3, s3), (1_200_000, 1_100_000))
+        self.assertEqual(a3 / s3, F(12, 11))
+        self.assertEqual(t6r(minted3 * (a3 / s3)), "109090.909090")
+        self.assertEqual(t6r(minted3 * (a3 / s3) - DEP), "9090.909090")
+        alice3 = H * (a3 / s3)
+        self.assertEqual(t6r(alice3), "10909.090909")
+        self.assertEqual(t6r(11_000 - alice3), "90.909090")
+
+        # (4) Donor-redeemer: redeem in the window nets 0 after
+        # the gift; after the report the same exit nets +10,000.
+        self.assertEqual(R * QUOTE - DONATION, 0)
+        self.assertEqual(R * TRUE - DONATION, 10_000)
+        self.assertEqual(R * TRUE - R * QUOTE, 10_000)
+
+        # (5) Redeem after the report: paid 110,000, Alice
+        # unchanged at 11,000.
+        paid5 = R * TRUE
+        self.assertEqual(paid5, 110_000)
+        a5, s5 = A0 + DONATION - paid5, S0 - R
+        self.assertEqual((a5, s5), (990_000, 900_000))
+        self.assertEqual(H * (a5 / s5), 11_000)
+
+        # (6) Both legs in the window: final 1,100,000 /
+        # 1,000,000 at $1.10; Carol gains exactly 10,000, Bob
+        # loses exactly 10,000, Alice untouched at 11,000.
+        a6, s6 = A0 + DONATION - R * QUOTE, S0 - R
+        minted6 = DEP / QUOTE
+        a6, s6 = a6 + DEP, s6 + minted6
+        self.assertEqual((a6, s6), (1_100_000, 1_000_000))
+        self.assertEqual(a6 / s6, F(11, 10))
+        self.assertEqual(minted6 * (a6 / s6) - DEP, 10_000)
+        self.assertEqual(R * TRUE - R * QUOTE, 10_000)
+        self.assertEqual(H * (a6 / s6), 11_000)
+
+        # Chart widths: redeemer 10,000 / 10,000 = 100.0%,
+        # depositor 9,090.909090 / 10,000 = 90.909...% -> 90.9%.
+        self.assertEqual(round(float(F(100_000, 11) / 10_000 * 100), 1), 90.9)
 
 
 if __name__ == "__main__":
