@@ -8392,6 +8392,98 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("a donation in a tranched vault is split "
                          "pro-rata", build)
 
+    def test_donation_liquidity_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-liquidity/ to
+        # its model: a 1,000,000 USDC / 1,000,000 share vault at $1.00,
+        # liquid cash 100,000, deployed 900,000; Alice 100,000 shares
+        # (10%), Bob 900,000 (90%); honest maxWithdraw is
+        # min(book value, liquid cash); a 100,000 USDC donation lands.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-liquidity-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_liquidity_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        # (1) Baseline, no donation (overlap: maxWithdraw case 1):
+        # Alice book 100,000, maxWithdraw 100,000, full exit.
+        self.assertEqual(min(100_000, 100_000), 100_000)
+        # (2) Donation 100,000 lands in the strategy: total 1,100,000,
+        # price 11/10, Alice book 110,000, maxWithdraw 100,000,
+        # shortfall 10,000; whole shares 90,909 pay 99,999.90 and
+        # strand 9,091 shares worth 10,000.10.
+        self.assertEqual(F(1_100_000, 1_000_000), F(11, 10))
+        self.assertEqual(100_000 * F(11, 10), 110_000)
+        self.assertEqual(min(110_000, 100_000), 100_000)
+        self.assertEqual(110_000 - 100_000, 10_000)
+        self.assertEqual(int(F(100_000, 1) // F(11, 10)), 90_909)
+        self.assertEqual(90_909 * F(11, 10), F(999999, 10))
+        self.assertEqual(100_000 - 90_909, 9_091)
+        self.assertEqual(9_091 * F(11, 10), F(100001, 10))
+        # (3) Same donation in liquid cash: liquid 200,000,
+        # maxWithdraw 110,000; the design gap vs case 2 is 10,000.
+        self.assertEqual(100_000 + 100_000, 200_000)
+        self.assertEqual(min(110_000, 200_000), 110_000)
+        self.assertEqual(110_000 - 100_000, 10_000)
+        # (4) Harvest 500,000: liquid 600,000, maxWithdraw 110,000.
+        self.assertEqual(100_000 + 500_000, 600_000)
+        self.assertEqual(min(110_000, 600_000), 110_000)
+        # (5) Bob redeems first: Bob book 990,000, takes 99,999.90
+        # for 90,909 shares; liquid left 0.10; Alice maxWithdraw 0.10;
+        # Bob strands 809,091 shares worth 890,000.10.
+        self.assertEqual(900_000 * F(11, 10), 990_000)
+        self.assertEqual(min(990_000, 100_000), 100_000)
+        self.assertEqual(F(100_000, 1) - F(999999, 10), F(1, 10))
+        self.assertEqual(min(110_000, F(1, 10)), F(1, 10))
+        self.assertEqual(900_000 - 90_909, 809_091)
+        self.assertEqual(809_091 * F(11, 10), F(8900001, 10))
+        # (6) Partial harvest 50,000 after the drain: liquid 50,000.10;
+        # Alice takes 49,999.40 for 45,454 shares, strands 54,546
+        # shares worth 60,000.60; liquid left 0.70.
+        self.assertEqual(F(1, 10) + 50_000, F(500001, 10))
+        self.assertEqual(int(F(500001, 10) // F(11, 10)), 45_454)
+        self.assertEqual(45_454 * F(11, 10), F(499994, 10))
+        self.assertEqual(100_000 - 45_454, 54_546)
+        self.assertEqual(54_546 * F(11, 10), F(600006, 10))
+        self.assertEqual(F(500001, 10) - F(499994, 10), F(7, 10))
+        # (7) Boundary: harvest exactly the 10,000 shortfall; liquid
+        # 110,000, all 100,000 shares redeem for 110,000.
+        self.assertEqual(100_000 + 10_000, 110_000)
+        self.assertEqual(int(F(110_000, 1) // F(11, 10)), 100_000)
+        self.assertEqual(100_000 * F(11, 10), 110_000)
+        # (8) The view overstates by dust 0.10: maxWithdraw 100,000
+        # vs one-transaction redeem 99,999.90; the dust is the
+        # rounding remainder of the stranded 9,091 shares (10,000.10).
+        self.assertEqual(100_000 - F(999999, 10), F(1, 10))
+        self.assertEqual(F(100001, 10), 10_000 + F(1, 10))
+
+        # (9) Guide page carries the headline numbers and the chart
+        # widths (Alice maxWithdraw by landing: 110,000 / 100,000 /
+        # 0.10 -> 100.0 / 90.9 / 0.0).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-liquidity/", build)
+        for needle in ("110,000", "100,000", "10,000", "99,999.90",
+                       "90,909", "9,091", "10,000.10", "200,000",
+                       "600,000", "990,000", "0.10", "809,091",
+                       "890,000.10", "50,000.10", "49,999.40",
+                       "45,454", "54,546", "60,000.60", "0.70",
+                       "width:100.0%", "width:90.9%", "width:0.0%"):
+            self.assertIn(needle, build)
+
+        # (10) The guide states the honest overlap (case 1 is the
+        # maxWithdraw case 1, relabelled) and that the new content
+        # is cases 2-8; it never claims the strategy-landing donation
+        # is withdrawable in full.
+        self.assertIn("The new content here is cases 2", build)
+        self.assertNotIn("Alice can withdraw the full 110,000", build)
+
 
 if __name__ == "__main__":
     unittest.main()
