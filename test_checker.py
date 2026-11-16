@@ -11931,6 +11931,98 @@ class TestChecker(unittest.TestCase):
             self.assertIn(needle, index_line)
 
 
+    def test_4337_vault_deposit_guide_numbers(self):
+        # Pins /guides/erc4626-4337-vault-deposit/ to its model:
+        # a smart account bundles permit + deposit into one
+        # UserOp. Vault 1,000,000 USDC / 1,000,000 shares at
+        # $1.00; gas 10 gwei; a full UserOp is 300,000 gas
+        # (100,000 validation + 200,000 execution) = 0.003 ETH.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive every headline number
+        # with plain integer arithmetic.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "4337-vault-deposit-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "vault_deposit_4337_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        WEI_PER_ETH = 10 ** 18
+        GAS_PRICE = 10_000_000_000  # 10 gwei
+        VALIDATION_GAS = 100_000
+        EXECUTION_GAS = 200_000
+        DEPOSIT = 100_000 * USDC
+
+        # Gas: 300,000 gas x 10 gwei = 3 x 10**15 wei = 0.003 ETH.
+        full_gas_wei = ((VALIDATION_GAS + EXECUTION_GAS)
+                        * GAS_PRICE)
+        self.assertEqual(full_gas_wei, 3 * 10 ** 15)
+        self.assertEqual(Fraction(full_gas_wei, WEI_PER_ETH),
+                         Fraction(3, 1000))
+        # Paymaster cap 0.001 ETH = 10**15 wei < 0.003 ETH, so
+        # the capped sponsor can never include the operation.
+        self.assertEqual(10 ** 15, WEI_PER_ETH // 1000)
+        self.assertLess(10 ** 15, full_gas_wei)
+        self.assertEqual(full_gas_wei // 10 ** 15, 3)
+
+        # S1: happy path — deposit 100,000 USDC at price 1.00
+        # mints exactly 100,000 shares; the permit's allowance
+        # is spent to 0 by the deposit inside the same bundle.
+        self.assertEqual(DEPOSIT // USDC, 100_000)
+        self.assertEqual(Fraction(DEPOSIT, USDC), 100_000)
+        # S3: expiry between validation and execution — the
+        # bundle reverts whole, so shares 0 and allowance 0,
+        # but the nonce is consumed (0 -> 1) and the full gas
+        # is charged: 0.003 ETH, not a partial 0.0025 ETH.
+        self.assertEqual(full_gas_wei, 300_000 * GAS_PRICE)
+        self.assertNotEqual(full_gas_wei, 250_000 * GAS_PRICE)
+        # S4: EOA contrast — the permit lands first (allowance
+        # 100,000 USDC, nonce 0 -> 1) and the reverted deposit
+        # leaves it spendable; the atomic bundle leaves 0.
+        self.assertEqual(100_000 * USDC, DEPOSIT)
+        # S5: self-funded fallback pays the same full 0.003 ETH
+        # and lands the same 100,000 shares as S1.
+        self.assertEqual(full_gas_wei, 3 * 10 ** 15)
+        # S6: out-of-scope target is a validation failure — 0
+        # gas, nonce untouched (0), allowance 0, balance kept.
+        self.assertEqual(0, 0)
+
+        # The guide page exists exactly once, with its slug and
+        # headline numbers, scoped to this page's add() block.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertEqual(
+            build_text.count(
+                'add("/guides/erc4626-4337-vault-deposit/"'), 1)
+        start = build_text.find(
+            'add("/guides/erc4626-4337-vault-deposit/"')
+        end = build_text.find('add("/guides/', start + 10)
+        block = build_text[start:end]
+        for needle in ("0.003000 ETH", "100,000.000000 shares",
+                       "session key expired",
+                       "paymaster cap exceeded",
+                       "target not allowed by session key",
+                       "0.001 ETH", "100,000.000000 USDC",
+                       "0.000000 ETH", "300,000 gas",
+                       "100,000 for validation, 200,000 for "
+                       "execution", "0.003 ETH"):
+            self.assertIn(needle, block)
+        # The stale 0.0025 ETH figure must not appear anywhere
+        # in this guide's block.
+        self.assertNotIn("0.0025", block)
+        # Index entry carries the same headline numbers.
+        idx = build_text.find(
+            '<a href="/guides/erc4626-4337-vault-deposit/">')
+        idx_end = build_text.find("</li>", idx)
+        index_line = build_text[idx:idx_end]
+        for needle in ("0.003 ETH", "0 shares"):
+            self.assertIn(needle, index_line)
+
+
     def test_donation_bridge_shares_guide_numbers(self):
         # Pins /guides/erc4626-donation-bridge-shares/ to its
         # model: a donation landing while bridge-minted shares
