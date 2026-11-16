@@ -5975,6 +5975,128 @@ class TestChecker(unittest.TestCase):
         self.assertIn("The gift follows the YT, not the SY holder",
                       build_text)
 
+    def test_donation_insurance_reserve_guide_numbers(self):
+        # Pins /guides/erc4626-donation-insurance-reserve/ to its
+        # model: a donation is indistinguishable from a gain, so a
+        # refill-first reserve policy skims it into the buffer.
+        # Vault 100,000 USDC / 100,000 shares at $1.00; reserve
+        # 5,000 USDC outside totalAssets, capped at 5,000; Alice
+        # holds 50,000 shares. Importing the model re-runs its
+        # assertions; the checks below independently re-derive
+        # every headline number with plain Fraction arithmetic.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-insurance-reserve-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_insurance_reserve_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        A0 = Fraction(100_000)
+        SUPPLY = Fraction(100_000)
+        ALICE = Fraction(50_000)
+        CAP = Fraction(5_000)
+
+        def price(assets):
+            return assets / SUPPLY
+
+        def alice(assets):
+            return ALICE * price(assets)
+
+        def refill(assets, reserve, gain):
+            top = min(gain, CAP - reserve)
+            return assets + gain - top, reserve + top
+
+        def distribute(assets, reserve, gain):
+            return assets + gain, reserve
+
+        def loss(assets, reserve, amt):
+            pay = min(amt, reserve)
+            return assets - amt + pay, reserve - pay
+
+        # S0: depleted state — after a -3,000 loss (reserve pays
+        # in full) and a further -10,000 loss (reserve pays its
+        # remaining 2,000): assets 92,000, price 0.92, reserve 0.
+        a_dep, r_dep = Fraction(92_000), Fraction(0)
+        self.assertEqual(price(a_dep), Fraction(23, 25))
+        self.assertEqual(alice(a_dep), 46_000)
+
+        # S1: donation +4,000, distribute-first — holders get it.
+        a1, r1 = distribute(a_dep, r_dep, Fraction(4_000))
+        self.assertEqual((a1, r1), (96_000, 0))
+        self.assertEqual(price(a1), Fraction(24, 25))
+        self.assertEqual(alice(a1), 48_000)
+
+        # S2: same donation, refill-first — the whole gift goes
+        # to the reserve; price and Alice unchanged.
+        a2, r2 = refill(a_dep, r_dep, Fraction(4_000))
+        self.assertEqual((a2, r2), (92_000, 4_000))
+        self.assertEqual(price(a2), Fraction(23, 25))
+        self.assertEqual(alice(a2), 46_000)
+        self.assertEqual(alice(a1) - alice(a2), 2_000)
+
+        # S3: donation +10,000, refill-first — cap splits the
+        # gift 5,000 reserve / 5,000 vault.
+        a3, r3 = refill(a_dep, r_dep, Fraction(10_000))
+        self.assertEqual((a3, r3), (97_000, 5_000))
+        self.assertEqual(price(a3), Fraction(97, 100))
+        self.assertEqual(alice(a3), 48_500)
+        self.assertEqual(r3, CAP)
+
+        # S4: next loss -4,000 erases the policy difference.
+        a2b, r2b = loss(a2, r2, Fraction(4_000))
+        a1b, r1b = loss(a1, r1, Fraction(4_000))
+        self.assertEqual((a2b, r2b), (92_000, 0))
+        self.assertEqual((a1b, r1b), (92_000, 0))
+        self.assertEqual(alice(a2b), alice(a1b))
+        self.assertEqual(alice(a2b), 46_000)
+
+        # S5: reserve at 2,000 — a 4,000 donation tops it up
+        # 3,000 and spills 1,000 into the vault.
+        a5, r5 = refill(Fraction(100_000), Fraction(2_000),
+                        Fraction(4_000))
+        self.assertEqual((a5, r5), (101_000, 5_000))
+        self.assertEqual(price(a5), Fraction(101, 100))
+        self.assertEqual(alice(a5), 50_500)
+
+        # S6: reserve full — the same donation goes entirely
+        # to the holders.
+        a6, r6 = refill(A0, CAP, Fraction(4_000))
+        self.assertEqual((a6, r6), (104_000, 5_000))
+        self.assertEqual(price(a6), Fraction(26, 25))
+        self.assertEqual(alice(a6), 52_000)
+
+        # S7: the redeemer test — Alice exits right after the
+        # 4,000 donation: 48,000 vs 46,000, half the gift.
+        self.assertEqual(alice(a1) - alice(a2), 2_000)
+        self.assertEqual(r2, 4_000)
+        self.assertEqual(r1, 0)
+
+        # S8: a -10,000 loss converges both policies too.
+        a2c, r2c = loss(a2, r2, Fraction(10_000))
+        a1c, r1c = loss(a1, r1, Fraction(10_000))
+        self.assertEqual((a2c, r2c), (86_000, 0))
+        self.assertEqual((a1c, r1c), (86_000, 0))
+        self.assertEqual(price(a2c), Fraction(43, 50))
+        self.assertEqual(alice(a2c), 43_000)
+
+        # Chart widths (Alice's value, scaled to 52,000,
+        # truncated to one decimal): 88.4 / 92.3 / 93.2 /
+        # 97.1 / 100.0.
+        values = [46_000, 48_000, 48_500, 50_500, 52_000]
+        widths = [int(Fraction(v, 520) * 10) / 10 for v in values]
+        self.assertEqual(widths, [88.4, 92.3, 93.2, 97.1, 100.0])
+
+        # Guide text pins: slug registered and the deferred
+        # sentence present in build.py.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-insurance-reserve/",
+                      build_text)
+        self.assertIn("was deferred, not destroyed", build_text)
+
     def test_supply_cap_guide_numbers(self):
         # Pins /guides/erc4626-supply-cap/ to its model: a vault
         # caps totalSupply at 1,000,000 whole shares (10**12 raw
