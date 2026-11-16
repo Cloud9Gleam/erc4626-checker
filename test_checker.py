@@ -7427,5 +7427,116 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("within <strong>0.09 USDC</strong>", build)
 
 
+    def test_pending_fee_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-pending-fee/ to
+        # its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00. Alice requests redemption of 100,000 shares;
+        # shares burn at request, her 100,000 USDC stays in
+        # totalAssets. Bob holds 90,000, Carol 810,000.
+        # Fee 2%/yr, charged once at year end. Importing the
+        # model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "pending-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "pending_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        def claim(assets, shares, total_shares):
+            return Fraction(shares * assets, total_shares)
+
+        T, S = 1_000_000, 1_000_000
+        P = 100_000  # Alice's pending claim, still in totalAssets
+        S_rem = S - P  # 900,000 shares remain after her burn
+
+        # (1) Asset fee, pending still in vault at fee time:
+        # fee 20,000; Alice claims 100,000; Bob 88,000, Carol 792,000.
+        fee1 = T * 200 // 10_000
+        self.assertEqual(fee1, 20_000)
+        self.assertEqual(claim(T - fee1 - P, 90_000, S_rem), 88_000)
+        self.assertEqual(claim(T - fee1 - P, 810_000, S_rem), 792_000)
+
+        # (2) Asset fee, honest accounting (pending paid first,
+        # Design C): fee 18,000; Bob 88,200, Carol 793,800.
+        # The pending claim costs Bob 200 and Carol 1,800.
+        fee2 = (T - P) * 200 // 10_000
+        self.assertEqual(fee2, 18_000)
+        bob2 = claim(T - P - fee2, 90_000, S_rem)
+        carol2 = claim(T - P - fee2, 810_000, S_rem)
+        self.assertEqual(bob2, 88_200)
+        self.assertEqual(carol2, 793_800)
+        self.assertEqual(bob2 - 88_000, 200)
+        self.assertEqual(carol2 - 792_000, 1_800)
+        self.assertEqual(fee1 - fee2, 2_000)
+        self.assertEqual(Fraction(90_000, S_rem), Fraction(1, 10))
+        self.assertEqual(Fraction(810_000, S_rem), Fraction(9, 10))
+
+        # (3) Share fee, pending in vault vs honest: identical.
+        # 18,000 fee shares, supply 918,000, Bob 88,235.294118.
+        fee_shares = S_rem * 200 // 10_000
+        self.assertEqual(fee_shares, 18_000)
+        bob3 = claim(T - P, 90_000, S_rem + fee_shares)
+        self.assertEqual(bob3, Fraction(1_500_000, 17))
+        self.assertEqual(round(float(bob3), 6), 88_235.294118)
+
+        # (4) Big pending claim (Alice redeems half the vault):
+        # asset fee still 20,000; Bob 86,400 vs 88,200 honest
+        # (extra 1,800); Carol 393,600 vs 401,800 (extra 8,200).
+        P4, S4 = 500_000, 500_000
+        fee4 = T * 200 // 10_000
+        self.assertEqual(fee4, 20_000)
+        bob4 = claim(T - fee4 - P4, 90_000, S4)
+        self.assertEqual(bob4, 86_400)
+        fee4_honest = (T - P4) * 200 // 10_000
+        self.assertEqual(fee4_honest, 10_000)
+        bob4_honest = claim(T - P4 - fee4_honest, 90_000, S4)
+        self.assertEqual(bob4_honest, 88_200)
+        self.assertEqual(bob4_honest - bob4, 1_800)
+        carol4 = claim(T - fee4 - P4, 410_000, S4)
+        carol4_honest = claim(T - P4 - fee4_honest, 410_000, S4)
+        self.assertEqual(carol4, 393_600)
+        self.assertEqual(carol4_honest, 401_800)
+        self.assertEqual(carol4_honest - carol4, 8_200)
+        self.assertEqual((fee4 - fee4_honest), 10_000)
+        self.assertEqual(Fraction(90_000, S4), Fraction(9, 50))
+
+        # (5) Control, no pending claim: the two fee styles
+        # differ anyway — asset-fee Bob 88,200, share-fee Bob
+        # 88,235.294118, a 35.294118 gap with no pending claim.
+        bob5_asset = claim(T - T * 200 // 10_000, 90_000, S)
+        self.assertEqual(bob5_asset, 88_200)
+        bob5_share = claim(T, 90_000, S + S * 200 // 10_000)
+        self.assertEqual(bob5_share, Fraction(1_500_000, 17))
+        self.assertEqual(round(float(bob5_share - bob5_asset), 6),
+                         35.294118)
+
+        # (6) Chart rows: extra fee cost 200 / 1,800, widths
+        # 11.1 / 100.0 of the max.
+        self.assertEqual(round(float(Fraction(200, 1_800) * 100), 1),
+                         11.1)
+        self.assertEqual(round(float(Fraction(1_800, 1_800) * 100), 1),
+                         100.0)
+
+        # (7) Guide page carries the headline numbers.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-pending-fee/", build)
+        for needle in ("20,000", "18,000", "88,000", "792,000",
+                       "88,200", "793,800", "88,235.294118",
+                       "86,400", "393,600", "401,800", "35.294118",
+                       "8,200", "Bob pays 200 and Carol 1,800"):
+            self.assertIn(needle, build)
+
+        # (8) The 2,000 is the TOTAL extra fee, not Bob's share:
+        # Bob pays 200, Carol 1,800. The guide must never state
+        # the pending claim costs Bob 2,000.
+        self.assertIn("costs Bob <strong>200</strong> and Carol <strong>1,800</strong>", build)
+        self.assertNotIn("costs Bob <strong>2,000</strong>", build)
+
+
 if __name__ == "__main__":
     unittest.main()
