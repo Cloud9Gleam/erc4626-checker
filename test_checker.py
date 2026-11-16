@@ -13109,6 +13109,102 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(min(F(100_000), max(F(0), 0)), 0)
         self.assertEqual(F(110_000) / F(1), 110_000)
 
+    def test_async_escrow_counted_guide_numbers(self):
+        # Pins /guides/erc4626-async-escrow-counted/ to its model:
+        # vault 100,000 USDC / 100,000 shares at $1.00; Bob requests
+        # a 100,000 deposit into escrow and the vault counts the
+        # escrow in totalAssets from the request. Importing the
+        # model runs its own asserts; the checks below
+        # independently re-derive the headline numbers with Fraction
+        # arithmetic plus integer base-unit floors for S3/S4, the
+        # S2 wedge direction, and the cancel distinguishing test.
+        import importlib.util
+        from fractions import Fraction as F
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "async-escrow-counted-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "async_escrow_counted_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        BU = 1_000_000  # base units per USDC
+
+        # S0 control (escrow excluded): request changes nothing,
+        # fulfil mints 100,000 shares, redeem 100,000, loss 0.
+        self.assertEqual(F(100_000) / F(100_000), 1)
+        self.assertEqual(100_000 * BU * 100_000 * BU // (100_000 * BU),
+                         100_000 * BU)
+
+        # S1: request only -> book 200,000, book price $2.00,
+        # true price $1.00 (vault assets only), wealth moved 0.
+        self.assertEqual(F(200_000) / F(100_000), 2)
+        self.assertEqual(F(100_000) / F(100_000), 1)
+
+        # S2 wedge: Alice redeems 50,000 shares at $2.00 -> 100,000
+        # (gain 50,000); Bob fulfils 100,000 at $2.00 -> 50,000
+        # shares, redeems 50,000 (loss 50,000); other holders redeem
+        # 50,000 for 50,000, unchanged; gain == loss exactly.
+        out_a = F(50_000) * F(200_000) / F(100_000)
+        self.assertEqual(out_a, 100_000)
+        sh2 = F(100_000) * F(50_000) / F(100_000)
+        self.assertEqual(sh2, 50_000)
+        out_b = F(50_000) * F(100_000) / F(100_000)
+        self.assertEqual(out_b, 50_000)
+        self.assertEqual(out_a - 50_000, 100_000 - out_b)
+        self.assertEqual(F(50_000) * F(50_000) / F(50_000), 50_000)
+
+        # S3 fulfil alone: Bob fulfils into 50,000 shares at $2.00;
+        # book 200,000 / supply 150,000 -> price $1.333333; Bob
+        # redeems 66,666.666666 (floored, 1 base unit dust), loses
+        # 33,333.333334 = 100,000/3 rounded up by the floor; others
+        # redeem 100,000 shares for 133,333.333334, gaining exactly
+        # the same; the two floored payouts sum to exactly 200,000.
+        sh3_bu = 100_000 * BU * 100_000 * BU // (200_000 * BU)
+        self.assertEqual(sh3_bu, 50_000 * BU)
+        self.assertEqual(200_000 * BU * BU // (150_000 * BU), 1_333_333)
+        out_b3_bu = sh3_bu * 200_000 * BU // (150_000 * BU)
+        self.assertEqual(out_b3_bu, 66_666_666_666)
+        loss3_bu = 100_000 * BU - out_b3_bu
+        self.assertEqual(loss3_bu, 33_333_333_334)
+        out_o3_bu = 200_000 * BU - out_b3_bu
+        self.assertEqual(out_o3_bu, 133_333_333_334)
+        self.assertEqual(out_o3_bu - 100_000 * BU, loss3_bu)
+        self.assertEqual(out_b3_bu + out_o3_bu, 200_000 * BU)
+
+        # S4 scale: 200,000 request -> book price $3.00; fulfil into
+        # 66,666.666666 shares (floored); Bob redeems 119,999.999999,
+        # loses 80,000.000001; others redeem 100,000 shares for
+        # 180,000.000001, gaining exactly the same.
+        self.assertEqual(F(300_000) / F(100_000), 3)
+        sh4_bu = 200_000 * BU * 100_000 * BU // (300_000 * BU)
+        self.assertEqual(sh4_bu, 66_666_666_666)
+        out_b4_bu = sh4_bu * 300_000 * BU // (100_000 * BU + sh4_bu)
+        self.assertEqual(out_b4_bu, 119_999_999_999)
+        loss4_bu = 200_000 * BU - out_b4_bu
+        self.assertEqual(loss4_bu, 80_000_000_001)
+        out_o4_bu = 300_000 * BU - out_b4_bu
+        self.assertEqual(out_o4_bu, 180_000_000_001)
+        self.assertEqual(out_o4_bu - 100_000 * BU, loss4_bu)
+
+        # S5: request + cancel with no transactions -> redeem all
+        # for exactly 100,000; wealth moved 0. Distinguishes the
+        # escrow-counting bug from a real deposit.
+        self.assertEqual(F(100_000), 100_000)
+
+        # S6 defense (escrow excluded): Alice redeems 50,000 ->
+        # 50,000; Bob fulfils into 100,000 shares, redeems 100,000,
+        # loss 0.
+        self.assertEqual(F(50_000) * F(100_000) / F(100_000), 50_000)
+        self.assertEqual(F(100_000) * F(50_000) / F(50_000), 100_000)
+        self.assertEqual(F(100_000) * F(150_000) / F(150_000), 100_000)
+
+        # No duplicate add() for this guide in build.py.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-async-escrow-counted/"'),
+            1)
+
 
 if __name__ == "__main__":
     unittest.main()
