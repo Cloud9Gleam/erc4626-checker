@@ -9147,6 +9147,96 @@ class TestChecker(unittest.TestCase):
             self.assertIn(needle, section)
         self.assertIn("taxes the donation twice", section)
 
+    def test_flash_loan_donation_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-flash-loan-donation/
+        # to its model: borrow 1,000,000 USDC at a 0.09% ERC-3156
+        # flash fee, seed, donate, redeem everything in the same
+        # transaction, and try to repay. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers in base units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "flash-loan-donation-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "flash_loan_donation_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        BORROWED = 1_000_000 * U
+        FEE = 900 * U
+        DUE = 1_000_900 * U
+
+        # Fee and repayment due: 0.09% of 1,000,000 is 900.
+        self.assertEqual(model.flash_fee(BORROWED), FEE)
+        self.assertEqual(BORROWED + FEE, DUE)
+
+        # (A) Offset 0, 1-wei seed, donate the whole loan: 1 share
+        # redeems for 500,000.000001 -- shortfall 500,899.999999,
+        # 500,000 stranded. Reverts.
+        r = model.run_loan_attack(0, 1, BORROWED, BORROWED)
+        self.assertEqual((r["fee"], r["due"], r["att_back"],
+                          r["shortfall"], r["repayable"],
+                          r["stranded"]),
+                         (FEE, DUE, 500_000_000_001,
+                          500_899_999_999, False,
+                          500_000_000_000))
+        # The redemption is exactly half the vault plus one base
+        # unit: 1 share of 2 (1 real + 1 virtual) over
+        # 1,000,000,000,001 base units of assets.
+        self.assertEqual(F(500_000_000_001),
+                         F(BORROWED + 1 + 1, 2))
+        # (B) Offset 0, 50/50 split: 500,000,000,000 shares redeem
+        # for 999,999.999999 -- shortfall 900.000001, the fee plus
+        # the virtual share's one-base-unit cut.
+        r = model.run_loan_attack(0, 500_000 * U, 500_000 * U,
+                                  BORROWED)
+        self.assertEqual((r["att_shares"], r["att_back"],
+                          r["shortfall"], r["repayable"]),
+                         (500_000 * U, 999_999_999_999,
+                          900_000_001, False))
+        self.assertEqual(r["shortfall"] - FEE, 1)
+        # (C) Offset 6, 1-wei seed, donate the whole loan: same
+        # redemption as (A) -- the offset changes the share count,
+        # not the attacker's fraction (1,000,000 of 2,000,000).
+        r = model.run_loan_attack(6, 1, BORROWED, BORROWED)
+        self.assertEqual((r["att_shares"], r["att_back"],
+                          r["shortfall"], r["repayable"]),
+                         (1_000_000, 500_000_000_001,
+                          500_899_999_999, False))
+        # (E) Split sweep: 7 splits, none repayable; the best is
+        # the 50/50 split at 900.000001.
+        best = None
+        for seed in [1, 1 * U, 100_000 * U, 500_000 * U,
+                     900_000 * U, 999_999 * U, BORROWED - 1]:
+            r = model.run_loan_attack(0, seed, BORROWED - seed,
+                                      BORROWED)
+            self.assertFalse(r["repayable"])
+            if best is None or r["shortfall"] < best:
+                best = r["shortfall"]
+        self.assertEqual(best, 900_000_001)
+
+        # Chart widths: the best split's shortfall is 0.2% of the
+        # donate-it-all shortfall (900.000001 / 500,899.999999).
+        self.assertEqual(round(F(900_000_001, 500_899_999_999)
+                               * 100, 1), F(1, 5))
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-flash-loan-donation/"')
+        section = build[start:start + 12000]
+        for needle in ("500,899.999999", "900.000001",
+                       "500,000.000001", "999,999.999999",
+                       "1,000,900", "zero shares",
+                       "width:0.2%"):
+            self.assertIn(needle, section)
+        self.assertIn("cannot repay its own loan", section)
+
 
 
 if __name__ == "__main__":
