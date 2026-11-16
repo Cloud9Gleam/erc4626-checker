@@ -10012,6 +10012,43 @@ class TestChecker(unittest.TestCase):
             self.assertIn(f'add("/guides/{href}/"', build,
                           f"dead guide link /guides/{href}/")
 
+    def test_no_bare_loss_fill_bars(self):
+        # Every chart bar on the site must carry a meaning class:
+        # pass (green), fail (red) or dim (grey). A bare
+        # class="loss-fill" has no background at all, so the bar
+        # renders as the pale-grey track -- exactly what visual
+        # verdict #31 caught on the reward-token guide, where the
+        # one row that loses money (donation first, 833.332569)
+        # showed as a pale grey bar while the safe rows were green.
+        # The same bare class hid the two harmed rows of the
+        # tiered-fee chart (fees 2,000 and 500). Both the class
+        # rule and the three fixed rows are pinned here.
+        from pathlib import Path
+        import re
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        bare = re.findall(r'class="loss-fill" style', build)
+        self.assertEqual(bare, [],
+                         "bare loss-fill bars render pale grey")
+        bare_sq = re.findall(r"class='loss-fill'>", build)
+        self.assertEqual(bare_sq, [],
+                         "bare loss-fill bars (single quotes)")
+        # The three rows the verdict named, now red.
+        self.assertIn(
+            'Donation first, per share</span><span class="loss-track">'
+            '<span class="loss-fill fail" style="width:91.7%">',
+            build)
+        self.assertIn(
+            '100,000 deposit, after donation</span><span '
+            'class="loss-track"><span class="loss-fill fail" '
+            'style="width:100.0%">',
+            build)
+        self.assertIn(
+            '10,000 deposit, after donation</span><span '
+            'class="loss-track"><span class="loss-fill fail" '
+            'style="width:25.0%">',
+            build)
+
 
 if __name__ == "__main__":
     unittest.main()
