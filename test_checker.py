@@ -2499,6 +2499,47 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
 
+    def test_donation_nonmonotonic_explanation(self):
+        # The donation loss is not monotonic in the donation size (1B
+        # loses less than 1M) and the page must say why, not just show
+        # the shape: a bigger donation inflates the share price, so the
+        # victim's deposit mints fewer shares; past a point fewer shares
+        # outweigh the higher price. Mechanism verified against the model
+        # (offset 0, victim 100,000 USDC): 99,999 shares minted at a
+        # 1,000,000 USDC donation (loss 0.909091) versus 100 shares at
+        # 1,000,000,000 USDC (loss 0.099890) — per-share loss 9.09 vs
+        # 998.90 base units. The sentence appears only when the table
+        # actually shows the fall: not at offset 18 (every row 0) and
+        # not when every row errors.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        why = "Why the loss falls at the largest donation"
+        # No protection: worst row (1M, 0.909091) beats the largest row.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn(why, html)
+        self.assertIn("fewer shares outweigh the higher price", html)
+        # Default preset: losses 0 / 0 / 1 / 900 base units — monotonic,
+        # the largest row IS the worst, so there is no fall to explain.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertNotIn(why, html)
+        # Offset 18: every loss is 0 — nothing to explain.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertNotIn(why, html)
+        # Giant minimum deposit: every row errors, no number to compare.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=10 ** 21,
+                          perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
+        self.assertNotIn(why, html)
+
 
     def test_smoothed_nav_guide_numbers(self):
         # Smoothed-NAV guide: 30-day moving-average reported price.
