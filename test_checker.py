@@ -7158,6 +7158,122 @@ class TestChecker(unittest.TestCase):
         self.assertIn("0.02%", build)
         self.assertIn("50,000", build)
 
+    def test_strategy_exit_fee_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-strategy-exit-fee/ to
+        # its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00, all assets in the strategy, 0 cash, strategy
+        # withdrawal fee 2%. Alice holds 100,000 shares.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "strategy-exit-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "strategy_exit_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        FEE_BPS = Fraction(200, 10_000)
+
+        def gross_up(net):
+            # Smallest gross whose net after the 2% fee is >= net.
+            gross = (net * 10_000) // 9_800
+            while gross - gross * 200 // 10_000 < net:
+                gross += 1
+            while (gross - 1) - (gross - 1) * 200 // 10_000 >= net:
+                gross -= 1
+            return gross
+
+        alice = 100_000 * USDC
+        assets = 1_000_000 * USDC
+        shares = 1_000_000 * USDC
+
+        # (1) Fee charged back: Alice gets 98,000, stayers whole.
+        fee1 = alice * 200 // 10_000
+        self.assertEqual(fee1, 2_000 * USDC)
+        self.assertEqual(alice - fee1, 98_000 * USDC)
+        self.assertEqual(Fraction(assets - alice, shares - alice), 1)
+
+        # (2) Socialized: gross 102,040.816326, fee 2,040.816326,
+        # Alice whole, stayers lose more than the fee itself.
+        gross2 = gross_up(alice)
+        self.assertEqual(gross2, 102_040_816_326)
+        fee2 = gross2 * 200 // 10_000
+        self.assertEqual(fee2, 2_040_816_326)
+        self.assertEqual(gross2 - fee2, alice)
+        rem2 = assets - gross2
+        self.assertEqual(rem2, 897_959_183_674)
+        price2 = Fraction(rem2, shares - alice)
+        self.assertEqual(round(float(price2), 6), 0.997732)
+        self.assertEqual(900_000 * USDC - rem2, fee2)
+        self.assertGreater(fee2, 2_000 * USDC)
+
+        # (3) Cash buffer: Alice from cash, price 1.00; Bob's exit
+        # costs the stayers the same 2,040.816326, price 0.997449.
+        rem3 = 900_000 * USDC - gross2
+        self.assertEqual(rem3, 797_959_183_674)
+        price3 = Fraction(rem3, shares - 2 * alice)
+        self.assertEqual(round(float(price3), 6), 0.997449)
+        self.assertEqual(800_000 * USDC - rem3, fee2)
+
+        # (4) Run: 500,000 shares exit, gross 510,204.081632,
+        # fee 10,204.081632, price 0.979592, stayers lose 2.0408%.
+        run = 500_000 * USDC
+        gross4 = gross_up(run)
+        self.assertEqual(gross4, 510_204_081_632)
+        fee4 = gross4 * 200 // 10_000
+        self.assertEqual(fee4, 10_204_081_632)
+        self.assertEqual(gross4 - fee4, run)
+        rem4 = assets - gross4
+        self.assertEqual(rem4, 489_795_918_368)
+        price4 = Fraction(rem4, shares - run)
+        self.assertEqual(round(float(price4), 6), 0.979592)
+        self.assertEqual((500_000 * USDC - rem4) * 10_000
+                         // (500_000 * USDC), 204)
+
+        # (5) Both fees: 5% vault fee retained + 2% strategy fee
+        # socialized. Alice quoted 95,000, gross 96,938.775510,
+        # strategy fee 1,938.775510, stayers net +3,061.224490.
+        vault_fee5 = alice * 500 // 10_000
+        self.assertEqual(vault_fee5, 5_000 * USDC)
+        quote5 = alice - vault_fee5
+        self.assertEqual(quote5, 95_000 * USDC)
+        gross5 = gross_up(quote5)
+        self.assertEqual(gross5, 96_938_775_510)
+        fee5 = gross5 * 200 // 10_000
+        self.assertEqual(fee5, 1_938_775_510)
+        self.assertEqual(gross5 - fee5, quote5)
+        rem5 = assets - gross5
+        self.assertEqual(rem5, 903_061_224_490)
+        self.assertEqual(rem5 - 900_000 * USDC, 3_061_224_490)
+        self.assertEqual(rem5 - 900_000 * USDC, vault_fee5 - fee5)
+        price5 = Fraction(rem5, shares - alice)
+        self.assertEqual(round(float(price5), 6), 1.003401)
+
+        # (6) Chart rows: stayers lose 0 / 2,040.816326 /
+        # 10,204.081632, widths 0.0 / 20.0 / 100.0 of the max.
+        self.assertEqual(round(float(Fraction(0, 1) * 100), 1), 0.0)
+        self.assertEqual(round(float(Fraction(2_040_816_326,
+                                             10_204_081_632) * 100), 1),
+                         20.0)
+        self.assertEqual(round(float(Fraction(10_204_081_632,
+                                             10_204_081_632) * 100), 1),
+                         100.0)
+
+        # (7) Guide page carries the headline numbers.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-strategy-exit-fee/", build)
+        self.assertIn("102,040.816326", build)
+        self.assertIn("2,040.816326", build)
+        self.assertIn("0.997732", build)
+        self.assertIn("0.979592", build)
+        self.assertIn("1.003401", build)
+        self.assertIn("3,061.224490", build)
+
 
 if __name__ == "__main__":
     unittest.main()
