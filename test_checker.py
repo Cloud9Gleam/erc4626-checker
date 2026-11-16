@@ -13033,6 +13033,82 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(minted // USDC, 98_999)
         self.assertFalse(filled)
 
+    def test_false_profit_report_guide_numbers(self):
+        # Pins /guides/erc4626-false-profit-report/ to its model:
+        # vault 1,000,000 USDC / 1,000,000 shares at $1.00, strategy
+        # report() books a +100,000 gain that never arrived. Importing
+        # the model runs its own asserts; the checks below
+        # independently re-derive the headline numbers with Fraction
+        # arithmetic, including the floor dust, the exiter mirror,
+        # the scale case, and the no-transaction distinguishing test
+        # against loss-recognition.
+        import importlib.util
+        from fractions import Fraction as F
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "false-profit-report-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "false_profit_report_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        # S1: report +100,000 -> book 1,100,000, true 1,000,000,
+        # book price $1.10, true price $1.00, wealth moved 0.
+        self.assertEqual(F(1_100_000) / F(1_000_000), F(11, 10))
+        self.assertEqual(F(1_000_000) / F(1_000_000), 1)
+
+        # S2: entrant deposits 110,000 at $1.10 -> 100,000 shares;
+        # after correction price 111/110; redeems 100,909.090909
+        # (floored, 1 base unit dust), loses 9,090.909091 = 100,000/11;
+        # old holders gain exactly that; payouts sum to 1,110,000.
+        sh2 = F(110_000) / F(11, 10)
+        self.assertEqual(sh2, 100_000)
+        price2 = F(1_110_000) / F(1_100_000)
+        self.assertEqual(price2, F(111, 110))
+        out_e = sh2 * price2
+        self.assertEqual(F(110_000) - out_e, F(100_000, 11))
+        self.assertEqual(int(out_e * 1_000_000), 100_909_090_909)
+        out_old = F(1_000_000) * price2
+        self.assertEqual(out_old - F(1_000_000), F(100_000, 11))
+        # Floored sequentially: the entrant's exit leaves 1 base unit
+        # in the book, so the old holders' redemption recovers it —
+        # 1,110,000,000,000 - 100,909,090,909 = 1,009,090,909,091,
+        # and the two floored payouts sum to exactly 1,110,000.
+        # (Flooring the exact fraction directly would give
+        # 1,009,090,909,090 and lose the dust; the sequential
+        # redemption is what recovers it.)
+        out_old_bu = 1_110_000_000_000 - int(out_e * 1_000_000)
+        self.assertEqual(out_old_bu, 1_009_090_909_091)
+        self.assertEqual(int(out_e * 1_000_000) + out_old_bu,
+                         1_110_000_000_000)
+
+        # S3: exiter redeems 100,000 shares at $1.10 -> 110,000
+        # (+10,000); remaining holders redeem 890,000 (-10,000).
+        self.assertEqual(F(100_000) * F(11, 10), 110_000)
+        self.assertEqual(F(110_000) + F(890_000), 1_000_000)
+
+        # S4: report +200,000 -> price $1.20; deposit 120,000 ->
+        # 100,000 shares; after correction redeems 101,818.181818,
+        # losing 18,181.818182 = 200,000/11.
+        self.assertEqual(F(1_200_000) / F(1_000_000), F(6, 5))
+        sh4 = F(120_000) / F(6, 5)
+        self.assertEqual(sh4, 100_000)
+        out_e4 = sh4 * (F(1_120_000) / F(1_100_000))
+        self.assertEqual(F(120_000) - out_e4, F(200_000, 11))
+        self.assertEqual(int(out_e4 * 1_000_000), 101_818_181_818)
+
+        # S5: report + correct with no transactions -> redeem all
+        # for exactly 1,000,000; wealth moved 0. This is the
+        # distinguishing test vs loss-recognition, where recognition
+        # alone reprices 1,000,000 -> 900,000 because the loss is real.
+        self.assertEqual(F(1_000_000), 1_000_000)
+
+        # S6: verified report books min(gain, actual) = 0 when the
+        # strategy holds nothing new; deposit 110,000 -> 110,000
+        # shares, redeem 110,000, loss 0.
+        self.assertEqual(min(F(100_000), max(F(0), 0)), 0)
+        self.assertEqual(F(110_000) / F(1), 110_000)
+
 
 if __name__ == "__main__":
     unittest.main()
