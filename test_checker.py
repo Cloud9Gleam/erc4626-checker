@@ -9862,6 +9862,156 @@ class TestChecker(unittest.TestCase):
             self.assertIn(f'add("/guides/{href}/"', build,
                           f"dead guide link /guides/{href}/")
 
+    def test_donation_tiered_fee_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-tiered-fee/
+        # to its model: tiers are read off the gross shares a
+        # deposit would mint (<10,000 -> 5%, 10,000-<100,000 -> 2%,
+        # >=100,000 -> 1%), so a 100,000 USDC donation lifting the
+        # price to $1.10 pushes a 100,000 deposit from the 1% tier
+        # to the 2% tier and a 10,000 deposit from 2% to 5%.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers in
+        # plain USDC units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-tiered-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_tiered_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        A0, S0 = F(1_000_000), F(1_000_000)
+        DONATION = F(100_000)
+        DEPOSIT = F(100_000)
+        SMALL = F(10_000)
+
+        def t6(fr):
+            scaled = fr * U
+            n, d = scaled.numerator, scaled.denominator
+            q, r = divmod(n, d)
+            if 2 * r >= d:
+                q += 1
+            return f"{q // U}.{q % U:06d}"
+
+        def tier(gross_shares):
+            if gross_shares < 10_000:
+                return F(5, 100)
+            if gross_shares < 100_000:
+                return F(2, 100)
+            return F(1, 100)
+
+        # (Case A) Baseline, 100,000 at $1.00: 1% tier, fee 1,000,
+        # shares 99,000, final price 1100/1099, value 99,090.082,
+        # loss 909.918, recovery 90.082 through her own share of
+        # the retained fee.
+        self.assertEqual(tier(DEPOSIT * S0 / A0), F(1, 100))
+        fee_a = DEPOSIT * F(1, 100)
+        sh_a = (DEPOSIT - fee_a) / (A0 / S0)
+        self.assertEqual((fee_a, sh_a), (1_000, 99_000))
+        price_a = (A0 + DEPOSIT) / (S0 + sh_a)
+        self.assertEqual(price_a, F(1100, 1099))
+        value_a = sh_a * price_a
+        self.assertEqual(value_a, F(108_900_000, 1_099))
+        self.assertEqual(t6(value_a), "99090.081893")
+        loss_a = DEPOSIT - value_a
+        self.assertEqual(t6(loss_a), "909.918107")
+        rec_a = fee_a - loss_a
+        self.assertEqual(t6(rec_a), "90.081893")
+
+        # (Case B) Same 100,000 after the donation, price $1.10:
+        # gross shares 90,909.090909 fall under the cliff -> 2%
+        # tier, fee 2,000, shares 89,090.909091, final price
+        # 660/599, value 98,163.606, extra loss 926.476 vs A.
+        # Carol gains exactly Alice's loss; the retained fee
+        # splits 49/599 to Alice, 550/599 to Carol.
+        assets_b = A0 + DONATION
+        self.assertEqual(assets_b / S0, F(11, 10))
+        gross_b = DEPOSIT * S0 / assets_b
+        self.assertEqual(t6(gross_b), "90909.090909")
+        self.assertEqual(tier(gross_b), F(2, 100))
+        fee_b = DEPOSIT * F(2, 100)
+        sh_b = (DEPOSIT - fee_b) / (assets_b / S0)
+        self.assertEqual((fee_b, sh_b), (2_000, F(980_000, 11)))
+        self.assertEqual(t6(sh_b), "89090.909091")
+        price_b = (assets_b + DEPOSIT) / (S0 + sh_b)
+        self.assertEqual(price_b, F(660, 599))
+        value_b = sh_b * price_b
+        self.assertEqual(value_b, F(646_800_000, 6_589))
+        self.assertEqual(t6(value_b), "98163.606010")
+        loss_b = DEPOSIT - value_b
+        self.assertEqual(t6(loss_b), "1836.393990")
+        extra = loss_b - loss_a
+        self.assertEqual(t6(extra), "926.475883")
+        rec_b = fee_b - loss_b
+        self.assertEqual(t6(rec_b), "163.606010")
+        self.assertEqual(t6(rec_b - rec_a), "73.524117")
+        carol_after = S0 * price_b
+        self.assertEqual(t6(carol_after), "1101836.393990")
+        self.assertEqual(carol_after - assets_b, loss_b)
+        self.assertEqual(rec_b + (carol_after - assets_b), fee_b)
+
+        # (Case C) 10,000 at the lower cliff: baseline 2% fee 200,
+        # shares 9,800; after the donation gross shares 9,090.909091
+        # fall under 10,000 -> 5% tier, fee 500, shares 8,636.363636.
+        self.assertEqual(tier(SMALL * S0 / A0), F(2, 100))
+        self.assertEqual(tier(SMALL * S0 / assets_b), F(5, 100))
+        self.assertEqual(t6(SMALL * S0 / assets_b), "9090.909091")
+        fee_c2 = SMALL * F(5, 100)
+        sh_c2 = (SMALL - fee_c2) / (assets_b / S0)
+        self.assertEqual((fee_c2, sh_c2), (500, F(95_000, 11)))
+        self.assertEqual(t6(sh_c2), "8636.363636")
+        self.assertEqual(SMALL * F(2, 100), 200)
+        self.assertEqual(fee_c2 - 200, 300)
+
+        # (Case D) Immune design — tier on gross assets, as in
+        # guide #48: 100,000 -> 1% fee 1,000 and 10,000 -> 2% fee
+        # 200 at any price, donation or not.
+        self.assertEqual(model.tier_rate_by_assets(DEPOSIT), F(1, 100))
+        self.assertEqual(model.tier_rate_by_assets(SMALL), F(2, 100))
+        _, fee_d, _, sh_d = model.deposit_by_assets(DEPOSIT, assets_b, S0)
+        self.assertEqual((fee_d, sh_d), (1_000, 90_000))
+
+        # Chart widths: Alice's fee, scaled to 2,000
+        # (one decimal, the site's convention).
+        self.assertEqual(round(float(fee_a / 2_000) * 100, 1), 50.0)
+        self.assertEqual(round(float(fee_b / 2_000) * 100, 1), 100.0)
+        self.assertEqual(round(float(F(200) / 2_000) * 100, 1), 10.0)
+        self.assertEqual(round(float(fee_c2 / 2_000) * 100, 1), 25.0)
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-donation-tiered-fee/"')
+        section = build[start:start + 12000]
+        for needle in ("98,163.606", "99,090.082", "926.476",
+                       "1,836.394", "1,101,836.394", "90,909.090909",
+                       "89,090.909091", "8,636.363636", "9,090.909091",
+                       "49/599", "550/599", "73.524", "660/599",
+                       "1100/1099", "$1.10", "$1.101835", "$1.000910",
+                       "width:50.0%", "width:100.0%", "width:10.0%",
+                       "width:25.0%"):
+            self.assertIn(needle, section)
+        self.assertIn("pushes your deposit into a higher fee tier",
+                      section)
+        # Only one add() for this path in build.py.
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-tiered-fee/"'),
+            1)
+        # Every internal guide link inside this guide must resolve
+        # to a real page: the whole add() block, including the
+        # closing scope note (the 12,000-char window ends before it).
+        import re
+        full = build[start:build.index('""")', start) + 4]
+        for href in re.findall(r'href=\\?"/guides/([^"]+)/\\?"',
+                               full):
+            self.assertIn(f'add("/guides/{href}/"', build,
+                          f"dead guide link /guides/{href}/")
+
 
 if __name__ == "__main__":
     unittest.main()
