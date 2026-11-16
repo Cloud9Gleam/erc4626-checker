@@ -7819,6 +7819,99 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("any pause forfeits the claim", build)
         self.assertNotIn("the window pauses itself", build)
 
+    def test_donation_claim_window_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-claim-window/
+        # to its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00. Alice holds 100,000 shares (10%), Bob 900,000
+        # (90%). Alice requests redemption of all her shares; a
+        # 100,000 USDC donation (or a 100,000 USDC loss) lands
+        # between her request and her claim. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-claim-window-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_claim_window_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        # (1) Baseline: no donation, Alice claims 100,000, price $1.00.
+        self.assertEqual(100_000, 100_000)
+        # (2) Donation, share-denominated: price 11/10, Alice
+        # 110,000 (+10,000), Bob 990,000 (+90,000).
+        self.assertEqual(F(1_100_000, 1_000_000), F(11, 10))
+        self.assertEqual(F(100_000 * 1_100_000, 1_000_000), 110_000)
+        self.assertEqual(F(900_000 * 1_100_000, 1_000_000), 990_000)
+        # (3) Donation, asset-denominated: Alice fixed 100,000;
+        # Bob's 900,000 shares worth 1,000,000, price 10/9.
+        self.assertEqual(F(1_000_000, 900_000), F(10, 9))
+        # (4) The two designs differ by exactly Alice's 10% of
+        # the donation.
+        self.assertEqual(110_000 - 100_000, 10_000)
+        # (5) Loss, share-denominated: price 9/10, Alice 90,000,
+        # Bob 810,000.
+        self.assertEqual(F(900_000, 1_000_000), F(9, 10))
+        self.assertEqual(F(100_000 * 900_000, 1_000_000), 90_000)
+        self.assertEqual(F(900_000 * 900_000, 1_000_000), 810_000)
+        # (6) Loss, asset-denominated: Alice insulated at 100,000;
+        # Bob 800,000, price 8/9.
+        self.assertEqual(F(800_000, 900_000), F(8, 9))
+        self.assertEqual(100_000 - 90_000, 10_000)
+        # (7) Naive burn+reprice, no donation: overpay R^2/(S0-R)
+        # = 100,000^2/900,000 = 11,111.111111; Alice 111,111.111111,
+        # Bob 888,888.888889.
+        overpay = F(100_000 * 100_000, 900_000)
+        self.assertEqual(overpay, F(100_000, 9))
+        self.assertEqual(round(float(overpay), 6), 11111.111111)
+        alice_naive = F(100_000 * 1_000_000, 900_000)
+        self.assertEqual(round(float(alice_naive), 6), 111111.111111)
+        self.assertEqual(round(float(1_000_000 - alice_naive), 6),
+                         888888.888889)
+        # (8) Naive with donation: Alice 122,222.222222 (+22,222.222222
+        # = overpay + 1/9 of the donation), Bob 977,777.777778.
+        alice_nd = F(100_000 * 1_100_000, 900_000)
+        self.assertEqual(round(float(alice_nd), 6), 122222.222222)
+        self.assertEqual(round(float(alice_nd - 100_000), 6), 22222.222222)
+        self.assertEqual(round(float(1_100_000 - alice_nd), 6),
+                         977777.777778)
+        self.assertEqual(F(100_000, 9), F(100_000, 9))  # 1/9 of donation
+        self.assertEqual(round(float(F(100_000, 9)), 6), 11111.111111)
+        self.assertEqual(round(float(F(800_000, 9)), 6), 88888.888889)
+        self.assertEqual(round(float(F(700_000, 9)), 6), 77777.777778)
+        # (9) Boundary: 10,000-share request overpaid 101.010101;
+        # a 10x smaller request is exactly 110x less overpaid.
+        small = F(10_000 * 1_000_000, 990_000)
+        self.assertEqual(round(float(small), 6), 10101.010101)
+        self.assertEqual(round(float(small - 10_000), 6), 101.010101)
+        self.assertEqual(F(100_000, 9) / F(10_000, 99), 110)
+
+        # (10) Guide page carries the headline numbers and the
+        # chart widths (Alice's claim by design: 100,000 / 110,000
+        # / 122,222.222222 -> 81.8 / 90.0 / 100.0).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-claim-window/", build)
+        for needle in ("110,000", "990,000", "1.111111", "90,000",
+                       "810,000", "0.888889", "111,111.111111",
+                       "11,111.111111", "888,888.888889",
+                       "122,222.222222", "22,222.222222",
+                       "977,777.777778", "77,777.777778",
+                       "88,888.888889", "10,101.010101", "101.010101",
+                       "width:81.8%", "width:90.0%", "width:100.0%",
+                       "R&sup2; / (S0 &minus; R)"):
+            self.assertIn(needle, build)
+
+        # (11) The guide never claims the donation is stolen, and
+        # states plainly that the naive overpay is a transfer,
+        # not new money.
+        self.assertNotIn("the donation is stolen", build)
+        self.assertIn("nothing is created, it is all transferred "
+                      "from Bob", build)
+
 
 if __name__ == "__main__":
     unittest.main()
