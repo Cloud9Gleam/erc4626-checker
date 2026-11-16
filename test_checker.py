@@ -6083,11 +6083,15 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(alice(a2c), 43_000)
 
         # Chart widths (Alice's value, scaled to 52,000,
-        # truncated to one decimal): 88.4 / 92.3 / 93.2 /
+        # rounded to one decimal — the site-wide convention,
+        # cf. the round() width assertions in the queue and
+        # deposit-fee tests; 46,000/52,000 = 88.4615% rounds
+        # to 88.5, not 88.4, and 48,500/52,000 = 93.2692%
+        # rounds to 93.3, not 93.2): 88.5 / 92.3 / 93.3 /
         # 97.1 / 100.0.
         values = [46_000, 48_000, 48_500, 50_500, 52_000]
-        widths = [int(Fraction(v, 520) * 10) / 10 for v in values]
-        self.assertEqual(widths, [88.4, 92.3, 93.2, 97.1, 100.0])
+        widths = [round(v / 52_000 * 100, 1) for v in values]
+        self.assertEqual(widths, [88.5, 92.3, 93.3, 97.1, 100.0])
 
         # Guide text pins: slug registered and the deferred
         # sentence present in build.py.
