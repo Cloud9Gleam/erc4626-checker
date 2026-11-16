@@ -6435,6 +6435,183 @@ class TestChecker(unittest.TestCase):
             build_text.count(
                 'add("/guides/erc4626-donation-lockup/"'), 1)
 
+    def test_donation_harvest_timing_guide_numbers(self):
+        # Pins /guides/erc4626-donation-harvest-timing/ to its
+        # model: a donation and a harvest both lift the price,
+        # and with nobody in between the order does not matter —
+        # but a deposit between them, or a performance fee
+        # measured on the whole price jump, splits the gift
+        # differently. Vault 1,000,000 USDC / 1,000,000 shares
+        # at $1.00; Alice 100,000, Carol 900,000; donation
+        # 100,000, harvest profit 50,000. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive every headline number with plain Fraction
+        # arithmetic.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-harvest-timing-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_harvest_timing_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        A0 = Fraction(1_000_000)
+        SUPPLY0 = Fraction(1_000_000)
+        ALICE = Fraction(100_000)
+        CAROL = Fraction(900_000)
+        DONATION = Fraction(100_000)
+        PROFIT = Fraction(50_000)
+
+        def price(assets, supply):
+            return assets / supply
+
+        def value(shares, assets, supply):
+            return shares * price(assets, supply)
+
+        # S1: donation first, then harvest — 1.10, then 1.15;
+        # Alice 115,000, Carol 1,035,000. Gift split: Alice
+        # +10,000 donation / +5,000 harvest; Carol +90,000 /
+        # +45,000.
+        a1, s1 = A0 + DONATION, SUPPLY0
+        self.assertEqual(price(a1, s1), Fraction(11, 10))
+        a1h, s1h = a1 + PROFIT, s1
+        self.assertEqual(price(a1h, s1h), Fraction(23, 20))
+        self.assertEqual(value(ALICE, a1h, s1h), 115_000)
+        self.assertEqual(value(CAROL, a1h, s1h), 1_035_000)
+        self.assertEqual(value(ALICE, a1h, s1h) - 100_000, 15_000)
+        self.assertEqual(value(CAROL, a1h, s1h) - 900_000, 135_000)
+
+        # S2: harvest first, then donation — 1.05, then 1.15;
+        # identical final state: order commutes with no entry
+        # or exit between.
+        a2, s2 = A0 + PROFIT, SUPPLY0
+        self.assertEqual(price(a2, s2), Fraction(21, 20))
+        a2d, s2d = a2 + DONATION, s2
+        self.assertEqual(price(a2d, s2d), Fraction(23, 20))
+        self.assertEqual(value(ALICE, a2d, s2d), 115_000)
+        self.assertEqual(value(CAROL, a2d, s2d), 1_035_000)
+
+        # S3: Bob deposits 100,000 after the donation, before
+        # the harvest — 90,909.090909 shares at 1.10; price
+        # after harvest 55/48; Bob worth 104,166.666667, so he
+        # captures 4,166.666667 (1/12) of the harvest he did
+        # not fund. Alice 114,583.333333 (loses 416.666667 vs
+        # S1), Carol 1,031,250 (loses 3,750).
+        bob_s3 = Fraction(100_000) * s1 / a1
+        self.assertEqual(bob_s3, Fraction(1_000_000, 11))
+        a3, s3 = a1 + 100_000, s1 + bob_s3
+        self.assertEqual((a3, s3),
+                         (1_200_000, Fraction(12_000_000, 11)))
+        a3h, s3h = a3 + PROFIT, s3
+        self.assertEqual(price(a3h, s3h), Fraction(55, 48))
+        bob_worth_s3 = value(bob_s3, a3h, s3h)
+        self.assertEqual(bob_worth_s3, Fraction(625_000, 6))
+        self.assertEqual(bob_worth_s3 - 100_000,
+                         Fraction(25_000, 6))
+        self.assertEqual(value(ALICE, a3h, s3h),
+                         Fraction(1_375_000, 12))
+        self.assertEqual(value(CAROL, a3h, s3h), 1_031_250)
+        self.assertEqual(115_000 - value(ALICE, a3h, s3h),
+                         Fraction(2_500, 6))
+        self.assertEqual(1_035_000 - value(CAROL, a3h, s3h),
+                         3_750)
+        self.assertEqual(bob_worth_s3 + value(ALICE, a3h, s3h)
+                         + value(CAROL, a3h, s3h), a3h)
+
+        # S4: Bob deposits 100,000 before the donation —
+        # 100,000 shares at 1.00; price after both 25/22;
+        # Bob worth 113,636.363636, gains 13,636.363636 =
+        # 9,090.909091 gift (1/11) + 4,545.454545 harvest
+        # (1/11). Alice the same 113,636.363636, Carol
+        # 1,022,727.272727.
+        bob_s4 = Fraction(100_000)
+        a4, s4 = A0 + 100_000, SUPPLY0 + bob_s4
+        a4b, s4b = a4 + DONATION + PROFIT, s4
+        self.assertEqual(price(a4b, s4b), Fraction(25, 22))
+        bob_worth_s4 = value(bob_s4, a4b, s4b)
+        self.assertEqual(bob_worth_s4, Fraction(1_250_000, 11))
+        self.assertEqual(bob_worth_s4 - 100_000,
+                         Fraction(150_000, 11))
+        self.assertEqual(value(ALICE, a4b, s4b),
+                         Fraction(1_250_000, 11))
+        self.assertEqual(value(CAROL, a4b, s4b),
+                         Fraction(11_250_000, 11))
+        self.assertEqual(bob_worth_s4 + value(ALICE, a4b, s4b)
+                         + value(CAROL, a4b, s4b), a4b)
+        # Timing gap: before minus after = 9,469.696969 =
+        # 9,090.909091 gift slice + 378.787878 harvest share.
+        self.assertEqual(bob_worth_s4 - bob_worth_s3,
+                         Fraction(625_000, 66))
+        self.assertEqual(Fraction(100_000, 11)
+                         + (Fraction(50_000, 11)
+                            - Fraction(50_000, 12)),
+                         Fraction(625_000, 66))
+
+        # S5a: 10% fee on harvested profit only — nominal
+        # 5,000 mints 4,347.826087 shares; manager worth
+        # 4,978.354978 (mint dilution); Alice
+        # 114,502.164502, Carol 1,030,519.480519; the gift
+        # passes through whole.
+        fee_a = PROFIT // 10
+        self.assertEqual(fee_a, 5_000)
+        mgr_a = fee_a * SUPPLY0 / a1h
+        self.assertEqual(mgr_a, Fraction(100_000, 23))
+        pa = a1h / (SUPPLY0 + mgr_a)
+        self.assertEqual(value(mgr_a, a1h, SUPPLY0 + mgr_a),
+                         Fraction(26_450_000, 5_313))
+        self.assertEqual(value(ALICE, a1h, SUPPLY0 + mgr_a),
+                         Fraction(26_450_000, 231))
+        self.assertEqual(value(CAROL, a1h, SUPPLY0 + mgr_a),
+                         Fraction(238_050_000, 231))
+
+        # S5b: 10% fee on the whole price jump — nominal
+        # 15,000 (10,000 of it the gift) mints 13,043.478261
+        # shares; manager worth 14,806.866953 — 9,828.512
+        # more than S5a, nearly the full gift slice. Alice
+        # 113,519.313305, Carol 1,021,673.819742.
+        fee_b = (DONATION + PROFIT) // 10
+        self.assertEqual(fee_b, 15_000)
+        mgr_b = fee_b * SUPPLY0 / a1h
+        self.assertEqual(mgr_b, Fraction(300_000, 23))
+        mgr_worth_b = value(mgr_b, a1h, SUPPLY0 + mgr_b)
+        self.assertEqual(mgr_worth_b, Fraction(79_350_000, 5_359))
+        self.assertEqual(value(ALICE, a1h, SUPPLY0 + mgr_b),
+                         Fraction(26_450_000, 233))
+        self.assertEqual(value(CAROL, a1h, SUPPLY0 + mgr_b),
+                         Fraction(238_050_000, 233))
+        mgr_worth_a = value(mgr_a, a1h, SUPPLY0 + mgr_a)
+        self.assertEqual(mgr_worth_b - mgr_worth_a,
+                         Fraction(79_350_000, 5_359)
+                         - Fraction(26_450_000, 5_313))
+
+        # Chart widths (final USDC values, scaled to 115,000,
+        # rounded to one decimal — the site-wide convention):
+        # 100.0 / 99.6 / 98.8 / 99.6 / 98.7 / 12.9.
+        finals = [Fraction(115_000), Fraction(1_375_000, 12),
+                  Fraction(1_250_000, 11),
+                  Fraction(26_450_000, 231),
+                  Fraction(26_450_000, 233),
+                  Fraction(79_350_000, 5_359)]
+        widths = [round(float(v) / 115_000 * 100, 1)
+                  for v in finals]
+        self.assertEqual(widths,
+                         [100.0, 99.6, 98.8, 99.6, 98.7, 12.9])
+
+        # Guide text pins: slug registered, the fee-basis
+        # sentence present, and exactly one add() for this slug.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-harvest-timing/",
+                      build_text)
+        self.assertIn("What decides whether the donation is skimmed "
+                      "is the fee basis",
+                      build_text)
+        self.assertEqual(
+            build_text.count(
+                'add("/guides/erc4626-donation-harvest-timing/"'), 1)
+
     def test_supply_cap_guide_numbers(self):
         # Pins /guides/erc4626-supply-cap/ to its model: a vault
         # caps totalSupply at 1,000,000 whole shares (10**12 raw
