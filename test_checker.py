@@ -8293,6 +8293,105 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("Alice captures the donation under "
                          "execution pricing", build)
 
+    def test_donation_tranche_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-tranche/ to
+        # its model: a 100,000 USDC / 100,000 share vault at $1.00.
+        # Senior tranche 60,000 shares promised a fixed 5% coupon
+        # (3,000 per period); junior tranche 40,000 shares takes the
+        # residual yield and absorbs losses first; a 100,000 USDC
+        # donation (or a strategy loss) lands in the vault.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-tranche-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_tranche_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        # (1) Baseline yield +10,000 (overlap: tranched-vault case
+        # 1): senior takes coupon 3,000, junior residual 7,000;
+        # senior 63,000 at 21/20, junior 47,000 at 47/40.
+        self.assertEqual(min(10_000, 3_000), 3_000)
+        self.assertEqual(60_000 + 3_000, 63_000)
+        self.assertEqual(F(63_000, 60_000), F(21, 20))
+        self.assertEqual(40_000 + 7_000, 47_000)
+        self.assertEqual(F(47_000, 40_000), F(47, 40))
+        # (2) Donation 100,000 through the waterfall: senior takes
+        # only its coupon 3,000, junior the residual 97,000;
+        # senior 63,000 at 21/20, junior 137,000 at 137/40.
+        self.assertEqual(min(100_000, 3_000), 3_000)
+        self.assertEqual(100_000 - 3_000, 97_000)
+        self.assertEqual(60_000 + 3_000 + 40_000 + 97_000, 200_000)
+        self.assertEqual(F(137_000, 40_000), F(137, 40))
+        # (3) Same donation pro-rata: senior 120,000, junior
+        # 80,000, both at 2.00; the waterfall moves 57,000 from
+        # senior to junior.
+        self.assertEqual(60_000 + 100_000 * 3 // 5, 120_000)
+        self.assertEqual(40_000 + 100_000 * 2 // 5, 80_000)
+        self.assertEqual(F(120_000, 60_000), 2)
+        self.assertEqual(F(80_000, 40_000), 2)
+        self.assertEqual(120_000 - 63_000, 57_000)
+        self.assertEqual(137_000 - 80_000, 57_000)
+        # (4) Sub-coupon donation 2,000 < coupon 3,000: senior
+        # takes it all (62,000 at 31/30), junior stays 40,000.
+        self.assertEqual(min(2_000, 3_000), 2_000)
+        self.assertEqual(F(62_000, 60_000), F(31, 30))
+        self.assertEqual(F(40_000, 40_000), 1)
+        # (5) Loss 10,000: junior absorbs it all (30,000 at 3/4),
+        # senior untouched at 60,000.
+        self.assertEqual(40_000 - 10_000, 30_000)
+        self.assertEqual(F(30_000, 40_000), F(3, 4))
+        # (6) Loss 50,000: junior wiped to 0, senior takes the
+        # remaining 10,000 (50,000 at 5/6).
+        self.assertEqual(max(40_000 - 50_000, 0), 0)
+        self.assertEqual(60_000 - (50_000 - 40_000), 50_000)
+        self.assertEqual(F(50_000, 60_000), F(5, 6))
+        # (7) Donation 100,000 after the wipe: coupon is on senior
+        # capital at par, so senior takes 3,000 again (53,000 at
+        # 53/60) and junior resurrects from 0 to 97,000 at 97/40.
+        self.assertEqual(50_000 + 3_000, 53_000)
+        self.assertEqual(F(53_000, 60_000), F(53, 60))
+        self.assertEqual(0 + 97_000, 97_000)
+        self.assertEqual(F(97_000, 40_000), F(97, 40))
+        self.assertEqual(53_000 + 97_000, 150_000)
+        # (8) One 200,000 donation: senior 63,000, junior 237,000.
+        # Two 100,000 donations across two periods: senior 66,000,
+        # junior 234,000. Splitting moves exactly one coupon.
+        self.assertEqual(60_000 + 3_000, 63_000)
+        self.assertEqual(40_000 + 197_000, 237_000)
+        self.assertEqual(60_000 + 3_000 + 3_000, 66_000)
+        self.assertEqual(40_000 + 97_000 + 97_000, 234_000)
+        self.assertEqual(66_000 - 63_000, 3_000)
+        self.assertEqual(237_000 - 234_000, 3_000)
+
+        # (9) Guide page carries the headline numbers and the chart
+        # widths (junior value by split: 137,000 / 80,000 / 40,000
+        # -> 100.0 / 58.4 / 29.2).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-tranche/", build)
+        for needle in ("137,000", "63,000", "120,000", "80,000",
+                       "57,000", "62,000", "1.033333",
+                       "30,000", "0.75", "50,000", "0.833333",
+                       "53,000", "0.883333", "97,000", "2.425",
+                       "3.425", "237,000", "66,000", "234,000",
+                       "width:100.0%", "width:58.4%",
+                       "width:29.2%"):
+            self.assertIn(needle, build)
+
+        # (10) The guide states the honest overlap (case 1 is the
+        # tranched-vault case 1, relabelled) and that the new
+        # content is cases 2-8; it never claims the donation is
+        # split pro-rata in a tranched vault.
+        self.assertIn("The new content here is cases 2", build)
+        self.assertNotIn("a donation in a tranched vault is split "
+                         "pro-rata", build)
+
 
 if __name__ == "__main__":
     unittest.main()
