@@ -9755,5 +9755,113 @@ class TestChecker(unittest.TestCase):
                           f"dead guide link /guides/{href}/")
 
 
+    def test_donation_reward_token_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-reward-token/
+        # to its model: a 10,000-token reward pool is split pro-rata
+        # by shares; a 100,000 USDC donation before Alice's 100,000
+        # deposit lifts the price to $1.10, so she mints only 90,909
+        # shares and her reward slice shrinks by 75.758340 tokens.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers in
+        # base units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-reward-token-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_reward_token_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        A0, S0 = 1_000_000 * U, 1_000_000
+        CAROL = 1_000_000
+        DEPOSIT = 100_000 * U
+        DONATION = 100_000 * U
+        POOL = F(10_000)
+
+        def t6(fr):
+            scaled = fr * U
+            n, d = scaled.numerator, scaled.denominator
+            q, r = divmod(n, d)
+            if 2 * r >= d:
+                q += 1
+            return f"{q // U}.{q % U:06d}"
+
+        # (Case 1) Baseline, per-share rewards, no donation: Alice
+        # mints 100,000 shares; reward 10,000/11 = 909.090909;
+        # Carol 9,090.909091; pool conserved.
+        mint1 = DEPOSIT * S0 // A0
+        self.assertEqual(mint1, 100_000)
+        S1 = S0 + mint1
+        alice_r1 = POOL * F(mint1, S1)
+        carol_r1 = POOL * F(CAROL, S1)
+        self.assertEqual(alice_r1, F(10_000, 11))
+        self.assertEqual(t6(alice_r1), "909.090909")
+        self.assertEqual(t6(carol_r1), "9090.909091")
+        self.assertEqual(alice_r1 + carol_r1, POOL)
+        # (Case 2) Donation FIRST, per-share rewards: price 11/10,
+        # Alice mints 90,909 shares; reward 833.332569; loss
+        # 75.758340 tokens to Carol; pure transfer, pool conserved.
+        self.assertEqual(F(A0 + DONATION, U) / S0, F(11, 10))
+        mint2 = DEPOSIT * S0 // (A0 + DONATION)
+        self.assertEqual(mint2, 90_909)
+        S2 = S0 + mint2
+        alice_r2 = POOL * F(mint2, S2)
+        carol_r2 = POOL * F(CAROL, S2)
+        self.assertEqual(t6(alice_r2), "833.332569")
+        self.assertEqual(t6(carol_r2), "9166.667431")
+        loss2 = alice_r1 - alice_r2
+        self.assertEqual(loss2, carol_r2 - carol_r1)
+        self.assertEqual(t6(loss2), "75.758340")
+        self.assertTrue(75 * U < loss2 * U < 76 * U)
+        self.assertEqual(alice_r2 + carol_r2, POOL)
+        # (Case 3) Deposit FIRST, then donation: share count
+        # untouched, reward identical to baseline; price 12/11.
+        self.assertEqual(POOL * F(mint1, S1), alice_r1)
+        self.assertEqual(F(A0 + DEPOSIT + DONATION, U) / S1, F(12, 11))
+        # (Case 4) Rewards per ASSET deposited: 100,000 / 1,100,000
+        # of the pool either way, identical to baseline.
+        alice_r4 = POOL * F(DEPOSIT, A0 + DEPOSIT)
+        self.assertEqual(alice_r4, alice_r1)
+        self.assertEqual(t6(alice_r4), "909.090909")
+        # Chart widths: Alice's reward, scaled to 909.090909
+        # (one decimal, the site's convention).
+        self.assertEqual(round(float(alice_r2 / alice_r1) * 100, 1),
+                         91.7)
+        self.assertEqual(round(float(alice_r1 / alice_r1) * 100, 1),
+                         100.0)
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-donation-reward-token/"')
+        section = build[start:start + 12000]
+        for needle in ("909.090909", "833.332569", "75.758340",
+                       "9,090.909091", "9,166.667431", "90,909",
+                       "100,000", "10,000", "$1.10", "12/11",
+                       "$1.090909", "$75.76", "$0.00",
+                       "width:100.0%", "width:91.7%"):
+            self.assertIn(needle, section)
+        self.assertIn("takes $75.76 of your rewards, or none of it",
+                      section)
+        # Only one add() for this path in build.py.
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-reward-token/"'),
+            1)
+        # Every internal guide link inside this guide must resolve
+        # to a real page: the whole add() block, including the
+        # closing scope note (the 12,000-char window ends before it).
+        import re
+        full = build[start:build.index('""")', start) + 4]
+        for href in re.findall(r'href=\\?"/guides/([^"]+)/\\?"',
+                               full):
+            self.assertIn(f'add("/guides/{href}/"', build,
+                          f"dead guide link /guides/{href}/")
+
+
 if __name__ == "__main__":
     unittest.main()
