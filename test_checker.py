@@ -11817,6 +11817,40 @@ class TestChecker(unittest.TestCase):
                                           ".js", ".ico", ".xml", ".txt")))
         self.assertEqual(dead, [])
 
+    def test_site_github_links_resolve(self):
+        # The 2026-11-16 external-link sweep found the Thunder Loan page
+        # linking https://github.com/CodeHawks-Contests/2023-11-thunder-loan,
+        # which 404s (web + API); the contest repo lives at
+        # Cyfrin/2023-11-Thunder-Loan. Only github.com links are checked:
+        # codehawks.cyfrin.io returns 500 with a full app shell from this
+        # VM's egress and cannot be told apart from a bot wall here, so
+        # it is out of scope for an automated test. A transport error
+        # skips (network, not a link verdict); a 404 fails.
+        from pathlib import Path
+        import re
+        import urllib.request
+        import urllib.error
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        urls = sorted(set(re.findall(
+            r'href="(https://github\.com/[^"]+)"', build_text)))
+        self.assertTrue(urls, "no github.com links found in build.py")
+        dead = []
+        for url in urls:
+            req = urllib.request.Request(url, method="HEAD",
+                                         headers={"User-Agent": "Mozilla/5.0"})
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    if resp.status == 404:
+                        dead.append(url)
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    dead.append(url)
+            except Exception:
+                self.skipTest(f"could not reach {url} (network, not a "
+                              f"link verdict)")
+        self.assertEqual(dead, [])
+
 
 if __name__ == "__main__":
     unittest.main()
