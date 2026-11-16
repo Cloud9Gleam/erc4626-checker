@@ -6507,6 +6507,96 @@ class TestChecker(unittest.TestCase):
         self.assertIn("4,566.210046", build)
         self.assertIn("433.789954", build)
 
+    def test_async_cancel_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-async-cancel/ to its
+        # model: a 10,000-share redemption request locks a $10,000
+        # payout at the $1.00 request price, and a free cancel lets
+        # the requester keep $11,000 after a +10% move or take the
+        # $10,000 after a -10% move. The option is worth $500
+        # expected (5% of the request), paid by the stayers; two
+        # rises ratchet the floor to $12,100; ten requests before a
+        # -10% move leave the vault $10,000 short.
+        # Importing the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers with Fraction.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "async-cancel-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "async_cancel_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        A0 = 100_000 * USDC
+        S0 = 100_000 * USDC
+        ALICE = 10_000 * USDC
+        OTHERS = 90_000 * USDC
+        LOCK = 10_000 * USDC
+
+        # (1) +10%: fulfil 10,000, cancel keeps 11,000.
+        p_up = Fraction(110_000 * USDC, S0)
+        self.assertEqual(p_up, Fraction(11, 10))
+        self.assertEqual(ALICE * p_up, 11_000 * USDC)
+        self.assertEqual(ALICE * p_up - LOCK, 1_000 * USDC)
+        # Stayers: fulfil leaves 100,000 / 90,000 = price 10/9.
+        stayers_fulfil_up = OTHERS * Fraction(A0 + 10_000 * USDC - LOCK,
+                                              S0 - ALICE)
+        self.assertEqual(stayers_fulfil_up, 100_000 * USDC)
+        self.assertEqual(OTHERS * p_up, 99_000 * USDC)
+        self.assertEqual(stayers_fulfil_up - OTHERS * p_up,
+                         1_000 * USDC)
+
+        # (2) -10%: fulfil 10,000, cancel keeps 9,000.
+        p_dn = Fraction(90_000 * USDC, S0)
+        self.assertEqual(p_dn, Fraction(9, 10))
+        self.assertEqual(ALICE * p_dn, 9_000 * USDC)
+        self.assertEqual(LOCK - ALICE * p_dn, 1_000 * USDC)
+        stayers_fulfil_dn = OTHERS * Fraction(A0 - 10_000 * USDC - LOCK,
+                                              S0 - ALICE)
+        self.assertEqual(stayers_fulfil_dn, 80_000 * USDC)
+        self.assertEqual(OTHERS * p_dn, 81_000 * USDC)
+        self.assertEqual(OTHERS * p_dn - stayers_fulfil_dn,
+                         1_000 * USDC)
+
+        # (3) Expected option value, +/-10% at 50/50: 500 = 5%.
+        best = (max(ALICE * p_up, LOCK) + max(ALICE * p_dn, LOCK)) / 2
+        self.assertEqual(best, Fraction(10_500 * USDC))
+        self.assertEqual(best - LOCK, 500 * USDC)
+        self.assertEqual((best - LOCK) / LOCK, Fraction(1, 20))
+
+        # (4) Ratchet: two +10% moves, re-request in between.
+        p2 = Fraction(121, 100)
+        self.assertEqual(ALICE * p2, 12_100 * USDC)
+        self.assertEqual(ALICE * p_up, 11_000 * USDC)
+
+        # (5) Full run: ten claims of 10,000 against 90,000 assets.
+        self.assertEqual(10 * LOCK - 90_000 * USDC, 10_000 * USDC)
+        self.assertEqual((90_000 * USDC) // 10, 9_000 * USDC)
+
+        # (6) Fulfilment-price settlement kills the option.
+        self.assertEqual(ALICE * p_up, 11_000 * USDC)
+        self.assertEqual(ALICE * p_dn, 9_000 * USDC)
+
+        # Chart markup is present in the guide source.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('loss-label">Cancel after +10%</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:100.0%"', build)
+        self.assertIn('loss-label">Fulfil after +10%</span><span '
+                      'class="loss-track"><span class="loss-fill fail" '
+                      'style="width:90.9%"', build)
+        self.assertIn('loss-label">Fulfil after \u221210%</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:90.9%"', build)
+        self.assertIn('loss-label">Cancel after \u221210%</span><span '
+                      'class="loss-track"><span class="loss-fill fail" '
+                      'style="width:81.8%"', build)
+        self.assertIn("12,100 USDC", build)
+
+
 
 if __name__ == "__main__":
     unittest.main()
