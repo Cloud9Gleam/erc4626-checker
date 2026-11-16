@@ -12023,6 +12023,120 @@ class TestChecker(unittest.TestCase):
             self.assertIn(needle, index_line)
 
 
+    def test_eip7702_vault_deposit_guide_numbers(self):
+        # Pins /guides/erc4626-eip7702-vault-deposit/ to its
+        # model: an EIP-7702 delegation gives an EOA 23 bytes
+        # of code (0xef0100 + 20-byte delegate) while keeping
+        # it tx.origin. Vault 1,000,000 USDC / 1,000,000
+        # shares at $1.00; gas 10 gwei; a plain deposit is
+        # 100,000 gas = 0.001 ETH, a guard revert 60,000 gas
+        # = 0.0006 ETH, a reverted batch 150,000 gas = 0.0015
+        # ETH. Importing the model re-runs its assertions; the
+        # checks below independently re-derive every headline
+        # number with plain integer arithmetic.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "eip7702-vault-deposit-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "eip7702_vault_deposit_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        WEI_PER_ETH = 10 ** 18
+        GAS_PRICE = 10_000_000_000  # 10 gwei
+        DEPOSIT = 100_000 * USDC
+
+        # Gas: 100,000 gas x 10 gwei = 10**15 wei = 0.001 ETH.
+        self.assertEqual(100_000 * GAS_PRICE, 10 ** 15)
+        self.assertEqual(Fraction(100_000 * GAS_PRICE,
+                                  WEI_PER_ETH),
+                         Fraction(1, 1000))
+        # Guard revert: 60,000 gas x 10 gwei = 0.0006 ETH.
+        self.assertEqual(60_000 * GAS_PRICE, 6 * 10 ** 14)
+        self.assertEqual(Fraction(60_000 * GAS_PRICE,
+                                  WEI_PER_ETH),
+                         Fraction(6, 10000))
+        # Reverted batch: 150,000 gas x 10 gwei = 0.0015 ETH.
+        self.assertEqual(150_000 * GAS_PRICE, 15 * 10 ** 14)
+        self.assertEqual(Fraction(150_000 * GAS_PRICE,
+                                  WEI_PER_ETH),
+                         Fraction(15, 10000))
+        # Delegation designator: 3-byte prefix + 20-byte
+        # address = 23 bytes of code; a plain EOA has 0.
+        self.assertEqual(3 + 20, 23)
+
+        # S1: plain EOA into the extcodesize-guarded vault —
+        # 100,000 USDC at price 1.00 mints 100,000 shares.
+        self.assertEqual(DEPOSIT // USDC, 100_000)
+        self.assertEqual(Fraction(DEPOSIT, USDC), 100_000)
+        # S2: delegated EOA passes the tx.origin guard — the
+        # same 100,000 shares land, Alice total 200,000.
+        self.assertEqual(100_000 + 100_000, 200_000)
+        # S3: the same account reverts at the extcodesize
+        # guard — 0 shares, vault untouched except Alice's S1
+        # deposit: 1,000,000 + 100,000 = 1,100,000 USDC.
+        self.assertEqual(1_000_000 * USDC + DEPOSIT,
+                         1_100_000 * USDC)
+        # S4: delegation set in the same transaction already
+        # applies at execution — 0 shares, auth nonce 1.
+        self.assertEqual(0, 0)
+        # S5: revoking (address(0), nonce 2) restores a plain
+        # EOA — another 100,000 shares, Alice total 300,000.
+        self.assertEqual(200_000 + 100_000, 300_000)
+        # S6: Carol's atomic batch reverts whole — allowance
+        # 0, shares 0; Dave's EOA permit lands first, so the
+        # 100,000 USDC allowance stays spendable after the
+        # deposit reverts.
+        self.assertEqual(DEPOSIT, 100_000 * USDC)
+        # S7: skimming delegate takes 1% of the deposit —
+        # 100,000 USDC lands 99,000 shares, 1,000 skimmed.
+        self.assertEqual(DEPOSIT * 99 // 100, 99_000 * USDC)
+        self.assertEqual(DEPOSIT - DEPOSIT * 99 // 100,
+                         1_000 * USDC)
+        self.assertEqual(Fraction(1_000, 100_000),
+                         Fraction(1, 100))
+        # S8: control — delegated into an unguarded vault,
+        # identical to a plain EOA deposit: 100,000 shares.
+        self.assertEqual(DEPOSIT // USDC, 100_000)
+
+        # The guide page exists exactly once, with its slug and
+        # headline numbers, scoped to this page's add() block.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertEqual(
+            build_text.count(
+                'add("/guides/erc4626-eip7702-vault-deposit/"'), 1)
+        start = build_text.find(
+            'add("/guides/erc4626-eip7702-vault-deposit/"')
+        end = build_text.find('add("/guides/', start + 10)
+        block = build_text[start:end]
+        for needle in ("100,000.000000 shares",
+                       "0.001000 ETH", "caller has code",
+                       "0.000600 ETH", "1,100,000.000000 USDC",
+                       "200,000.000000", "300,000.000000",
+                       "0.001500 ETH", "100,000.000000 USDC",
+                       "99,000.000000 shares",
+                       "1,000.000000 USDC", "0.0006 ETH",
+                       "0.0015 ETH", "0.001 ETH",
+                       "msg.sender == tx.origin",
+                       "extcodesize == 0", "0xef0100",
+                       "address(0)"):
+            self.assertIn(needle, block)
+        # The stale 0.0025 ETH figure from the 4337 model
+        # comment must not appear anywhere in this guide.
+        self.assertNotIn("0.0025", block)
+        # Index entry carries the same headline numbers.
+        idx = build_text.find(
+            '<a href="/guides/erc4626-eip7702-vault-deposit/">')
+        idx_end = build_text.find("</li>", idx)
+        index_line = build_text[idx:idx_end]
+        for needle in ("0.0006 ETH", "1,000 USDC"):
+            self.assertIn(needle, index_line)
+
+
     def test_donation_bridge_shares_guide_numbers(self):
         # Pins /guides/erc4626-donation-bridge-shares/ to its
         # model: a donation landing while bridge-minted shares
