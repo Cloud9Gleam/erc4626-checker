@@ -11793,6 +11793,30 @@ class TestChecker(unittest.TestCase):
         self.assertIn("90,909.090909", build_text)
         self.assertIn("99,999.999999", build_text)
 
+    def test_site_internal_links_resolve(self):
+        # Two dead internal links shipped on 2026-11-16 and were caught
+        # by a built-site sweep, not by any test: the preview-rounding
+        # guide linked /guides/erc4626-donation-inflation/ and the
+        # per-address-cap guide linked /guides/erc4626-maxdeposit-cap/,
+        # neither of which ever existed — a reader following either got
+        # the 404 page. New guides land by parallel rounds, so the page
+        # set is derived from the add() calls, not hardcoded: every
+        # internal href in build.py must resolve to a registered page
+        # or a known Worker-served route.
+        from pathlib import Path
+        import re
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        pages = set(re.findall(r'add\("([^"]+)"', build_text))
+        known = {"/api/check", "/sitemap.xml", "/robots.txt",
+                 "/favicon.ico"}
+        hrefs = set(re.findall(r'href="(/[^"#?]+)', build_text))
+        dead = sorted(h for h in hrefs
+                      if h not in pages and h not in known
+                      and not h.endswith((".png", ".jpg", ".svg", ".css",
+                                          ".js", ".ico", ".xml", ".txt")))
+        self.assertEqual(dead, [])
+
 
 if __name__ == "__main__":
     unittest.main()
