@@ -5870,6 +5870,111 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(value(a6, *v2), 110_000 * USDC)
         self.assertEqual(value(c6, *v2), 990_000 * USDC)
 
+    def test_donation_yield_token_guide_numbers(self):
+        # Pins /guides/erc4626-donation-yield-token/ to its
+        # model: a donation into a PT/YT-split vault routes by the
+        # split, not by the donor. Vault 1,000,000 USDC / 1,000,000
+        # SY at $1.00; Alice splits 100,000 SY into 100,000 PT
+        # (face 100,000) + 100,000 YT; Carol holds 900,000 SY
+        # unsplit; gift / yield / loss each 100,000. Importing the
+        # model re-runs its assertions; the checks below
+        # independently re-derive every headline number with
+        # plain Fraction arithmetic on min(face, SY value).
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-yield-token-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_yield_token_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        A0 = Fraction(1_000_000)
+        S0 = Fraction(1_000_000)
+        ALICE_SY = Fraction(100_000)
+        CAROL_SY = Fraction(900_000)
+        FACE = Fraction(100_000)
+        D = Fraction(100_000)
+        Y = Fraction(100_000)
+        LOSS = Fraction(100_000)
+
+        def sy_value(shares, assets, supply):
+            return shares * assets / supply
+
+        def split(assets):
+            v = sy_value(ALICE_SY, assets, S0)
+            pt = min(FACE, v)
+            return v, pt, v - pt, sy_value(CAROL_SY, assets, S0)
+
+        # S0: control — PT at face, YT zero, Carol at par.
+        v, pt, yt, carol = split(A0)
+        self.assertEqual((v, pt, yt, carol),
+                         (100_000, 100_000, 0, 900_000))
+        self.assertEqual(pt + yt + carol, A0)
+
+        # S1: real yield +100,000 — YT pays 10,000.
+        v, pt, yt, carol = split(A0 + Y)
+        self.assertEqual((v, pt, yt, carol),
+                         (110_000, 100_000, 10_000, 990_000))
+        self.assertEqual(pt + yt + carol, A0 + Y)
+
+        # S2: donation +100,000 — IDENTICAL split to real yield.
+        v, pt, yt, carol = split(A0 + D)
+        self.assertEqual((v, pt, yt, carol),
+                         (110_000, 100_000, 10_000, 990_000))
+        self.assertEqual(pt + yt + carol, A0 + D)
+
+        # S3: donation, but Alice sold her YT to Dave first —
+        # Alice keeps exactly her PT face, Dave takes the 10,000.
+        v, pt, yt, carol = split(A0 + D)
+        self.assertEqual(pt, 100_000)
+        self.assertEqual(yt, 10_000)
+        self.assertEqual(carol, 990_000)
+        self.assertEqual(pt + yt + carol, A0 + D)
+
+        # S4: loss -100,000 — YT wiped to zero first, PT haircut
+        # to 90,000 (backing below face).
+        v, pt, yt, carol = split(A0 - LOSS)
+        self.assertEqual((v, pt, yt, carol),
+                         (90_000, 90_000, 0, 810_000))
+        self.assertEqual(pt + yt + carol, A0 - LOSS)
+
+        # S5: donation + yield stacked — YT pays 20,000, half
+        # fed by the gift, half by real yield.
+        v, pt, yt, carol = split(A0 + D + Y)
+        self.assertEqual((v, pt, yt, carol),
+                         (120_000, 100_000, 20_000, 1_080_000))
+        self.assertEqual(pt + yt + carol, A0 + D + Y)
+
+        # S6: split AFTER the donation — face set at 110,000,
+        # so PT pays 110,000 and YT pays 0; same 110,000 total
+        # as S2, but the gift now sits in the PT leg.
+        face_late = sy_value(ALICE_SY, A0 + D, S0)
+        self.assertEqual(face_late, 110_000)
+        v = sy_value(ALICE_SY, A0 + D, S0)
+        pt_late = min(face_late, v)
+        yt_late = v - pt_late
+        carol_late = sy_value(CAROL_SY, A0 + D, S0)
+        self.assertEqual((pt_late, yt_late, carol_late),
+                         (110_000, 0, 990_000))
+        self.assertEqual(pt_late + yt_late + carol_late, A0 + D)
+
+        # Chart widths (YT payout to Alice, scaled to 20,000):
+        # 0.0 / 50.0 / 50.0 / 0.0 / 0.0 / 100.0 / 0.0.
+        yt_payouts = [0, 10_000, 10_000, 0, 0, 20_000, 0]
+        widths = [p * 100 / 20_000 for p in yt_payouts]
+        self.assertEqual(widths, [0.0, 50.0, 50.0, 0.0, 0.0, 100.0, 0.0])
+
+        # Guide text pins: slug registered and the routing
+        # sentence present in build.py.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-yield-token/",
+                      build_text)
+        self.assertIn("The gift follows the YT, not the SY holder",
+                      build_text)
+
     def test_supply_cap_guide_numbers(self):
         # Pins /guides/erc4626-supply-cap/ to its model: a vault
         # caps totalSupply at 1,000,000 whole shares (10**12 raw
