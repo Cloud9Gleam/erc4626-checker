@@ -10112,6 +10112,15 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(be_gross - be_net, F(1, 100))
         self.assertEqual(be_gross - be_net, FEE * D / G)
 
+        # A 4% strategy year: gain 80,000. Gross equity 990,000
+        # (-1%), net 1,010,000 (+1%) — so a 4% strategy GAINS on
+        # a net basis, it does not break even (break-even is 3.5%).
+        gain4 = G * F(4, 100)
+        self.assertEqual(gain4, 80_000)
+        eq4_g = E + gain4 - borrow - fee_gross
+        eq4_n = E + gain4 - borrow - fee_net
+        self.assertEqual((eq4_g, eq4_n), (990_000, 1_010_000))
+
         # Unleveraged control: no debt, gross fee = net fee = 20,000.
         self.assertEqual((E + F(0)) * FEE, E * FEE)
         self.assertEqual(E * FEE, 20_000)
@@ -10137,9 +10146,14 @@ class TestChecker(unittest.TestCase):
                        "9,100", "9,300", "11,100", "11,300", "8,400",
                        "8,800", "7,100", "7,300", "2% × 2 = 4%",
                        "2% × 3 = 6%", "width:66.7%", "width:33.3%",
-                       "width:100.0%"):
+                       "width:100.0%", "1,010,000", "990,000",
+                       "gains 1% on a net basis"):
             self.assertIn(needle, section)
         self.assertIn("the 2% fee that is 4% of equity", section)
+        # The 4% sentence must not claim a break-even: at 4% the
+        # net basis gains 1% (break-even is 3.5%).
+        self.assertNotIn("breaks even on a net basis", section)
+        self.assertNotIn("breaks even on one basis", section)
         # Only one add() for this path in build.py.
         self.assertEqual(
             build.count('add("/guides/erc4626-fee-on-leveraged-assets/"'),
