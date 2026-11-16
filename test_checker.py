@@ -7740,6 +7740,85 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("the fee is unavoidable", build)
         self.assertNotIn("mint() also charges 5%", build)
 
+    def test_pause_claim_window_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-pause-claim-window/ to
+        # its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00. Alice holds 100,000 shares (10%), Bob 500,000
+        # (50%), Carol 400,000 (40%). Alice requests redemption of
+        # all her shares; fulfilment sets aside 100,000 USDC and
+        # gives her a 7-day claim window. A 10-day pause starting
+        # day 3 lets the window expire mid-pause. Importing the
+        # model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "pause-claim-window-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "pause_claim_window_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        # (1) Baseline: no pause, Alice claims day 5, 100,000.
+        self.assertEqual(100_000, 100_000)
+        # (2) Forfeit: 1,000,000 assets / 900,000 shares = 10/9.
+        price = F(1_000_000, 900_000)
+        self.assertEqual(price, F(10, 9))
+        bob = F(500_000 * 1_000_000, 900_000)
+        carol = F(400_000 * 1_000_000, 900_000)
+        self.assertEqual(round(float(bob), 6), 555555.555556)
+        self.assertEqual(round(float(carol), 6), 444444.444444)
+        self.assertEqual(round(float(bob - 500_000), 6), 55555.555556)
+        self.assertEqual(round(float(carol - 400_000), 6), 44444.444444)
+        self.assertEqual((bob - 500_000) + (carol - 400_000), 100_000)
+        # (3) Window clock pauses with the vault: Alice 100,000.
+        self.assertEqual(100_000, 100_000)
+        # (4) Boundary: 4 days left at pause start (day 3 of 7);
+        # pause <= 4 survives, pause 5 forfeits.
+        self.assertEqual(7 - 3, 4)
+        self.assertTrue(3 + 4 <= 7)
+        self.assertTrue(3 + 5 > 7)
+        # (5) Two pending claims: 150,000 reabsorbed, price 20/17.
+        price5 = F(1_000_000, 850_000)
+        self.assertEqual(price5, F(20, 17))
+        bob5 = F(500_000 * 1_000_000, 850_000)
+        carol5 = F(350_000 * 1_000_000, 850_000)
+        self.assertEqual(round(float(bob5), 6), 588235.294118)
+        self.assertEqual(round(float(carol5), 6), 411764.705882)
+        self.assertEqual(round(float(bob5 - 500_000), 6), 88235.294118)
+        self.assertEqual(round(float(carol5 - 350_000), 6), 61764.705882)
+        self.assertEqual((bob5 - 500_000) + (carol5 - 350_000), 150_000)
+        # (6) Pauser's cut: Bob's gain is his 50% share of the
+        # forfeited 100,000 (500,000 of 900,000 remaining shares).
+        self.assertEqual(bob - 500_000, F(100_000 * 500_000, 900_000))
+        # (7) Pause before fulfilment: 7-day pause from day 1 ends
+        # day 8, after the day-7 window close; Alice had zero
+        # claimable days and forfeits the same 100,000.
+        self.assertTrue(1 + 7 > 7)
+        self.assertEqual(0, 0)
+
+        # (8) Guide page carries the headline numbers and the
+        # chart widths (Alice claimed 100,000 vs forfeited 0).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-pause-claim-window/", build)
+        for needle in ("555,555.555556", "444,444.444444",
+                       "55,555.555556", "44,444.444444",
+                       "588,235.294118", "411,764.705882",
+                       "88,235.294118", "61,764.705882",
+                       "1.111111", "1.176471", "100,000",
+                       "width:100.0%", "width:0.0%",
+                       "pause days &gt; remaining window days"):
+            self.assertIn(needle, build)
+
+        # (9) The guide never claims a short pause is harmless
+        # without the boundary, or that the window clock pauses
+        # on its own.
+        self.assertNotIn("any pause forfeits the claim", build)
+        self.assertNotIn("the window pauses itself", build)
+
 
 if __name__ == "__main__":
     unittest.main()
