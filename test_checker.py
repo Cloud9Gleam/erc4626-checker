@@ -7994,6 +7994,102 @@ class TestChecker(unittest.TestCase):
         self.assertIn("The new content here is the tax wedge", build)
         self.assertIn("it is not a transfer to Bob", build)
 
+    def test_rebase_collateral_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-rebase-collateral/
+        # to its model: a 1,000,000 unit / 1,000,000 share vault at
+        # $1.00 holding a rebasing underlying. Alice holds 100,000
+        # shares (10%). Lending market: collateral factor 80%,
+        # oracle price updated weekly -- stale between updates.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "rebase-collateral-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "rebase_collateral_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        CF = F(4, 5)
+        # (1) Baseline: oracle $1.00, capacity 100,000 x 1.00 x 0.80
+        # = 80,000; true LTV 80,000 / 100,000 = 80%.
+        self.assertEqual(100_000 * F(1, 1) * CF, 80_000)
+        self.assertEqual(F(80_000, 100_000), F(4, 5))
+        # (2) +10% rebase: price 11/10, Alice's shares worth
+        # 110,000; oracle still $1.00 so capacity stays 80,000;
+        # undrawn capacity 110,000 x 0.80 - 80,000 = 8,000.
+        # True LTV 80,000 / 110,000 = 8/11.
+        self.assertEqual(F(1_100_000, 1_000_000), F(11, 10))
+        self.assertEqual(100_000 * F(11, 10), 110_000)
+        self.assertEqual(110_000 * CF - 80_000, 8_000)
+        self.assertEqual(F(80_000, 110_000), F(8, 11))
+        # (3) -10% rebase: price 9/10, Alice's shares worth 90,000.
+        # True LTV 80,000 / 90,000 = 8/9; buffer to 100% LTV is
+        # 90,000 - 80,000 = 10,000.
+        self.assertEqual(F(900_000, 1_000_000), F(9, 10))
+        self.assertEqual(100_000 * F(9, 10), 90_000)
+        self.assertEqual(F(80_000, 90_000), F(8, 9))
+        self.assertEqual(90_000 - 80_000, 10_000)
+        # (4) -20% rebase: price 4/5, Alice's shares worth exactly
+        # the 80,000 debt; true LTV 100%. Liquidation seizes
+        # 80,000 / 0.80 = 100,000 shares -- all of them. A 5%
+        # bonus is 4,000 the protocol has no collateral for.
+        self.assertEqual(F(800_000, 1_000_000), F(4, 5))
+        self.assertEqual(100_000 * F(4, 5), 80_000)
+        self.assertEqual(F(80_000, 1) / F(4, 5), 100_000)
+        self.assertEqual(80_000 * F(5, 100), 4_000)
+        # (5) Oracle catches up after the -10% rebase: oracle $0.90,
+        # capacity 72,000, excess debt 8,000. Repay 9,000, seize
+        # 9,000 / 0.90 = 10,000 shares. After: debt 71,000, 90,000
+        # shares worth 81,000, LTV 71/81, debt back under capacity.
+        self.assertEqual(100_000 * F(9, 10) * CF, 72_000)
+        self.assertEqual(80_000 - 72_000, 8_000)
+        self.assertEqual(F(9_000, 1) / F(9, 10), 10_000)
+        self.assertEqual(80_000 - 9_000, 71_000)
+        self.assertEqual(90_000 * F(9, 10), 81_000)
+        self.assertEqual(F(71_000, 81_000), F(71, 81))
+        self.assertLessEqual(71_000, 72_000)
+        # (6) Timing: +10% rebase, oracle updates to $1.10, capacity
+        # rises to 88,000, Alice draws the extra 8,000 (debt
+        # 88,000). Then -20% from 1,100,000 leaves 880,000, price
+        # 22/25, her shares worth 88,000 -- exactly the debt again.
+        self.assertEqual(100_000 * F(11, 10) * CF, 88_000)
+        self.assertEqual(80_000 + 8_000, 88_000)
+        self.assertEqual(1_100_000 * 4 // 5, 880_000)
+        self.assertEqual(F(880_000, 1_000_000), F(22, 25))
+        self.assertEqual(100_000 * F(22, 25), 88_000)
+        self.assertEqual(F(88_000, 88_000), 1)
+        # (7) Dust rebase: +1 unit, price 1,000,001/1,000,000;
+        # floored capacity is still 80,000.
+        self.assertEqual(F(1_000_001, 1_000_000),
+                         F(1_000_001, 1_000_000))
+        self.assertEqual(int(100_000 * F(1_000_001, 1_000_000) * CF),
+                         80_000)
+
+        # (8) Guide page carries the headline numbers and the chart
+        # widths (Alice's shares really worth 110,000 / 90,000 /
+        # 80,000 -> 100.0 / 81.8 / 72.7).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-rebase-collateral/", build)
+        for needle in ("80,000", "8,000", "110,000", "90,000",
+                       "72,000", "71,000", "81,000", "88,000",
+                       "880,000", "10,000", "4,000", "8/9", "8/11",
+                       "71/81", "22/25", "88.89%", "72.73%",
+                       "87.65%", "width:100.0%", "width:81.8%",
+                       "width:72.7%"):
+            self.assertIn(needle, build)
+
+        # (9) The guide states the honest overlap (rebase price moves
+        # are the rebasing-underlying numbers; the 80% factor and
+        # capacity formula are the share-price-collateral numbers)
+        # and that the wedge is the new content.
+        self.assertIn("The new content here is the stale-oracle wedge",
+                      build)
+
 
 if __name__ == "__main__":
     unittest.main()
