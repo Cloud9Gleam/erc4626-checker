@@ -8743,6 +8743,128 @@ class TestChecker(unittest.TestCase):
         self.assertIn("109,000", section)
         self.assertIn("On day 9 he would take", section)
 
+    def test_donation_deposit_bonus_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-deposit-bonus/
+        # to its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00, Carol holds all 1,000,000 shares, Alice deposits
+        # 100,000 USDC with a 10% bonus, and a 100,000 USDC donation
+        # lands before or after her deposit. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers in base units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-deposit-bonus-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_deposit_bonus_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        A0, S0 = 1_000_000 * U, 1_000_000
+        DEP, DON = 100_000 * U, 100_000 * U
+
+        def val(sh, A, S):
+            return (sh * A) // S
+
+        def dep_bonus(A, S, bonus_on):
+            base = (DEP * S) // A
+            bonus = base // 10 if bonus_on == 'shares' else (DEP // U) // 10
+            return A + DEP, S + base + bonus, base, bonus
+
+        # (1) Baseline, no donation (overlap: deposit-bonus case 1):
+        # Alice 100,000 + 10,000 bonus shares; price 0.990991;
+        # Carol 990,990.990990, Alice 109,009.009009, gain 9,009.009009.
+        A1, S1, b1, bo1 = dep_bonus(A0, S0, 'shares')
+        self.assertEqual((b1, bo1), (100_000, 10_000))
+        self.assertEqual(F(A1, U) / S1, F(1_100_000, 1_110_000))
+        c1, a1 = val(1_000_000, A1, S1), val(110_000, A1, S1)
+        self.assertEqual((c1, a1), (990_990_990_990, 109_009_009_009))
+        g1 = a1 - DEP
+        self.assertEqual(g1, 9_009_009_009)
+        # (2) Donation FIRST, shares-based bonus: price 1.10 at
+        # deposit; Alice 90,909 + 9,090; price after 1.090910;
+        # Carol 1,090,910.082645, Alice 109,089.917354, gain
+        # 9,089.917354, donation capture 80.908345. Honest split vs
+        # the baseline: Carol's share is 99,919.091655 (the model's
+        # printed 90,910.082645 is her value above her ORIGINAL
+        # 1,000,000, i.e. net of the 9,009.009009 bonus dilution).
+        A2, S2, b2, bo2 = dep_bonus(A0 + DON, S0, 'shares')
+        self.assertEqual((b2, bo2), (90_909, 9_090))
+        self.assertEqual(F(A2, U) / S2, F(1_200_000, 1_099_999))
+        c2, a2 = val(1_000_000, A2, S2), val(99_999, A2, S2)
+        self.assertEqual((c2, a2), (1_090_910_082_645, 109_089_917_354))
+        g2 = a2 - DEP
+        self.assertEqual(g2, 9_089_917_354)
+        cap2 = g2 - g1
+        self.assertEqual(cap2, 80_908_345)
+        self.assertEqual(c2 - 1_000_000 * U, 90_910_082_645)
+        self.assertEqual(c2 - c1, 99_919_091_655)
+        self.assertEqual(cap2 + (c2 - c1), DON)
+        # (3) Bonus deposit FIRST, then donation: Alice banks 110,000
+        # shares, captures 9,909.909909; Carol 1,081,081.081081,
+        # keeps 90,090.090091.
+        A3, S3 = A1 + DON, S1
+        c3, a3 = val(1_000_000, A3, S3), val(110_000, A3, S3)
+        self.assertEqual((c3, a3), (1_081_081_081_081, 118_918_918_918))
+        cap3 = a3 - a1
+        self.assertEqual(cap3, 9_909_909_909)
+        self.assertEqual(c3 - c1, 90_090_090_091)
+        self.assertEqual(cap3 + (c3 - c1), DON)
+        # (4) Ordering: ~122x, and the bonus dollars are HIGHER
+        # donation-first (9,089.917354 vs 9,009.009009) — the cut
+        # is in the capture, not the bonus.
+        self.assertTrue(122 < F(cap3, cap2) < 123)
+        self.assertGreater(g2, g1)
+        self.assertEqual(cap3 - cap2, 9_829_001_564)
+        # (5) Assets-based bonus, donation first: Alice 90,909 +
+        # 10,000 = 100,909 shares, worth 109,991.652352, gain
+        # 9,991.652352, capture 982.643343 — 901.734998 more than
+        # the shares-based bonus; Carol pays exactly that.
+        A5, S5, b5, bo5 = dep_bonus(A0 + DON, S0, 'assets')
+        self.assertEqual((b5, bo5), (90_909, 10_000))
+        c5, a5 = val(1_000_000, A5, S5), val(100_909, A5, S5)
+        self.assertEqual((c5, a5), (1_090_008_347_647, 109_991_652_352))
+        g5 = a5 - DEP
+        self.assertEqual(g5, 9_991_652_352)
+        self.assertEqual(a5 - a2, 901_734_998)
+        self.assertEqual(c2 - c5, 901_734_998)
+        self.assertEqual(g5 - g1, 982_643_343)
+        # (6) Chart widths: captures 80.908345 / 982.643343 /
+        # 9,909.909909, normalised to the 9,909.909909 maximum.
+        for value, width in ((80_908_345, 0.8), (982_643_343, 9.9),
+                             (9_909_909_909, 100.0)):
+            self.assertEqual(round(value / 9_909_909_909 * 100, 1), width)
+
+        # (7) Guide page carries the headline numbers, the chart
+        # widths and the honest-overlap statement.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-deposit-bonus/", build)
+        for needle in ("90,909", "9,090", "1.090910", "109,089.917354",
+                       "9,089.917354", "80.908345", "99,919.091655",
+                       "90,910.082645", "118,918.918918", "9,909.909909",
+                       "1,081,081.081081", "90,090.090091", "122",
+                       "109,991.652352", "9,991.652352", "982.643343",
+                       "901.734998", "901.735", "9,829.001564",
+                       "100,909", "1,090,008.347647",
+                       "width:0.8%", "width:9.9%", "width:100.0%"):
+            self.assertIn(needle, build)
+        self.assertIn("The new content here is cases 2", build)
+
+        # (8) The capture numbers must sit in THIS guide's own text:
+        # "80.908345" and "9,909.909909" appear nowhere else, but
+        # "901.735" is also quoted in the index entry, so check the
+        # section-scoped presence of the design-split sentence.
+        start = build.index('add("/guides/erc4626-donation-deposit-bonus/"')
+        section = build[start:start + 12000]
+        for needle in ("80.908345", "9,909.909909", "982.643343",
+                       "901.734998", "99,919.091655"):
+            self.assertIn(needle, section)
+        self.assertIn("on the <strong>assets deposited</strong>", section)
+
 
 
 if __name__ == "__main__":
