@@ -9574,6 +9574,185 @@ class TestChecker(unittest.TestCase):
             self.assertIn(f'add("/guides/{href}/"', build,
                           f"dead guide link /guides/{href}/")
 
+    def test_donation_withdrawal_queue_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-withdrawal-queue/
+        # to its model: a 100,000 USDC donation lands while Alice's
+        # redemption of 100,000 shares waits in the queue; whether
+        # she captures the gift depends on whether the queue prices
+        # at request time or at processing time.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers in
+        # base units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-withdrawal-queue-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_withdrawal_queue_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        BASE = 1_000_000 * U
+        SUPPLY = 1_000_000 * U
+        ALICE = 100_000 * U
+        DAVE = 50_000 * U
+        CAROL = 850_000 * U
+        DONATION = 100_000 * U
+        V = model.WithdrawalQueueVault
+        # (S1) The fork. Alice requests day 0 (price 1.00), donation
+        # lands day 1, queue processes day 2. Design A: Alice
+        # 100,000; Carol 944,444.444444, Dave 55,555.555556
+        # (price 10/9 after). Design B: Alice 110,000; Carol
+        # 935,000, Dave 55,000. Split 10,000.
+        va = V(BASE, SUPPLY)
+        va.request(ALICE, "A")
+        self.assertEqual(va.price(), 1)
+        va.donate(DONATION)
+        self.assertEqual(va.price(), F(11, 10))
+        paid_a = va.process()
+        self.assertEqual(paid_a, [100_000 * U])
+        self.assertEqual(va.base, 1_000_000 * U)
+        self.assertEqual(va.supply, 900_000 * U)
+        self.assertEqual(va.price(), F(10, 9))
+        self.assertEqual(model.d6(CAROL * va.price() / U),
+                         "944444.444444")
+        self.assertEqual(model.d6(DAVE * va.price() / U), "55555.555556")
+        self.assertEqual(paid_a[0] + CAROL * va.price()
+                         + DAVE * va.price(), 1_100_000 * U)
+        vb = V(BASE, SUPPLY)
+        vb.request(ALICE, "B")
+        vb.donate(DONATION)
+        paid_b = vb.process()
+        self.assertEqual(paid_b, [110_000 * U])
+        self.assertEqual(vb.base, 990_000 * U)
+        self.assertEqual(vb.supply, 900_000 * U)
+        self.assertEqual(vb.price(), F(11, 10))
+        self.assertEqual(CAROL * vb.price(), 935_000 * U)
+        self.assertEqual(DAVE * vb.price(), 55_000 * U)
+        self.assertEqual(paid_b[0] + CAROL * vb.price()
+                         + DAVE * vb.price(), 1_100_000 * U)
+        self.assertEqual(paid_b[0] - paid_a[0], 10_000 * U)
+        # (S2) Gift before request: price already 1.10, both pay
+        # 110,000.
+        v2a = V(BASE, SUPPLY)
+        v2a.donate(DONATION)
+        v2a.request(ALICE, "A")
+        self.assertEqual(v2a.process(), [110_000 * U])
+        v2b = V(BASE, SUPPLY)
+        v2b.donate(DONATION)
+        v2b.request(ALICE, "B")
+        self.assertEqual(v2b.process(), [110_000 * U])
+        # (S3) Two redeemers. Dave requests day 1 (after the gift,
+        # price 1.10), both processed day 2. B: Alice 110,000 /
+        # Dave 55,000 / Carol 935,000. A: Alice 100,000 / Dave
+        # 55,000 / Carol 945,000.
+        v3b = V(BASE, SUPPLY)
+        v3b.request(ALICE, "B")
+        v3b.donate(DONATION)
+        v3b.request(DAVE, "B")
+        self.assertEqual(v3b.process(), [110_000 * U, 55_000 * U])
+        self.assertEqual(v3b.base, 935_000 * U)
+        self.assertEqual(CAROL * v3b.price(), 935_000 * U)
+        v3a = V(BASE, SUPPLY)
+        v3a.request(ALICE, "A")
+        v3a.donate(DONATION)
+        v3a.request(DAVE, "A")
+        self.assertEqual(v3a.process(), [100_000 * U, 55_000 * U])
+        self.assertEqual(v3a.base, 945_000 * U)
+        self.assertEqual(CAROL * v3a.price(), 945_000 * U)
+        # (S4) Loss mirror. Donation day 1 (+100,000), loss day 2
+        # of 200,000 before processing; Alice requested day 0.
+        # A: Alice 100,000 shielded; Carol 755,555.555556, Dave
+        # 44,444.444444 (price 8/9 after). B: Alice 90,000;
+        # Carol 765,000, Dave 45,000.
+        v4a = V(BASE, SUPPLY)
+        v4a.request(ALICE, "A")
+        v4a.donate(DONATION)
+        v4a.report_loss(200_000 * U)
+        self.assertEqual(v4a.price(), F(9, 10))
+        self.assertEqual(v4a.process(), [100_000 * U])
+        self.assertEqual(v4a.base, 800_000 * U)
+        self.assertEqual(v4a.price(), F(8, 9))
+        self.assertEqual(model.d6(CAROL * v4a.price() / U),
+                         "755555.555556")
+        self.assertEqual(model.d6(DAVE * v4a.price() / U), "44444.444444")
+        v4b = V(BASE, SUPPLY)
+        v4b.request(ALICE, "B")
+        v4b.donate(DONATION)
+        v4b.report_loss(200_000 * U)
+        self.assertEqual(v4b.process(), [90_000 * U])
+        self.assertEqual(v4b.base, 810_000 * U)
+        self.assertEqual(v4b.price(), F(9, 10))
+        self.assertEqual(CAROL * v4b.price(), 765_000 * U)
+        self.assertEqual(DAVE * v4b.price(), 45_000 * U)
+        # (S5) Second gift of 50,000 mid-queue. B: Alice 115,000;
+        # Carol 977,500, Dave 57,500. A: Alice 100,000; Carol
+        # 991,666.666667, Dave 58,333.333333. Split widens to 15,000.
+        v5b = V(BASE, SUPPLY)
+        v5b.request(ALICE, "B")
+        v5b.donate(DONATION)
+        v5b.donate(50_000 * U)
+        self.assertEqual(v5b.price(), F(23, 20))
+        self.assertEqual(v5b.process(), [115_000 * U])
+        self.assertEqual(v5b.base, 1_035_000 * U)
+        self.assertEqual(CAROL * v5b.price(), 977_500 * U)
+        self.assertEqual(DAVE * v5b.price(), 57_500 * U)
+        v5a = V(BASE, SUPPLY)
+        v5a.request(ALICE, "A")
+        v5a.donate(DONATION)
+        v5a.donate(50_000 * U)
+        self.assertEqual(v5a.process(), [100_000 * U])
+        self.assertEqual(v5a.base, 1_050_000 * U)
+        self.assertEqual(v5a.price(), F(7, 6))
+        self.assertEqual(model.d6(CAROL * v5a.price() / U),
+                         "991666.666667")
+        self.assertEqual(model.d6(DAVE * v5a.price() / U), "58333.333333")
+        self.assertEqual(115_000 * U - 100_000 * U, 15_000 * U)
+
+        # Chart widths: Alice's payout under design B, scaled to
+        # 115,000 (one decimal, the site's convention); design A
+        # pays a flat 100,000 in all three cases.
+        self.assertEqual(round(float(F(110_000, 115_000) * 100), 1),
+                         95.7)
+        self.assertEqual(round(float(F(90_000, 115_000) * 100), 1), 78.3)
+        self.assertEqual(round(float(F(115_000, 115_000) * 100), 1),
+                         100.0)
+        self.assertEqual(round(float(F(100_000, 115_000) * 100), 1),
+                         87.0)
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-donation-withdrawal-queue/"')
+        section = build[start:start + 12000]
+        for needle in ("110,000", "100,000", "944,444.444444",
+                       "55,555.555556", "935,000", "55,000",
+                       "945,000", "755,555.555556", "44,444.444444",
+                       "90,000", "765,000", "45,000", "115,000",
+                       "977,500", "57,500", "991,666.666667",
+                       "58,333.333333", "15,000", "10,000", "7/6",
+                       "width:95.7%", "width:78.3%",
+                       "width:100.0%", "width:87.0%"):
+            self.assertIn(needle, section)
+        self.assertIn("the gift that lands while your redemption waits",
+                      section)
+        # Only one add() for this path in build.py.
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-withdrawal-queue/"'),
+            1)
+        # Every internal guide link inside this guide must resolve
+        # to a real page: the whole add() block, including the
+        # closing scope note (the 12,000-char window ends before it).
+        import re
+        full = build[start:build.index('""")', start) + 4]
+        for href in re.findall(r'href=\\?"/guides/([^"]+)/\\?"',
+                               full):
+            self.assertIn(f'add("/guides/{href}/"', build,
+                          f"dead guide link /guides/{href}/")
 
 
 if __name__ == "__main__":
