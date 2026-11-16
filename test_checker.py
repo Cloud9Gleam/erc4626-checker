@@ -964,6 +964,38 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+
+    def test_email_para_carries_vault_state(self):
+        # The 'Prefer email?' mailto must carry the parameters actually
+        # run. The mailbox reply path already parses vault_assets_usdc
+        # and vault_shares and seeds the donation check with them — but
+        # the mailto body dropped both, so a visitor who ran the checker
+        # on a seeded vault got a reply computed for a new vault. The
+        # flip is real: noprot on a new vault FAILS the donation check
+        # (worst victim loss 0.909091 USDC); on a 1M USDC / 1M share
+        # vault the same preset passes every check.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        USDC = 1_000_000
+        v = Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)
+        new = run_all(v)
+        self.assertFalse(
+            [r for r in new if r["name"] == "donation_inflation"][0]["pass"])
+        seeded = run_all(v, vault_assets=1_000_000 * USDC,
+                         vault_supply=1_000_000 * USDC)
+        self.assertTrue(all(r["pass"] for r in seeded))
+        para = build.email_para(0, 0, 0, 100_000_000_000,
+                                1_000_000 * USDC, 1_000_000)
+        self.assertIn("vault_assets_usdc%3D1000000", para)
+        self.assertIn("vault_shares%3D1000000", para)
+        self.assertIn("vault_assets_usdc=1000000", para)
+        self.assertIn("vault_shares=1000000", para)
+        default = build.email_para(6, 1_000_000, 1000, 100_000_000_000)
+        self.assertIn("vault_assets_usdc%3D0", default)
+        self.assertIn("vault_shares%3D0", default)
+
     def test_exit_fee_guide_numbers(self):
         # Exit-fee guide (site/exit-fee-model.py): a 5% fee on redemption.
         # Re-derived here with plain integer arithmetic, independent of
@@ -11487,6 +11519,147 @@ class TestChecker(unittest.TestCase):
                 f"({worst} USDC)", html)
             self.assertNotIn(
                 "Bars are scaled to the worst row in this table;", html)
+    def test_donation_loss_recognition_guide_numbers(self):
+        # Pins /guides/erc4626-donation-loss-recognition/ to its
+        # model: a donation into a vault carrying an unrecognised
+        # loss is mostly eaten by the hole, and a depositor who
+        # arrives before recognition still overpays. Vault
+        # 1,000,000 USDC / 1,000,000 shares at $1.00; loss
+        # 100,000 real but unrecognised; donation 100,000;
+        # victim deposits 100,000. Importing the model re-runs
+        # its assertions; the checks below independently
+        # re-derive every headline number with plain Fraction
+        # arithmetic, plus the S4 integer-floor behaviour.
+        # Rounding note, pinned here by exact fractions: the
+        # model prints the integer-floor values — S1 victim loss
+        # and holders' gain both 8,333.333334 — while the exact
+        # fraction for each is 25,000/3 = 8,333.333333...; the
+        # printed value is one base unit above the floored exact
+        # because the victim's redemption floors. The guide
+        # quotes the model's printed values.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-loss-recognition-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_loss_recognition_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        A0 = Fraction(1_000_000)
+        SUPPLY0 = Fraction(1_000_000)
+        LOSS = Fraction(100_000)
+        DONATION = Fraction(100_000)
+        DEPOSIT = Fraction(100_000)
+
+        def price(assets, supply):
+            return assets / supply
+
+        def value(shares, assets, supply):
+            return shares * price(assets, supply)
+
+        # S0: loss only — victim mints 100,000 shares at 1.00,
+        # recognition takes assets to 1,000,000, redeem is
+        # 1,000,000/11, loss 100,000/11.
+        sh0 = DEPOSIT
+        self.assertEqual(sh0, 100_000)
+        self.assertEqual(value(sh0, A0 + DEPOSIT - LOSS,
+                               SUPPLY0 + sh0),
+                         Fraction(1_000_000, 11))
+        self.assertEqual(DEPOSIT - Fraction(1_000_000, 11),
+                         Fraction(100_000, 11))
+
+        # S1: donate, deposit, recognise — price 11/10, victim
+        # mints 1,000,000/11 shares, redeems 275,000/3, loses
+        # 25,000/3; old holders gain 25,000/3 of the gift, the
+        # rest 275,000/3 covers the loss.
+        self.assertEqual(price(A0 + DONATION, SUPPLY0),
+                         Fraction(11, 10))
+        sh1 = DEPOSIT * SUPPLY0 / (A0 + DONATION)
+        self.assertEqual(sh1, Fraction(1_000_000, 11))
+        assets1 = A0 + DONATION + DEPOSIT - LOSS
+        supply1 = SUPPLY0 + sh1
+        self.assertEqual(assets1, 1_100_000)
+        self.assertEqual(value(sh1, assets1, supply1),
+                         Fraction(275_000, 3))
+        self.assertEqual(DEPOSIT - Fraction(275_000, 3),
+                         Fraction(25_000, 3))
+        holders1 = value(SUPPLY0, assets1, supply1)
+        self.assertEqual(holders1, Fraction(3_025_000, 3))
+        self.assertEqual(holders1 - A0, Fraction(25_000, 3))
+        self.assertEqual(DONATION - Fraction(25_000, 3),
+                         Fraction(275_000, 3))
+        # The gift cushions the victim: loss falls from
+        # 100,000/11 to 25,000/3, a 25,000/33 reduction.
+        self.assertEqual(Fraction(100_000, 11)
+                         - Fraction(25_000, 3),
+                         Fraction(25_000, 33))
+
+        # S1 integer-floor values, as the model prints them:
+        # redeem 91,666,666,666 base units, loss 8,333,333,334.
+        U = 1_000_000
+        sh1_int = (100_000 * U * 1_000_000 * U) // (1_100_000 * U)
+        self.assertEqual(sh1_int, 90_909_090_909)
+        out1_int = (sh1_int * 1_100_000 * U) // (1_090_909 * U + 90_909)
+        self.assertEqual(out1_int, 91_666_666_666)
+        self.assertEqual(100_000 * U - out1_int, 8_333_333_334)
+        # Post-redemption holders' value, the model's printed
+        # 8,333.333334 gain: after the victim redeems, assets
+        # 1,008,333,333,334 over a 1,000,000,000,000 supply.
+        holders1_int = (1_000_000 * U
+                        * (1_100_000 * U - out1_int)) // (1_000_000 * U)
+        self.assertEqual(holders1_int, 1_008_333_333_334)
+        self.assertEqual(holders1_int - 1_000_000 * U, 8_333_333_334)
+
+        # S2: donate, recognise, deposit — price back to 1.00,
+        # victim mints 100,000 shares and redeems 100,000.
+        self.assertEqual(price(A0 + DONATION - LOSS, SUPPLY0), 1)
+        self.assertEqual(value(DEPOSIT,
+                               A0 + DONATION - LOSS + DEPOSIT,
+                               SUPPLY0 + DEPOSIT),
+                         DEPOSIT)
+
+        # S3: deposit, donate, recognise — price back to 1.00,
+        # victim redeems the full 100,000.
+        self.assertEqual(price(A0 + DEPOSIT + DONATION - LOSS,
+                               SUPPLY0 + DEPOSIT), 1)
+        self.assertEqual(value(DEPOSIT,
+                               A0 + DEPOSIT + DONATION - LOSS,
+                               SUPPLY0 + DEPOSIT),
+                         DEPOSIT)
+
+        # S4: loss 150,000, bigger than the gift — integer
+        # arithmetic: deposit mints 90,909,090,909 base units
+        # (0.09 share floored away), redeem 87,499,999,999,
+        # loss 12,500,000,001 base units; exact-fraction
+        # baseline without the gift is 150,000/11.
+        BIG_LOSS = Fraction(150_000)
+        sh4_int = (100_000 * U * 1_000_000 * U) // (1_100_000 * U)
+        self.assertEqual(sh4_int, 90_909_090_909)
+        out4_int = (sh4_int * 1_050_000 * U) // (1_090_909 * U + 90_909)
+        self.assertEqual(out4_int, 87_499_999_999)
+        self.assertEqual(100_000 * U - out4_int, 12_500_000_001)
+        baseline4 = DEPOSIT - value(
+            DEPOSIT, A0 + DEPOSIT - BIG_LOSS, SUPPLY0 + DEPOSIT)
+        self.assertEqual(baseline4, Fraction(150_000, 11))
+        # Cushion: exact 12,499,999,989/11,000,000 ≈ 1,136.363635.
+        self.assertEqual(baseline4
+                         - Fraction(12_500_000_001, U),
+                         Fraction(12_499_999_989, 11_000_000))
+
+        # The guide page exists exactly once, with its slug and
+        # headline numbers.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertEqual(
+            build_text.count(
+                'add("/guides/erc4626-donation-loss-recognition/"'), 1)
+        self.assertIn("8,333.333334", build_text)
+        self.assertIn("9,090.909091", build_text)
+        self.assertIn("87,499.999999", build_text)
+        self.assertIn("12,500.000001", build_text)
+        self.assertIn("13,636.363636", build_text)
 
 
 if __name__ == "__main__":
