@@ -8090,6 +8090,96 @@ class TestChecker(unittest.TestCase):
         self.assertIn("The new content here is the stale-oracle wedge",
                       build)
 
+    def test_donation_queue_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-queue/ to its
+        # model: a 1,000,000 USDC / 1,000,000 share vault at $1.00.
+        # Alice holds 100,000 shares (10%), Bob 900,000 (90%); both
+        # queue a full redemption, paid in order at fulfillment-time
+        # prices; a 100,000 USDC donation (or a 100,000 USDC loss)
+        # lands at a stated point in the sequence. Importing the
+        # model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-queue-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_queue_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        # (1) Baseline, no donation: Alice 100,000, Bob 900,000 at
+        # $1.00; the two payouts sum to the vault.
+        self.assertEqual(F(100_000 * 1_000_000, 1_000_000), 100_000)
+        self.assertEqual(F(900_000 * 900_000, 900_000), 900_000)
+        self.assertEqual(100_000 + 900_000, 1_000_000)
+        # (2) Donation before any fulfillment: price 11/10; Alice
+        # 110,000 (+10,000), Bob 990,000 (+90,000) -- pro-rata.
+        self.assertEqual(F(1_100_000, 1_000_000), F(11, 10))
+        self.assertEqual(F(100_000 * 1_100_000, 1_000_000), 110_000)
+        self.assertEqual(110_000 - 100_000, 10_000)
+        self.assertEqual(F(900_000 * 1_100_000, 1_000_000), 990_000)
+        self.assertEqual(990_000 - 900_000, 90_000)
+        # (3) Donation between fulfillments, Alice first: Alice paid
+        # 100,000 at $1.00 (+0); vault then 1,000,000 / 900,000,
+        # price 10/9; Bob claims 1,000,000 -- the entire donation.
+        self.assertEqual(F(1_000_000, 900_000), F(10, 9))
+        self.assertEqual(F(900_000 * 1_000_000, 900_000), 1_000_000)
+        self.assertEqual(1_000_000 - 900_000, 100_000)
+        # (4) Loss between fulfillments, Alice first: Alice 100,000
+        # insulated; vault 800,000 / 900,000, price 8/9; Bob
+        # 800,000 -- absorbs the whole loss.
+        self.assertEqual(F(800_000, 900_000), F(8, 9))
+        self.assertEqual(F(900_000 * 800_000, 900_000), 800_000)
+        self.assertEqual(900_000 - 800_000, 100_000)
+        # (5) Donation between fulfillments, Bob first: Bob 900,000
+        # (+0); vault then 200,000 / 100,000, price 2; Alice claims
+        # 200,000 -- the entire donation this time.
+        self.assertEqual(F(200_000, 100_000), 2)
+        self.assertEqual(F(100_000 * 200_000, 100_000), 200_000)
+        self.assertEqual(200_000 - 100_000, 100_000)
+        # (6) Pro-rata halves around the donation: first halves
+        # 50,000 / 450,000 at $1.00; vault then 600,000 / 500,000,
+        # price 6/5 = $1.20; second halves 60,000 / 540,000.
+        # Totals 110,000 / 990,000 -- pro-rata restored.
+        self.assertEqual(F(600_000, 500_000), F(6, 5))
+        self.assertEqual(F(50_000 * 600_000, 500_000), 60_000)
+        self.assertEqual(F(450_000 * 540_000, 450_000), 540_000)
+        self.assertEqual(50_000 + 60_000, 110_000)
+        self.assertEqual(450_000 + 540_000, 990_000)
+        self.assertEqual(110_000 - 100_000, 10_000)
+        self.assertEqual(990_000 - 900_000, 90_000)
+        # (7) Donation after the queue drains: Alice 100,000, Bob
+        # 800,000 out (Carol holds the other 100,000 and never
+        # queues); vault then 200,000 / 100,000, price 2; Carol's
+        # shares are worth 200,000 -- the whole donation.
+        self.assertEqual(100_000 + 800_000 + 100_000, 1_000_000)
+        self.assertEqual(F(200_000, 100_000), 2)
+        self.assertEqual(F(100_000 * 200_000, 100_000), 200_000)
+
+        # (8) Guide page carries the headline numbers and the chart
+        # widths (Bob's payout by timing: 990,000 / 1,000,000 /
+        # 800,000 -> 99.0 / 100.0 / 80.0).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-queue/", build)
+        for needle in ("110,000", "990,000", "1,000,000", "800,000",
+                       "200,000", "1.111111", "0.888889", "1.20",
+                       "60,000", "540,000", "50,000", "450,000",
+                       "10/9", "8/9", "width:99.0%",
+                       "width:100.0%", "width:80.0%"):
+            self.assertIn(needle, build)
+
+        # (9) The guide states the honest overlap (cases 2-5 are the
+        # queue-loss mirror) and that the new content is cases 6-7;
+        # it never claims a between-fulfillments donation splits
+        # pro-rata.
+        self.assertIn("The new content here is cases 6", build)
+        self.assertNotIn("the donation splits pro-rata between "
+                         "fulfillments", build)
+
 
 if __name__ == "__main__":
     unittest.main()
