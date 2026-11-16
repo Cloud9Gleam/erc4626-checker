@@ -7620,5 +7620,126 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("Alice bears the whole 100,000", build)
 
 
+    def test_fee_asymmetry_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-fee-asymmetry/ to
+        # its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00, a 5% entry fee (500 bps) taken off the gross and
+        # paid to the manager. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers, including the virtual +1 share / +1
+        # asset rounding that makes scenario 3 one base unit off
+        # the round numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fee-asymmetry-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fee_asymmetry_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        def down(a, b, c):
+            return a * b // c
+
+        def up(a, b, c):
+            return -(-a * b // c)
+
+        USDC = 1_000_000
+        # Virtual shares/assets at offset 0: +1 share, +1 asset.
+        S, A = 1_000_000 * USDC, 1_000_000 * USDC
+        TARGET = 95_000 * USDC
+        FEE = 500  # bps
+
+        def fee_of(gross):
+            return gross * FEE // 10_000
+
+        # (0) No fee: both doors agree exactly.
+        self.assertEqual(down(100_000 * USDC, S + 1, A + 1),
+                         100_000 * USDC)
+        self.assertEqual(up(100_000 * USDC, A + 1, S + 1),
+                         100_000 * USDC)
+
+        # (1) Fee on deposit only: 100,000 gross -> 5,000 fee,
+        # 95,000 net -> 95,000 shares; minting 95,000 shares
+        # costs 95,000. Saving 5,000.
+        self.assertEqual(fee_of(100_000 * USDC), 5_000 * USDC)
+        self.assertEqual(down(95_000 * USDC, S + 1, A + 1), TARGET)
+        self.assertEqual(up(TARGET, A + 1, S + 1), 95_000 * USDC)
+        self.assertEqual(100_000 * USDC - 95_000 * USDC,
+                         5_000 * USDC)
+
+        # (2) Price 1.10 (100,000 donated): minting 95,000 shares
+        # costs 104,500; depositing 110,000 gross (fee 5,500,
+        # net 104,500) mints 95,000. Saving 5,500 = 5% of gross.
+        A110 = A + 100_000 * USDC
+        self.assertEqual(up(TARGET, A110 + 1, S + 1), 104_500 * USDC)
+        self.assertEqual(fee_of(110_000 * USDC), 5_500 * USDC)
+        self.assertEqual(down(104_500 * USDC, S + 1, A110 + 1),
+                         TARGET)
+        self.assertEqual(110_000 * USDC - 104_500 * USDC,
+                         5_500 * USDC)
+
+        # (3) Price 0.90 (100,000 loss recognised): minting
+        # 95,000 shares costs 85,500.000001; depositing 90,000
+        # gross (fee 4,500, net 85,500) mints 94,999.999999
+        # shares — one base unit short. Saving 4,499.999999.
+        A090 = A - 100_000 * USDC
+        self.assertEqual(up(TARGET, A090 + 1, S + 1), 85_500_000_001)
+        self.assertEqual(fee_of(90_000 * USDC), 4_500 * USDC)
+        self.assertEqual(down(85_500 * USDC, S + 1, A090 + 1),
+                         TARGET - 1)
+        self.assertEqual(90_000 * USDC - 85_500_000_001,
+                         4_499_999_999)
+
+        # (4) Exit mirror: redeem 100,000 shares pays 100,000;
+        # withdraw 100,000 gross burns 100,000 shares, fee 5,000,
+        # nets 95,000.
+        self.assertEqual(down(100_000 * USDC, A + 1, S + 1),
+                         100_000 * USDC)
+        self.assertEqual(up(100_000 * USDC, S + 1, A + 1),
+                         100_000 * USDC)
+        self.assertEqual(100_000 * USDC - fee_of(100_000 * USDC),
+                         95_000 * USDC)
+
+        # (5) Both doors taxed: minting 95,000 shares costs
+        # 100,000 gross (fee 5,000) — identical to deposit.
+        net = up(TARGET, A + 1, S + 1)
+        gross = net * 10_000 // (10_000 - FEE)
+        self.assertEqual(gross, 100_000 * USDC)
+        self.assertEqual(gross - net, 5_000 * USDC)
+
+        # (6) Fee on mint only: depositing 95,000 mints 95,000
+        # free; minting costs 100,000 gross. The cheap door flips.
+        self.assertEqual(down(95_000 * USDC, S + 1, A + 1), TARGET)
+        self.assertEqual(gross, 100_000 * USDC)
+
+        # (7) Manager revenue on 2,000,000 inflow: all twenty
+        # entries taxed collect 100,000; half via the free door
+        # collect 50,000; 50,000 never collected.
+        self.assertEqual(20 * fee_of(100_000 * USDC),
+                         100_000 * USDC)
+        self.assertEqual(10 * fee_of(100_000 * USDC),
+                         50_000 * USDC)
+        self.assertEqual(100_000 * USDC - 50_000 * USDC,
+                         50_000 * USDC)
+
+        # (8) Guide page carries the headline numbers and the
+        # chart widths (deposit 100,000 vs mint 95,000).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-fee-asymmetry/", build)
+        for needle in ("104,500", "5,500", "85,500.000001",
+                       "94,999.999999", "4,499.999999", "50,000",
+                       "100,000", "width:100.0%", "width:95.0%",
+                       "Tax both doors and the bypass closes"):
+            self.assertIn(needle, build)
+
+        # (9) The guide never claims the fee is unavoidable or
+        # that mint charges the same fee when it does not.
+        self.assertNotIn("the fee is unavoidable", build)
+        self.assertNotIn("mint() also charges 5%", build)
+
+
 if __name__ == "__main__":
     unittest.main()
