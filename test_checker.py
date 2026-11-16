@@ -9029,6 +9029,124 @@ class TestChecker(unittest.TestCase):
         self.assertIn("the recapture channel does not exist", section)
         self.assertIn("A donation by itself never bills", section)
 
+    def test_donation_exit_fee_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-exit-fee/
+        # to its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00, Alice 100,000 shares (10%), Carol 900,000 (90%),
+        # a 5% exit fee on gross redemption value, and a 100,000
+        # USDC donation landing before the redemption unless a
+        # scenario says otherwise. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers in base units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-exit-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_exit_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        A0, S0 = 1_000_000 * U, 1_000_000 * U
+        AL, DON = 100_000 * U, 100_000 * U
+
+        def gross(sh, A, S):
+            return sh * A // S
+
+        def fee(g):
+            return g * 500 // 10_000
+
+        # (1) Control, no donation, fee retained: Alice gross
+        # 100,000, fee 5,000, net 95,000; vault keeps 905,000
+        # over 900,000 shares, price 181/180.
+        g1, f1 = gross(AL, A0, S0), fee(gross(AL, A0, S0))
+        self.assertEqual((g1, f1, g1 - f1),
+                         (100_000 * U, 5_000 * U, 95_000 * U))
+        A1, S1 = A0 - (g1 - f1), S0 - AL
+        self.assertEqual((A1, S1), (905_000 * U, 900_000 * U))
+        self.assertEqual(F(A1, U) / (S1 // U), F(181, 180))
+        # (2) Donation FIRST, fee retained (headline): price
+        # $1.10, Alice gross 110,000, fee 5,500, net 104,500;
+        # the donation raises her exit fee by 500 — 5% of her
+        # 10% share of the gift. Vault keeps 995,500, price
+        # 1991/1800.
+        A2, S2 = A0 + DON, S0
+        self.assertEqual(F(A2, U) / (S2 // U), F(11, 10))
+        g2, f2 = gross(AL, A2, S2), fee(gross(AL, A2, S2))
+        self.assertEqual((g2, f2, g2 - f2),
+                         (110_000 * U, 5_500 * U, 104_500 * U))
+        self.assertEqual(f2 - f1, 500 * U)
+        A2b = A2 - (g2 - f2)
+        self.assertEqual(A2b, 995_500 * U)
+        self.assertEqual(F(A2b, U) / ((S2 - AL) // U), F(1991, 1800))
+        # (3) Redeem FIRST, then donation: Alice nets 95,000,
+        # Carol takes the whole gift to 1,005,000, price 67/60;
+        # the order swing is 9,500 each way.
+        A3 = A1 + DON
+        self.assertEqual(A3, 1_005_000 * U)
+        self.assertEqual(F(A3, U) / (S1 // U), F(67, 60))
+        self.assertEqual((g2 - f2) - (g1 - f1), 9_500 * U)
+        self.assertEqual(A3 - A2b, 9_500 * U)
+        # (4) Fee to the MANAGER, donation first: Alice still
+        # nets 104,500, the manager takes 5,500 — 500 more than
+        # the control — Carol stays 990,000, price unchanged.
+        A4 = A2 - g2
+        self.assertEqual((g2 - f2, f2, A4),
+                         (104_500 * U, 5_500 * U, 990_000 * U))
+        self.assertEqual(f2 - f1, 500 * U)
+        self.assertEqual(F(A4, U) / ((S2 - AL) // U), F(11, 10))
+        # (5) BOTH exit after the donation, fee retained
+        # (headline): Alice nets 104,500; Carol grosses 995,500
+        # (lifted by the retained first fee), fee 49,775, net
+        # 945,725. Total fees 55,275 strand in the empty vault —
+        # 5,025 more than the 50,250 control: 5,000 is 5% of the
+        # donation, 25 is fee-on-fee.
+        g5a, f5a = g2, f2
+        A5, S5 = A2 - (g5a - f5a), S2 - AL
+        g5c = gross(900_000 * U, A5, S5)
+        f5c = fee(g5c)
+        self.assertEqual((g5c, f5c, g5c - f5c),
+                         (995_500 * U, 49_775 * U, 945_725 * U))
+        self.assertEqual(A5 - (g5c - f5c), 49_775 * U)
+        self.assertEqual(f5a + f5c, 55_275 * U)
+        gc1 = gross(900_000 * U, A1, S1)
+        fc1 = fee(gc1)
+        self.assertEqual((gc1, fc1), (905_000 * U, 45_250 * U))
+        self.assertEqual(f1 + fc1, 50_250 * U)
+        self.assertEqual((f5a + f5c) - (f1 + fc1), 5_025 * U)
+        self.assertEqual((f5a + f5c) - (f1 + fc1) - 5_000 * U, 25 * U)
+        self.assertEqual((f5a - f1) * 500 // 10_000, 25 * U)
+        # (6) PARTIAL exit, donation first: Alice redeems
+        # 50,000 shares, gross 55,000, fee 2,750, net 52,250;
+        # her remaining 50,000 shares are worth 55,144.736842;
+        # the extra fee is 250.
+        g6 = gross(50_000 * U, A2, S2)
+        f6 = fee(g6)
+        self.assertEqual((g6, f6, g6 - f6),
+                         (55_000 * U, 2_750 * U, 52_250 * U))
+        self.assertEqual(f6 - 2_500 * U, 250 * U)
+        A6, S6 = A2 - (g6 - f6), S2 - 50_000 * U
+        rem6 = gross(50_000 * U, A6, S6)
+        self.assertEqual(rem6, 55_144_736_842)
+        # (7) No-fee control with donation: Alice nets the full
+        # 110,000. The 500 in case 2 is purely the fee's cut.
+        self.assertEqual(g2, 110_000 * U)
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-donation-exit-fee/"')
+        section = build[start:start + 12000]
+        for needle in ("5,025", "fee-on-fee", "104,500", "49,775",
+                       "945,725", "55,144.736842", "1,005,000",
+                       "995,500", "1991/1800"):
+            self.assertIn(needle, section)
+        self.assertIn("taxes the donation twice", section)
+
 
 
 if __name__ == "__main__":
