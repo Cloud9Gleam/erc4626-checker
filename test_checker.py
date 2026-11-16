@@ -6617,6 +6617,170 @@ class TestChecker(unittest.TestCase):
             build_text.count(
                 'add("/guides/erc4626-donation-harvest-timing/"'), 1)
 
+    def test_donation_nested_vault_fee_guide_numbers(self):
+        # Pins /guides/erc4626-donation-nested-vault-fee/ to its
+        # model: a donation into a vault of vaults is skimmed
+        # once per fee layer it crosses, so where it lands
+        # decides how much survives. Inner I and outer O each
+        # 1,000,000 USDC / 1,000,000 shares at $1.00; O holds
+        # 1,000,000 I shares; holder owns 10,000 O shares (1%);
+        # donation 100,000; each layer charges 2% minted as
+        # shares. Importing the model re-runs its assertions;
+        # the checks below independently re-derive every
+        # headline number with plain Fraction arithmetic.
+        # Two rounding corrections vs the model's prose and the
+        # 21:21 run log, both pinned here by exact fractions:
+        # S2 "donation adds" is 2,500,000/2,601 = 961.168781
+        # (not 961.168782), and the second layer's extra skim
+        # is 50,000/2,601 = 19.223376 (not 19.223375).
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-nested-vault-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_nested_vault_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        A0 = Fraction(1_000_000)
+        SUPPLY0 = Fraction(1_000_000)
+        HOLDER = Fraction(10_000)
+        DONATION = Fraction(100_000)
+        FEE = Fraction(2, 100)
+
+        def price(assets, supply):
+            return assets / supply
+
+        def value(shares, assets, supply):
+            return shares * price(assets, supply)
+
+        # Baselines, no donation: inner-fee-only holder
+        # 500,000/51; both-fees holder 25,000,000/2,601.
+        inner_price_base = price(A0, SUPPLY0 + FEE * SUPPLY0)
+        self.assertEqual(inner_price_base, Fraction(50, 51))
+        self.assertEqual(value(HOLDER, A0 * inner_price_base,
+                               SUPPLY0),
+                         Fraction(500_000, 51))
+        outer_price_base = price(A0 * inner_price_base,
+                                 SUPPLY0 + FEE * SUPPLY0)
+        self.assertEqual(outer_price_base, Fraction(2500, 2601))
+        self.assertEqual(value(HOLDER, A0 * inner_price_base,
+                               SUPPLY0 + FEE * SUPPLY0),
+                         Fraction(25_000_000, 2601))
+
+        # S0: donation into I, no fees — inner price 11/10,
+        # holder 11,000, gift whole.
+        a0, s0 = A0 + DONATION, SUPPLY0
+        self.assertEqual(price(a0, s0), Fraction(11, 10))
+        self.assertEqual(value(HOLDER, a0, s0), 11_000)
+        self.assertEqual(value(HOLDER, a0, s0)
+                         - value(HOLDER, A0, SUPPLY0), 1_000)
+
+        # S1: donation into I, inner fee only — inner price
+        # 55/51; holder 550,000/51; donation adds 50,000/51;
+        # skimmed 1,000/51; inner manager 1,100,000/51.
+        inner_supply = SUPPLY0 + FEE * SUPPLY0
+        inner_price_s1 = price(A0 + DONATION, inner_supply)
+        self.assertEqual(inner_price_s1, Fraction(55, 51))
+        # Holder value = shares x outer price; O's assets are
+        # 1,000,000 I shares worth inner_price each, O charges
+        # nothing here so its price is the inner price.
+        holder_s1 = HOLDER * price(
+            SUPPLY0 * inner_price_s1, SUPPLY0)
+        self.assertEqual(holder_s1, Fraction(550_000, 51))
+        self.assertEqual(holder_s1 - Fraction(500_000, 51),
+                         Fraction(50_000, 51))
+        self.assertEqual(Fraction(1_000)
+                         - (holder_s1 - Fraction(500_000, 51)),
+                         Fraction(1_000, 51))
+        inner_mgr_s1 = (FEE * SUPPLY0) * inner_price_s1
+        self.assertEqual(inner_mgr_s1, Fraction(1_100_000, 51))
+
+        # S2: donation into I, BOTH fees — inner price 55/51,
+        # outer price 2,750/2,601; holder 27,500,000/2,601;
+        # donation adds 2,500,000/2,601; skimmed 101,000/2,601;
+        # second layer extra 50,000/2,601; managers
+        # 1,100,000/51 + 55,000,000/2,601 = 42,714.340638,
+        # the nested-vault-fee +10% year total.
+        outer_assets_s2 = SUPPLY0 * inner_price_s1
+        outer_supply = SUPPLY0 + FEE * SUPPLY0
+        outer_price_s2 = price(outer_assets_s2, outer_supply)
+        self.assertEqual(outer_price_s2, Fraction(2750, 2601))
+        holder_s2 = HOLDER * outer_price_s2
+        self.assertEqual(holder_s2, Fraction(27_500_000, 2601))
+        self.assertEqual(holder_s2 - Fraction(25_000_000, 2601),
+                         Fraction(2_500_000, 2601))
+        self.assertEqual(Fraction(1_000)
+                         - (holder_s2 - Fraction(25_000_000, 2601)),
+                         Fraction(101_000, 2601))
+        self.assertEqual(Fraction(101_000, 2601)
+                         - Fraction(1_000, 51),
+                         Fraction(50_000, 2601))
+        inner_mgr_s2 = (FEE * SUPPLY0) * inner_price_s1
+        outer_mgr_s2 = (FEE * SUPPLY0) * outer_price_s2
+        self.assertEqual(inner_mgr_s2, Fraction(1_100_000, 51))
+        self.assertEqual(outer_mgr_s2, Fraction(55_000_000, 2601))
+        self.assertEqual(inner_mgr_s2 + outer_mgr_s2,
+                         Fraction(111_100_000, 2601))
+
+        # S3: donation lands at the OUTER level, both fees —
+        # inner price 50/51; outer assets 55,100,000/51;
+        # outer price 2,755/2,601; holder 27,550,000/2,601;
+        # donation adds 2,550,000/2,601 = 50,000/51, exactly
+        # the S1 adds; skimmed only 1,000/51; inner manager
+        # 1,000,000/51; outer manager 55,100,000/2,601.
+        inner_price_s3 = Fraction(50, 51)
+        outer_assets_s3 = SUPPLY0 * inner_price_s3 + DONATION
+        self.assertEqual(outer_assets_s3, Fraction(55_100_000, 51))
+        outer_price_s3 = price(outer_assets_s3, outer_supply)
+        self.assertEqual(outer_price_s3, Fraction(2755, 2601))
+        holder_s3 = HOLDER * outer_price_s3
+        self.assertEqual(holder_s3, Fraction(27_550_000, 2601))
+        self.assertEqual(holder_s3 - Fraction(25_000_000, 2601),
+                         Fraction(2_550_000, 2601))
+        self.assertEqual(Fraction(2_550_000, 2601),
+                         Fraction(50_000, 51))
+        self.assertEqual(Fraction(1_000)
+                         - (holder_s3 - Fraction(25_000_000, 2601)),
+                         Fraction(1_000, 51))
+        inner_mgr_s3 = (FEE * SUPPLY0) * inner_price_s3
+        outer_mgr_s3 = (FEE * SUPPLY0) * outer_price_s3
+        self.assertEqual(inner_mgr_s3, Fraction(1_000_000, 51))
+        self.assertEqual(outer_mgr_s3, Fraction(55_100_000, 2601))
+        # Landing level is worth 50,000/2,601 to the holder.
+        self.assertEqual(holder_s3 - holder_s2,
+                         Fraction(50_000, 2601))
+
+        # S4: control — donation into I, outer fee only.
+        # Identical to S1: 550,000/51.
+        outer_price_s4 = price(A0 + DONATION, outer_supply)
+        self.assertEqual(outer_price_s4, Fraction(55, 51))
+        self.assertEqual(HOLDER * outer_price_s4,
+                         Fraction(550_000, 51))
+        self.assertEqual(HOLDER * outer_price_s4, holder_s1)
+
+        # Chart widths (holder final, scaled to 11,000,
+        # rounded to one decimal — the site-wide convention):
+        # 100.0 / 98.0 / 96.1 / 96.3 / 98.0.
+        finals = [Fraction(11_000), holder_s1, holder_s2,
+                  holder_s3, HOLDER * outer_price_s4]
+        widths = [round(float(v) / 11_000 * 100, 1)
+                  for v in finals]
+        self.assertEqual(widths, [100.0, 98.0, 96.1, 96.3, 98.0])
+
+        # Guide text pins: slug registered, the per-layer
+        # sentence present, and exactly one add() for this slug.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-nested-vault-fee/",
+                      build_text)
+        self.assertIn("skimmed once per layer",
+                      build_text)
+        self.assertEqual(
+            build_text.count(
+                'add("/guides/erc4626-donation-nested-vault-fee/"'), 1)
+
     def test_supply_cap_guide_numbers(self):
         # Pins /guides/erc4626-supply-cap/ to its model: a vault
         # caps totalSupply at 1,000,000 whole shares (10**12 raw
