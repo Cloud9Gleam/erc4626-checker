@@ -8180,6 +8180,119 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("the donation splits pro-rata between "
                          "fulfillments", build)
 
+    def test_donation_deposit_queue_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-deposit-queue/
+        # to its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00. Bob holds 900,000 shares (90%), Carol 100,000
+        # (10%); Alice's 100,000 USDC deposit sits unprocessed in an
+        # async queue; a 100,000 USDC donation (or a 100,000 USDC
+        # loss) lands at a stated point relative to processing.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-deposit-queue-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_deposit_queue_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        # (1) Baseline, no donation: Alice mints 100,000 shares at
+        # $1.00, worth 100,000.
+        self.assertEqual(F(100_000 * 1_000_000, 1_000_000), 100_000)
+        # (2) Donation before processing, execution pricing: price
+        # 11/10; Alice mints 1,000,000/11 = 90,909.090909 shares,
+        # short 100,000/11; worth exactly her deposit; Bob +90,000,
+        # Carol +10,000; floor dust 1/11 share worth $0.10.
+        self.assertEqual(F(1_100_000, 1_000_000), F(11, 10))
+        self.assertEqual(F(100_000 * 1_000_000, 1_100_000),
+                         F(1_000_000, 11))
+        self.assertEqual(100_000 - F(1_000_000, 11), F(100_000, 11))
+        self.assertEqual(F(1_000_000, 11) * F(11, 10), 100_000)
+        self.assertEqual(F(900_000 * 1_100_000, 1_000_000), 990_000)
+        self.assertEqual(F(100_000 * 1_100_000, 1_000_000), 110_000)
+        self.assertEqual(100_000 * 1_000_000 // 1_100_000, 90_909)
+        self.assertEqual(F(1, 11) * F(11, 10), F(1, 10))
+        # (3) Loss before processing, execution pricing: price 9/10;
+        # Alice mints 1,000,000/9 = 111,111.111111 shares, worth
+        # exactly her deposit; Bob -90,000, Carol -10,000.
+        self.assertEqual(F(900_000, 1_000_000), F(9, 10))
+        self.assertEqual(F(1_000_000, 9) - 100_000, F(100_000, 9))
+        self.assertEqual(F(900_000 * 900_000, 1_000_000), 810_000)
+        self.assertEqual(F(100_000 * 900_000, 1_000_000), 90_000)
+        # (4) Lock-in, donation: price 12/11; Alice worth
+        # 1,200,000/11 = 109,090.909091 (+100,000/11 = G/11); Bob
+        # +900,000/11, Carol +100,000/11; design difference exactly
+        # 100,000/11.
+        self.assertEqual(F(1_200_000, 1_100_000), F(12, 11))
+        self.assertEqual(F(100_000 * 1_200_000, 1_100_000),
+                         F(1_200_000, 11))
+        self.assertEqual(F(1_200_000, 11) - 100_000, F(100_000, 11))
+        self.assertEqual(F(900_000 * 1_200_000, 1_100_000),
+                         F(10_800_000, 11))
+        self.assertEqual(F(10_800_000, 11) - 900_000, F(900_000, 11))
+        self.assertEqual(F(1_200_000, 11) - 100_000, F(100_000, 11))
+        # (5) Lock-in, loss: price 10/11; Alice worth 1,000,000/11
+        # = 90,909.090909 (-100,000/11); Bob -900,000/11, Carol
+        # -100,000/11.
+        self.assertEqual(F(1_000_000, 1_100_000), F(10, 11))
+        self.assertEqual(F(100_000 * 1_000_000, 1_100_000),
+                         F(1_000_000, 11))
+        self.assertEqual(100_000 - F(1_000_000, 11), F(100_000, 11))
+        self.assertEqual(F(900_000 * 1_000_000, 1_100_000),
+                         F(9_000_000, 11))
+        # (6) Partial processing straddles the donation: first half
+        # 50,000 shares at $1.00; second half at 23/21 mints
+        # 1,050,000/23 = 45,652.173913 shares; Alice total
+        # 2,200,000/23 shares worth 2,200,000/21 = 104,761.904762,
+        # between execution (100,000) and lock-in (1,200,000/11);
+        # three-way sum is exactly 1,200,000.
+        self.assertEqual(F(1_150_000, 1_050_000), F(23, 21))
+        self.assertEqual(F(50_000 * 1_050_000, 1_150_000),
+                         F(1_050_000, 23))
+        self.assertEqual(F(2_200_000, 23), 50_000 + F(1_050_000, 23))
+        self.assertEqual(F(2_200_000, 21), F(2_200_000, 21))
+        self.assertTrue(100_000 < F(2_200_000, 21) < F(1_200_000, 11))
+        self.assertEqual(F(2_200_000, 21) + F(20_700_000, 21)
+                         + F(2_300_000, 21), 1_200_000)
+        # (7) One-block boundary: donation after processing equals
+        # the lock-in numbers; the boundary moves 100,000/11.
+        self.assertEqual(F(100_000 * 1_200_000, 1_100_000),
+                         F(1_200_000, 11))
+        self.assertEqual(F(1_200_000, 11) - 100_000, F(100_000, 11))
+
+        # (8) Guide page carries the headline numbers and the chart
+        # widths (Alice's stake by design: 100,000 / 109,090.909091
+        # / 104,761.904762 -> 91.7 / 100.0 / 96.0). The live guide
+        # states Bob's lock-in gain (81,818.181818) without printing
+        # his 981,818.181818 total, so that total is pinned by the
+        # model re-derivation above, not by a page needle.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-deposit-queue/", build)
+        for needle in ("90,909.090909", "9,090.909091",
+                       "109,090.909091", "104,761.904762",
+                       "95,652.173913", "45,652.173913",
+                       "111,111.111111", "11,111.111111",
+                       "81,818.181818",
+                       "985,714.285714", "109,523.809524",
+                       "90,909.090909",
+                       "12/11", "10/11", "23/21",
+                       "width:91.7%", "width:100.0%",
+                       "width:96.0%"):
+            self.assertIn(needle, build)
+
+        # (9) The guide states the honest overlap (cases 2-3 are the
+        # donation-attack pro-rata split, relabelled) and that the
+        # new content is cases 4-7; it never claims the queued
+        # depositor captures a donation under execution pricing.
+        self.assertIn("The new content here is cases 4", build)
+        self.assertNotIn("Alice captures the donation under "
+                         "execution pricing", build)
+
 
 if __name__ == "__main__":
     unittest.main()
