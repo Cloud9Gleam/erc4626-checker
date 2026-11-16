@@ -995,6 +995,14 @@ class TestChecker(unittest.TestCase):
         default = build.email_para(6, 1_000_000, 1000, 100_000_000_000)
         self.assertIn("vault_assets_usdc%3D0", default)
         self.assertIn("vault_shares%3D0", default)
+        # No scientific notation anywhere in the body: ":g" renders
+        # 1,000,000 as "1e+06", which a human reading the body should
+        # not have to decode.
+        big = build.email_para(0, 1_000_000 * USDC, 0,
+                               1_000_000 * USDC, 1_000_000 * USDC, 1_000_000)
+        self.assertNotIn("e+", big)
+        self.assertIn("min_deposit_usdc%3D1000000", big)
+        self.assertIn("victim_deposit_usdc%3D1000000", big)
 
     def test_exit_fee_guide_numbers(self):
         # Exit-fee guide (site/exit-fee-model.py): a 5% fee on redemption.
