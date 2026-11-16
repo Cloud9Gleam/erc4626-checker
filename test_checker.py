@@ -10204,5 +10204,120 @@ class TestChecker(unittest.TestCase):
             build)
 
 
+    def test_donation_async_vault_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-async-vault/
+        # to its model: vault 1,000,000 USDC / 1,000,000 shares at
+        # $1.00, Alice 10,000 shares; Bob pending redeem 100,000
+        # shares (preview 100,000), Carol pending deposit 50,000
+        # (preview 50,000 shares); donation 100,000 lands while
+        # both wait. Pending deposit money is in escrow (not in
+        # totalAssets); pending redeem shares stay in totalSupply.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers in
+        # plain USDC units. Display strings follow the model's
+        # truncation to 6 decimals (t6r), not half-up rounding.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-async-vault-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_async_vault_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        A0, S0, H = F(1_000_000), F(1_000_000), F(10_000)
+        DONATION = F(100_000)
+        R, DEP = F(100_000), F(50_000)
+
+        def t6r(fr):
+            q = (fr * U).numerator // (fr * U).denominator
+            return f"{q // U}.{q % U:06d}"
+
+        # (1) Donation lands, redeem fulfils: price $1.10, Bob
+        # 110,000 (+10,000), Alice 11,000 (+1,000); the gift
+        # splits pro-rata among holders at fulfilment.
+        p1 = (A0 + DONATION) / S0
+        self.assertEqual(p1, F(11, 10))
+        bob1 = R * p1
+        self.assertEqual(bob1, 110_000)
+        self.assertEqual(bob1 - 100_000, DONATION * R / S0)
+        alice1 = H * p1
+        self.assertEqual(alice1, 11_000)
+        self.assertEqual(alice1 - 10_000, DONATION * H / S0)
+
+        # (1b) Control: Bob redeems before the donation: 100,000,
+        # then price 10/9, Alice 100,000/9 = 11,111.111111 — the
+        # async delay diverts 111.111111 of her slice to Bob.
+        bob_sync = R * (A0 / S0)
+        self.assertEqual(bob_sync, 100_000)
+        p1b = (A0 - bob_sync + DONATION) / (S0 - R)
+        self.assertEqual(p1b, F(10, 9))
+        alice1b = H * p1b
+        self.assertEqual(alice1b, F(100_000, 9))
+        self.assertEqual(t6r(alice1b), "11111.111111")
+        self.assertEqual(alice1b - alice1, F(1_000, 9))
+        self.assertEqual(t6r(alice1b - alice1), "111.111111")
+
+        # (2) Donation lands, deposit fulfils: Carol mints
+        # 500,000/11 = 45,454.545454 shares, 4,545.454545 fewer
+        # than preview; value unchanged at 50,000.
+        carol2 = DEP * S0 / (A0 + DONATION)
+        self.assertEqual(carol2, F(500_000, 11))
+        self.assertEqual(t6r(carol2), "45454.545454")
+        self.assertEqual(t6r(50_000 - carol2), "4545.454545")
+        self.assertEqual(carol2 * p1, 50_000)
+        A2, S2 = A0 + DONATION + DEP, S0 + carol2
+        self.assertEqual((A2, S2), (1_150_000, F(11_500_000, 11)))
+        self.assertEqual(t6r(S2), "1045454.545454")
+        self.assertEqual(H * (A2 / S2), 11_000)
+
+        # (3) Deposit fulfils first, then the donation: Carol
+        # 50,000 shares at $1.095238, value 54,761.904761 —
+        # she captures 4,761.904761 of the gift.
+        carol3 = DEP * S0 / A0
+        self.assertEqual(carol3, 50_000)
+        p3 = (A0 + DEP + DONATION) / (S0 + carol3)
+        self.assertEqual(p3, F(23, 21))
+        self.assertEqual(t6r(p3), "1.095238")
+        value3 = carol3 * p3
+        self.assertEqual(value3, F(1_150_000, 21))
+        self.assertEqual(t6r(value3), "54761.904761")
+        self.assertEqual(t6r(value3 - 50_000), "4761.904761")
+        alice3 = H * p3
+        self.assertEqual(alice3, F(230_000, 21))
+        self.assertEqual(t6r(alice3), "10952.380952")
+
+        # (4) Both pending, donation first: either fulfilment
+        # order ends at 1,040,000 / 10,400,000/11 at $1.10.
+        Ab, Sb = A0 + DONATION - R * p1, S0 - R
+        carol_b = DEP * Sb / Ab
+        self.assertEqual(carol_b, F(500_000, 11))
+        Ab, Sb = Ab + DEP, Sb + carol_b
+        self.assertEqual((Ab, Sb), (1_040_000, F(10_400_000, 11)))
+        self.assertEqual(t6r(Sb), "945454.545454")
+        self.assertEqual(Ab / Sb, F(11, 10))
+        self.assertEqual(H * (Ab / Sb), 11_000)
+
+        # (5) Timing switch: 10,000 routed by fulfilment time
+        # alone; Alice's slice of the move is 1,000/9.
+        moved = DONATION * R / S0
+        self.assertEqual(moved, 10_000)
+        self.assertEqual(moved * H / (S0 - R), F(1_000, 9))
+
+        # (6) Donor is the redeemer: payout 110,000, net cash
+        # 10,000 after the gift; donating costs him 90,000.
+        bob6 = R * p1
+        self.assertEqual(bob6, 110_000)
+        self.assertEqual(bob6 - DONATION, 10_000)
+        self.assertEqual(100_000 - (bob6 - DONATION), 90_000)
+
+        # Chart widths: redeemer-after 100.0%, depositor-before
+        # 4,761.904761 / 10,000 = 47.619...% -> 47.6%.
+        self.assertEqual(round(float(F(100_000, 21) / 10_000 * 100), 1), 47.6)
+
+
 if __name__ == "__main__":
     unittest.main()
