@@ -5586,6 +5586,71 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(redeem(S0, 1_100_000 * USDC, S0),
                          1_100_000 * USDC)
 
+    def test_donation_performance_fee_timing_guide_numbers(self):
+        # Pins the timing sections of
+        # /guides/erc4626-donation-performance-fee/: a new depositor
+        # who arrives after crystallisation is whole, one who arrives
+        # before it has their own deposit charged as "performance".
+        # Vault 1,000,000 USDC / 1,000,000 shares at $1.00, HWM
+        # 1,000,000, fee 20%; donation 100,000; for the timing cases
+        # the holders are split Alice 100,000 (10%), Carol 900,000
+        # (90%). Plain integer arithmetic, floor like Solidity.
+        USDC = 1_000_000
+        A0, S0, HWM = 1_000_000 * USDC, 1_000_000 * USDC, 1_000_000 * USDC
+        ALICE = 100_000 * USDC
+
+        def fee_accrued(assets, hwm):
+            gain = assets - hwm
+            return gain * 20 // 100 if gain > 0 else 0
+
+        def crystallise(assets, supply, hwm):
+            fee = fee_accrued(assets, hwm)
+            fee_shares = fee * supply // assets if fee else 0
+            return supply + fee_shares, fee_shares, fee
+
+        def mint(deposit, assets, supply):
+            return deposit * supply // assets
+
+        def redeem(shares, assets, supply):
+            return shares * assets // supply
+
+        # Crystallise the donation first: fee 20,000, fee shares
+        # 18,181.818181, price diluted to 1.080357...
+        s1, fshares1, fee1 = crystallise(A0 + 100_000 * USDC, S0, HWM)
+        self.assertEqual((fee1, fshares1),
+                         (20_000 * USDC, 18_181_818_181))
+
+        # (A) Victim deposits 100,000 AFTER crystallisation: gets
+        # 92,561.983471 shares (more than 90,909.090909 at the
+        # undiluted 1.10 price) and redeems exactly 100,000.
+        v_after = mint(100_000 * USDC, 1_100_000 * USDC, s1)
+        self.assertEqual(v_after, 92_561_983_471)
+        self.assertEqual(redeem(v_after, 1_200_000 * USDC,
+                                s1 + v_after), 100_000 * USDC)
+
+        # (B) Victim deposits 100,000 BEFORE crystallisation: gets
+        # 90,909.090909 shares at 1.10; the fee base is now 200,000
+        # (donation + the victim's own deposit), fee 40,000, fee
+        # shares 36,363.636363; victim redeems 96,774.193548 and
+        # loses 3,225.806452; Alice redeems 106,451.612903.
+        v_before = mint(100_000 * USDC, 1_100_000 * USDC, S0)
+        self.assertEqual(v_before, 90_909_090_909)
+        s7, fshares6, fee6 = crystallise(1_200_000 * USDC,
+                                         S0 + v_before, HWM)
+        self.assertEqual((fee6, fshares6),
+                         (40_000 * USDC, 36_363_636_363))
+        vic_out = redeem(v_before, 1_200_000 * USDC, s7)
+        self.assertEqual(vic_out, 96_774_193_548)
+        self.assertEqual(100_000 * USDC - vic_out, 3_225_806_452)
+        self.assertEqual(redeem(ALICE, 1_200_000 * USDC, s7),
+                         106_451_612_903)
+
+        # The donation prepays the next fee: after crystallisation
+        # the mark is 1,100,000, so a lose-100,000 / earn-100,000
+        # round trip with zero net real gain accrues no further fee.
+        self.assertEqual(fee_accrued(1_100_000 * USDC,
+                                     1_100_000 * USDC), 0)
+
     def test_donation_management_fee_guide_numbers(self):
         # Pins /guides/erc4626-donation-management-fee/ to its model:
         # a 2% management fee charged once at year end at 2% of
@@ -11696,6 +11761,20 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(baseline4
                          - Fraction(12_500_000_001, U),
                          Fraction(12_499_999_989, 11_000_000))
+        # Integer-floor baseline, as the guide prints it: the
+        # no-gift redeem floors to 86,363,636,363 base units,
+        # so the loss is 13,636,363,637 — one base unit above
+        # the exact fraction 150,000/11. The guide's S0/S1/S4
+        # numbers are all floor values; the baseline was the
+        # one place it printed the rounded exact fraction.
+        out4_base_int = (100_000 * U * 950_000 * U) // (1_100_000 * U)
+        self.assertEqual(out4_base_int, 86_363_636_363)
+        self.assertEqual(100_000 * U - out4_base_int, 13_636_363_637)
+        # Integer cushion: floor baseline minus floor with-gift
+        # loss is exactly 1,136,363,636 base units.
+        self.assertEqual((100_000 * U - out4_base_int)
+                         - (100_000 * U - out4_int),
+                         1_136_363_636)
 
         # The guide page exists exactly once, with its slug and
         # headline numbers.
@@ -11708,7 +11787,24 @@ class TestChecker(unittest.TestCase):
         self.assertIn("9,090.909091", build_text)
         self.assertIn("87,499.999999", build_text)
         self.assertIn("12,500.000001", build_text)
-        self.assertIn("13,636.363636", build_text)
+        self.assertIn("13,636.363637", build_text)
+        self.assertIn("86,363.636363", build_text)
+        # The rounded-exact values must not survive anywhere
+        # in this guide's own block (13,636.363636 is correct
+        # in the donation-harvest-timing guide, so scope the
+        # negative check to this page's add() block and its
+        # index entry, not the whole file).
+        start = build_text.find(
+            'add("/guides/erc4626-donation-loss-recognition/"')
+        end = build_text.find('add("/guides/', start + 10)
+        block = build_text[start:end]
+        self.assertNotIn("13,636.363636", block)
+        self.assertNotIn("86,363.636364", block)
+        idx = build_text.find(
+            '<a href="/guides/erc4626-donation-loss-recognition/">')
+        idx_end = build_text.find("</li>", idx)
+        self.assertIn("13,636.363637", build_text[idx:idx_end])
+        self.assertNotIn("13,636.363636", build_text[idx:idx_end])
 
 
     def test_donation_bridge_shares_guide_numbers(self):
