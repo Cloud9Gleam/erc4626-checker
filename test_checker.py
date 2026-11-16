@@ -11121,5 +11121,27 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(round(float(F(100_000, 11) / 10_000 * 100), 1), 90.9)
 
 
+    def test_loss_chart_note_names_worst_row_value(self):
+        # The bar chart is scaled to the worst row, and the 1B row's bar
+        # is shorter than the 1M row's — without the anchor value in the
+        # caption a reader misreads "bigger donation = safer". The note
+        # must name the worst row's loss in USDC.
+        import importlib.util
+        from pathlib import Path
+        spec = importlib.util.spec_from_file_location(
+            "site_build", Path.home() / "workspace/taskmarket/site/build.py")
+        build = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(build)
+        for off, mn, fee, worst in ((0, 0, 0, "0.909091"),
+                                    (6, 1_000_000, 1000, "0.000900")):
+            v = Vault(decimals_offset=off, min_deposit=mn, perf_fee_bps=fee)
+            html = build.results_html(run_all(v), off=off, mn=mn, fee=fee)
+            self.assertIn(
+                "Bars are scaled to the worst row in this table "
+                f"({worst} USDC)", html)
+            self.assertNotIn(
+                "Bars are scaled to the worst row in this table;", html)
+
+
 if __name__ == "__main__":
     unittest.main()
