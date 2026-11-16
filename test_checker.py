@@ -12338,5 +12338,258 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(dead, [])
 
 
+    def test_cross_chain_permit_replay_guide_numbers(self):
+        # Pins the six numbers of
+        # /guides/erc4626-cross-chain-permit-replay/: a permit signed
+        # on chain 1, replayed on chain 8453. Vault 1,000,000 USDC /
+        # 1,000,000 shares at $1.00 on both chains (same address);
+        # Alice holds 100,000 USDC per chain, nonce 0 per chain.
+        # Minimal EIP-2612 harness: bound=True rejects a signature
+        # whose signed chain is not this chain ("invalid signature");
+        # bound=False accepts any signed chain. Nonces per chain.
+        USDC = 1_000_000
+        VALUE = 100_000 * USDC
+
+        def make_chain(bound):
+            return {"bound": bound, "nonces": {}, "allow": {},
+                    "vault": Vault(total_assets=1_000_000 * USDC,
+                                   total_supply=1_000_000 * USDC,
+                                   decimals_offset=0),
+                    "underlying": {"alice": VALUE, "attacker": 0},
+                    "shares": {}}
+
+        def permit(chain, owner, spender, value, nonce, signed_chain):
+            if chain["bound"] and signed_chain != chain["id"]:
+                raise ValueError("invalid signature")
+            if nonce != chain["nonces"].get(owner, 0):
+                raise ValueError("invalid nonce")
+            chain["nonces"][owner] = nonce + 1
+            chain["allow"][(owner, spender)] = value
+
+        def deposit_with_permit(chain, owner, value, nonce,
+                                signed_chain, receiver):
+            permit(chain, owner, "vault", value, nonce, signed_chain)
+            assert chain["underlying"][owner] >= value
+            chain["underlying"][owner] -= value
+            shares = chain["vault"].deposit(value)
+            chain["shares"][receiver] = \
+                chain["shares"].get(receiver, 0) + shares
+            return shares
+
+        # Pair 1: chainId-less separator on chain 8453.
+        a = make_chain(True); a["id"] = 1
+        b = make_chain(False); b["id"] = 8453
+        # 1. Legit chain-1 deposit: Alice 100,000 shares, nonce A 0->1.
+        self.assertEqual(
+            deposit_with_permit(a, "alice", VALUE, 0, 1, "alice"),
+            VALUE)
+        self.assertEqual(a["nonces"]["alice"], 1)
+        self.assertEqual(a["underlying"]["alice"], 0)
+        # 2. Same-chain replay reverts on the nonce.
+        with self.assertRaises(ValueError) as ctx:
+            permit(a, "alice", "vault", VALUE, 0, 1)
+        self.assertEqual(str(ctx.exception), "invalid nonce")
+        # 3. Cross-chain replay: attacker gets 100,000 shares,
+        # Alice's chain-8453 balance 0, vault 1,100,000 USDC.
+        self.assertEqual(
+            deposit_with_permit(b, "alice", VALUE, 0, 1, "attacker"),
+            VALUE)
+        self.assertEqual(b["shares"]["attacker"], VALUE)
+        self.assertEqual(b["underlying"]["alice"], 0)
+        self.assertEqual(b["nonces"]["alice"], 1)
+        self.assertEqual(b["vault"].total_assets, 1_100_000 * USDC)
+
+        # Pair 2: chainId-bound separator on both chains.
+        b2 = make_chain(True); b2["id"] = 8453
+        # 4. Defense: 'invalid signature', nonce B still 0,
+        # Alice keeps her 100,000 USDC, attacker 0 shares.
+        with self.assertRaises(ValueError) as ctx:
+            deposit_with_permit(b2, "alice", VALUE, 0, 1, "attacker")
+        self.assertEqual(str(ctx.exception), "invalid signature")
+        self.assertEqual(b2["nonces"].get("alice", 0), 0)
+        self.assertEqual(b2["underlying"]["alice"], VALUE)
+        self.assertEqual(b2["shares"].get("attacker", 0), 0)
+        # 5. Legit chain-8453 deposit with a fresh permit works.
+        self.assertEqual(
+            deposit_with_permit(b2, "alice", VALUE, 0, 8453, "alice"),
+            VALUE)
+        self.assertEqual(b2["shares"]["alice"], VALUE)
+        self.assertEqual(b2["nonces"]["alice"], 1)
+
+    def test_donation_permit_timing_guide_numbers(self):
+        # Pins the five numbers of
+        # /guides/erc4626-donation-permit-timing/: Alice signs a
+        # permit at $1.00, an attacker holding 100,000 shares (10%)
+        # donates 100,000 USDC before the relayer executes, price
+        # $1.10. Minimal EIP-2612 harness (deadline + nonce),
+        # reusing the checker's own Vault for every conversion.
+        USDC = 1_000_000
+        NOW = 1_700_000_000
+        VALUE = 100_000 * USDC
+
+        class PermitToken:
+            def __init__(self):
+                self.allowances = {}
+                self.nonces = {}
+
+            def nonce_of(self, owner):
+                return self.nonces.get(owner, 0)
+
+            def permit(self, owner, spender, value, deadline,
+                       nonce, now):
+                if deadline < now:
+                    raise ValueError("permit expired")
+                if nonce != self.nonce_of(owner):
+                    raise ValueError("invalid nonce")
+                self.nonces[owner] = nonce + 1
+                self.allowances[(owner, spender)] = value
+
+            def spend(self, owner, spender, amount):
+                allowed = self.allowances.get((owner, spender), 0)
+                if allowed < amount:
+                    raise ValueError("insufficient allowance")
+                self.allowances[(owner, spender)] = allowed - amount
+
+        def fresh_vault():
+            return Vault(total_assets=1_000_000 * USDC,
+                         total_supply=1_000_000 * USDC,
+                         decimals_offset=0)
+
+        def execute_signed(v, token, underlying, owner, assets,
+                           receiver, shares_book):
+            token.spend(owner, "vault", assets)
+            assert underlying[owner] >= assets
+            underlying[owner] -= assets
+            shares = v.deposit(assets)
+            shares_book[receiver] = \
+                shares_book.get(receiver, 0) + shares
+            return shares
+
+        # 1. Control: immediate execution at $1.00, 100,000 shares.
+        v = fresh_vault()
+        token = PermitToken()
+        token.permit("alice", "vault", VALUE, NOW + 3600, 0, NOW)
+        underlying = {"alice": VALUE}
+        shares_book = {}
+        token.spend("alice", "vault", VALUE)
+        underlying["alice"] -= VALUE
+        shares = v.deposit(VALUE)
+        shares_book["alice"] = shares
+        self.assertEqual(shares, VALUE)
+        self.assertEqual(token.nonce_of("alice"), 1)
+        # 2. Attack: sign at $1.00, donate 100,000, execute at $1.10.
+        v = fresh_vault()
+        token = PermitToken()
+        token.permit("alice", "vault", VALUE, NOW + 3600, 0, NOW)
+        v.donate(VALUE)
+        underlying = {"alice": VALUE}
+        shares_book = {"attacker": VALUE}
+        shares = execute_signed(v, token, underlying, "alice", VALUE,
+                                "alice", shares_book)
+        self.assertEqual(shares, 90_909_090_909)
+        self.assertEqual(v.convert_to_assets(shares), 99_999_999_999)
+        self.assertEqual(110_000 * USDC - v.convert_to_assets(shares),
+                         10_000_000_001)
+        redeemed = v.redeem(VALUE)
+        self.assertEqual(redeemed, 110_000 * USDC)
+        self.assertEqual(redeemed - VALUE, 10_000 * USDC)
+        # 3. Defense: 60s deadline, execution at +120s reverts.
+        v = fresh_vault()
+        token = PermitToken()
+        v.donate(VALUE)
+        underlying = {"alice": VALUE}
+        shares_book = {}
+        with self.assertRaises(ValueError) as ctx:
+            token.permit("alice", "vault", VALUE, NOW + 60, 0,
+                         NOW + 120)
+        self.assertEqual(str(ctx.exception), "permit expired")
+        self.assertEqual(underlying["alice"], VALUE)
+        self.assertEqual(token.nonce_of("alice"), 0)
+        self.assertNotIn("alice", shares_book)
+        # 4. Zero-share attacker: Alice still gets 90,909.090909
+        # shares, attacker redeems 0 and gains 0.
+        v = fresh_vault()
+        token = PermitToken()
+        token.permit("alice", "vault", VALUE, NOW + 3600, 0, NOW)
+        v.donate(VALUE)
+        underlying = {"alice": VALUE}
+        shares_book = {}
+        shares = execute_signed(v, token, underlying, "alice", VALUE,
+                                "alice", shares_book)
+        self.assertEqual(shares, 90_909_090_909)
+        self.assertEqual(v.convert_to_assets(0), 0)
+
+    def test_donation_referral_fee_guide_numbers(self):
+        # Pins the five numbers of
+        # /guides/erc4626-donation-referral-fee/: a 2,500-share
+        # referral bonus is a claim on the vault, so a 100,000 USDC
+        # donation lifts the bonus too. Bonus minted on top (supply
+        # up, assets unchanged), reusing the checker's own Vault.
+        USDC = 1_000_000
+        BONUS = 2_500 * USDC
+        VALUE = 100_000 * USDC
+
+        def fresh_vault():
+            return Vault(total_assets=1_000_000 * USDC,
+                         total_supply=1_000_000 * USDC,
+                         decimals_offset=0)
+
+        def mint_bonus(v, shares):
+            v.total_supply += shares
+
+        # 1. Baseline, no donation: bonus worth 2,494.331065 (not
+        # 2,500); Alice loses 226.757370, holders lose 2,267.573697.
+        v = fresh_vault()
+        alice_sh = v.deposit(VALUE)
+        self.assertEqual(alice_sh, VALUE)
+        mint_bonus(v, BONUS)
+        self.assertEqual(v.convert_to_assets(BONUS), 2_494_331_065)
+        self.assertEqual(VALUE - v.convert_to_assets(alice_sh),
+                         226_757_370)
+        self.assertEqual(1_000_000 * USDC
+                         - v.convert_to_assets(1_000_000 * USDC),
+                         2_267_573_697)
+        # 2. Donation first: Alice gets 90,909.090909 shares; bonus
+        # worth 2,743.712325, +249.381260 over baseline.
+        v = fresh_vault()
+        v.donate(VALUE)
+        alice_sh = v.deposit(VALUE)
+        self.assertEqual(alice_sh, 90_909_090_909)
+        mint_bonus(v, BONUS)
+        self.assertEqual(v.convert_to_assets(BONUS), 2_743_712_325)
+        self.assertEqual(v.convert_to_assets(BONUS) - 2_494_331_065,
+                         249_381_260)
+        # 3. Attacker as referrer + 10% holder: redeems 102,500
+        # shares for 112,492.205362; net -87,507.794638.
+        v = fresh_vault()
+        v.donate(VALUE)
+        v.deposit(VALUE)
+        mint_bonus(v, BONUS)
+        redeemed = v.redeem(102_500 * USDC)
+        self.assertEqual(redeemed, 112_492_205_362)
+        self.assertEqual(redeemed - 100_000 * USDC - VALUE,
+                         -87_507_794_638)
+        # 4. Donation after: bonus 2,494.331065 -> 2,721.088435,
+        # gain 226.757370, exactly Alice's baseline loss.
+        v = fresh_vault()
+        v.deposit(VALUE)
+        mint_bonus(v, BONUS)
+        before = v.convert_to_assets(BONUS)
+        v.donate(VALUE)
+        after = v.convert_to_assets(BONUS)
+        self.assertEqual(before, 2_494_331_065)
+        self.assertEqual(after, 2_721_088_435)
+        self.assertEqual(after - before, 226_757_370)
+        # 5. Zero-share attacker as referrer: bonus redeems for
+        # 2,743.712325; net -97,256.287675.
+        v = fresh_vault()
+        v.donate(VALUE)
+        v.deposit(VALUE)
+        mint_bonus(v, BONUS)
+        got = v.redeem(BONUS)
+        self.assertEqual(got, 2_743_712_325)
+        self.assertEqual(got - VALUE, -97_256_287_675)
+
+
 if __name__ == "__main__":
     unittest.main()
