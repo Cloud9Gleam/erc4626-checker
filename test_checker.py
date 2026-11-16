@@ -12417,12 +12417,16 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(b2["nonces"]["alice"], 1)
 
     def test_donation_permit_timing_guide_numbers(self):
-        # Pins the five numbers of
+        # Pins the numbers of
         # /guides/erc4626-donation-permit-timing/: Alice signs a
         # permit at $1.00, an attacker holding 100,000 shares (10%)
         # donates 100,000 USDC before the relayer executes, price
         # $1.10. Minimal EIP-2612 harness (deadline + nonce),
         # reusing the checker's own Vault for every conversion.
+        # The 10,000.000001 is slippage vs the signed quote, NOT
+        # Alice's wealth loss (one base unit) and NOT the attacker's
+        # gain: the attacker nets -90,000, the other holders
+        # +90,000 — the books balance to one base unit of dust.
         USDC = 1_000_000
         NOW = 1_700_000_000
         VALUE = 100_000 * USDC
@@ -12493,6 +12497,30 @@ class TestChecker(unittest.TestCase):
         redeemed = v.redeem(VALUE)
         self.assertEqual(redeemed, 110_000 * USDC)
         self.assertEqual(redeemed - VALUE, 10_000 * USDC)
+        # Wealth accounting (the 04:13 "clean" verdict checked the
+        # raw figures only and missed this): redeemed-minus-donated
+        # is not the attacker's net — the redeemed shares were
+        # theirs before the attack, worth 100,000. True net:
+        # 110,000 - 100,000 (shares) - 100,000 (donated) = -90,000.
+        # Other holders gain the 90,000: their 900,000 shares rise
+        # from 900,000 to 990,000 USDC. Alice's wealth loss is one
+        # base unit (paid 100,000, holds 99,999.999999); the
+        # 10,000.000001 is slippage vs the quote, pinned above.
+        self.assertEqual(redeemed - VALUE - VALUE, -90_000 * USDC)
+        self.assertEqual(v.convert_to_assets(shares) - VALUE, -1)
+        self.assertEqual(v.convert_to_assets(900_000 * USDC),
+                         990_000 * USDC)
+        # True counterfactual: deposit first, then the donation.
+        # 100,000 shares are worth 109,090.909090, not 110,000
+        # (her own deposit dilutes the price to $1.090909), so the
+        # true loss against it is 9,090.909091, not 10,000.000001.
+        v_cf = fresh_vault()
+        self.assertEqual(v_cf.deposit(VALUE), VALUE)
+        v_cf.donate(VALUE)
+        self.assertEqual(v_cf.convert_to_assets(VALUE),
+                         109_090_909_090)
+        self.assertEqual(109_090_909_090 - 99_999_999_999,
+                         9_090_909_091)
         # 3. Defense: 60s deadline, execution at +120s reverts.
         v = fresh_vault()
         token = PermitToken()
@@ -12507,7 +12535,9 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(token.nonce_of("alice"), 0)
         self.assertNotIn("alice", shares_book)
         # 4. Zero-share attacker: Alice still gets 90,909.090909
-        # shares, attacker redeems 0 and gains 0.
+        # shares, attacker redeems 0 and loses the full 100,000
+        # (donated it all, recovered nothing); existing holders
+        # gain the full 100,000.
         v = fresh_vault()
         token = PermitToken()
         token.permit("alice", "vault", VALUE, NOW + 3600, 0, NOW)
@@ -12518,6 +12548,9 @@ class TestChecker(unittest.TestCase):
                                 "alice", shares_book)
         self.assertEqual(shares, 90_909_090_909)
         self.assertEqual(v.convert_to_assets(0), 0)
+        self.assertEqual(0 - VALUE, -100_000 * USDC)
+        self.assertEqual(v.convert_to_assets(1_000_000 * USDC),
+                         1_100_000 * USDC)
 
     def test_donation_referral_fee_guide_numbers(self):
         # Pins the five numbers of
@@ -12589,6 +12622,216 @@ class TestChecker(unittest.TestCase):
         got = v.redeem(BONUS)
         self.assertEqual(got, 2_743_712_325)
         self.assertEqual(got - VALUE, -97_256_287_675)
+
+    def test_donation_combined_fee_guide_numbers(self):
+        # Pins /guides/erc4626-donation-combined-fee/ to its model:
+        # vault 1,000,000 USDC / 1,000,000 shares at $1.00, Alice the
+        # sole holder, HWM 1,000,000, mgmt fee 2%/yr minted FIRST,
+        # perf fee 20% of the gain above the mark, minted at the
+        # current share price. The checks below independently
+        # re-derive the headline numbers with plain integer
+        # arithmetic (same conventions as the model: mgmt shares =
+        # S0 * 200 // 10000, perf shares = perf assets * supply //
+        # assets, claims floor-divided). Total-claim figures are
+        # NOT the gift's marginal cost: each scenario is measured
+        # against the same fee year with no donation.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-combined-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_combined_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        A0 = S0 = 1_000_000 * USDC
+        ALICE = 1_000_000 * USDC
+        HWM = A0
+        MGMT_BPS = 200
+
+        def claim(shares, assets, supply):
+            return shares * assets // supply
+
+        def run(assets, donation):
+            a = assets + donation
+            mgmt = S0 * MGMT_BPS // 10_000
+            s = S0 + mgmt
+            perf_a = max(a - HWM, 0) * 20 // 100
+            perf_s = perf_a * s // a
+            st = s + perf_s
+            return (claim(ALICE, a, st),
+                    claim(mgmt + perf_s, a, st),
+                    mgmt, perf_a, perf_s)
+
+        # 0. No-donation fee year: mgmt alone leaves Alice
+        # 980,392.156862, manager 19,607.843137.
+        alice0, mgr0, _, perf_a0, perf_s0 = run(A0, 0)
+        self.assertEqual((alice0, mgr0, perf_a0, perf_s0),
+                         (980_392_156_862, 19_607_843_137, 0, 0))
+
+        # 1. Combined, 100,000 donation: mgmt 20,000 shares, perf
+        # 20,000 nominal minting 18,545.454545 shares; Alice
+        # 1,059,173.669468, manager 40,826.330531 (one dust short
+        # of 1,100,000 together). Marginally the gift adds Alice
+        # 78,781.512606 (78.78%) and the manager 21,218.487394
+        # (21.22%); the two marginals add back to the gift.
+        alice1, mgr1, mgmt1, perf_a1, perf_s1 = run(A0, 100_000 * USDC)
+        self.assertEqual((mgmt1, perf_a1, perf_s1),
+                         (20_000 * USDC, 20_000 * USDC, 18_545_454_545))
+        self.assertEqual((alice1, mgr1),
+                         (1_059_173_669_468, 40_826_330_531))
+        self.assertEqual(alice1 + mgr1, 1_099_999_999_999)
+        self.assertEqual(alice1 - alice0, 78_781_512_606)
+        self.assertEqual(mgr1 - mgr0, 21_218_487_394)
+        self.assertEqual((alice1 - alice0) + (mgr1 - mgr0),
+                         100_000 * USDC)
+        self.assertAlmostEqual((mgr1 - mgr0) / (100_000 * USDC) * 100,
+                               21.22, places=2)
+
+        # 2. Performance-fee-only control: 18,181.818181 shares,
+        # manager 19,642.857141, Alice 1,080,357.142858. (No mgmt
+        # shares here, so recompute without them.)
+        a = A0 + 100_000 * USDC
+        perf_a2 = 20_000 * USDC
+        perf_s2 = perf_a2 * S0 // a
+        st2 = S0 + perf_s2
+        alice2 = claim(ALICE, a, st2)
+        mgr2 = claim(perf_s2, a, st2)
+        self.assertEqual((perf_a2, perf_s2), (20_000 * USDC, 18_181_818_181))
+        self.assertEqual((alice2, mgr2),
+                         (1_080_357_142_858, 19_642_857_141))
+
+        # 3. Management-fee-only control: Alice 1,078,431.372549,
+        # manager 21,568.627450; the gift's marginal mgmt cost is
+        # only 1,960.784313 (the same 20,000 shares redeem higher).
+        st3 = S0 + 20_000 * USDC
+        alice3 = claim(ALICE, a, st3)
+        mgr3 = claim(20_000 * USDC, a, st3)
+        self.assertEqual((alice3, mgr3),
+                         (1_078_431_372_549, 21_568_627_450))
+        self.assertEqual(mgr3 - mgr0, 1_960_784_313)
+        self.assertEqual((alice3 - alice0) + (mgr3 - mgr0),
+                         100_000 * USDC)
+
+        # 4. Interaction: the two separate takes add to
+        # 41,211.484591, the combined take is 385.154060 less; the
+        # extra perf shares (363.636364) are the visible part.
+        self.assertEqual(mgr2 + mgr3, 41_211_484_591)
+        self.assertEqual(mgr2 + mgr3 - mgr1, 385_154_060)
+        self.assertEqual(perf_s1 - perf_s2, 363_636_364)
+
+        # 5. Down year (-100,000) + 200,000 donation: same claims
+        # as scenario 1, Alice 1,059,173.669468, manager
+        # 40,826.330531. No-donation down year: Alice
+        # 882,352.941176, manager 17,647.058823. Marginally the
+        # gift adds Alice 176,820.728292 (88.41%) and the manager
+        # 23,179.271708 (11.59%); the total claim is 20.41% of the
+        # gift only because 17,647.058823 was already owed.
+        alice5, mgr5, _, perf_a5, perf_s5 = run(A0 - 100_000 * USDC,
+                                                200_000 * USDC)
+        alice5c, mgr5c, _, _, _ = run(A0 - 100_000 * USDC, 0)
+        self.assertEqual((perf_a5, alice5, mgr5),
+                         (20_000 * USDC, 1_059_173_669_468, 40_826_330_531))
+        self.assertEqual((alice5c, mgr5c),
+                         (882_352_941_176, 17_647_058_823))
+        self.assertEqual(alice5, alice1)
+        self.assertEqual(mgr5, mgr1)
+        self.assertEqual(alice5 - alice5c, 176_820_728_292)
+        self.assertEqual(mgr5 - mgr5c, 23_179_271_708)
+        self.assertEqual((alice5 - alice5c) + (mgr5 - mgr5c),
+                         200_000 * USDC)
+        self.assertAlmostEqual((mgr5 - mgr5c) / (200_000 * USDC) * 100,
+                               11.59, places=2)
+        self.assertAlmostEqual(mgr5 / (200_000 * USDC) * 100,
+                               20.41, places=2)
+
+        # 6. Small donation 50,000 below the mark: perf fee 10,000
+        # minting 9,714.285714 shares; Alice 1,019,700.332963,
+        # manager 30,299.667036. Marginally Alice +39,308.176101
+        # (78.62%), manager +10,691.823899 (21.38%).
+        alice6, mgr6, _, perf_a6, perf_s6 = run(A0, 50_000 * USDC)
+        self.assertEqual((perf_a6, perf_s6),
+                         (10_000 * USDC, 9_714_285_714))
+        self.assertEqual((alice6, mgr6),
+                         (1_019_700_332_963, 30_299_667_036))
+        self.assertEqual(alice6 - alice0, 39_308_176_101)
+        self.assertEqual(mgr6 - mgr0, 10_691_823_899)
+        self.assertEqual((alice6 - alice0) + (mgr6 - mgr0),
+                         50_000 * USDC)
+        self.assertAlmostEqual((mgr6 - mgr0) / (50_000 * USDC) * 100,
+                               21.38, places=2)
+    def test_intent_fill_adverse_selection_guide_numbers(self):
+        # Pins the numbers of
+        # /guides/erc4626-intent-fill-adverse-selection/: Alice signs
+        # a deposit intent for 100,000 USDC with a min-out, valid for
+        # a window; the solver fills only when the on-chain mint
+        # covers the min-out, hands Alice exactly the min-out, and
+        # keeps the excess as spread. Vault 1,000,000 USDC /
+        # 1,000,000 shares at $1.00, clean quote 100,000 shares.
+        USDC = 1_000_000
+        DEPOSIT = 100_000 * USDC
+
+        def fill(min_out, kind, amt):
+            v = Vault(total_assets=1_000_000 * USDC,
+                      total_supply=1_000_000 * USDC,
+                      decimals_offset=0)
+            if kind == "donation":
+                v.total_assets += amt
+            elif kind == "loss":
+                v.total_assets -= amt
+            minted = v.convert_to_shares(DEPOSIT)
+            if minted < min_out:
+                return False, minted, 0, 0
+            return True, minted, min_out, minted - min_out
+
+        # 1% min-out (99,000 shares): guide table, whole shares.
+        table_1pct = [
+            ("none", 0, 100_000, True, 99_000, 1_000),
+            ("donation", 5_000, 99_502, True, 99_000, 502),
+            ("donation", 10_000, 99_009, True, 99_000, 9),
+            ("donation", 50_000, 95_238, False, 0, 0),
+            ("donation", 100_000, 90_909, False, 0, 0),
+            ("loss", 5_000, 100_502, True, 99_000, 1_502),
+            ("loss", 10_000, 101_010, True, 99_000, 2_010),
+            ("loss", 50_000, 105_263, True, 99_000, 6_263),
+            ("loss", 100_000, 111_111, True, 99_000, 12_111),
+        ]
+        for kind, amt, w_mint, w_filled, w_user, w_keep in table_1pct:
+            filled, minted, user, keep = fill(99_000 * USDC, kind,
+                                               amt * USDC)
+            self.assertEqual(minted // USDC, w_mint, (kind, amt))
+            self.assertEqual(filled, w_filled, (kind, amt))
+            self.assertEqual(user // USDC, w_user, (kind, amt))
+            self.assertEqual(keep // USDC, w_keep, (kind, amt))
+
+        # 0.1% min-out (99,900 shares): donation 5,000 expires
+        # unfilled (mint 99,502); loss 50,000 keeps 5,363; loss
+        # 100,000 keeps 11,211. Tightening 1% -> 0.1% cuts the
+        # solver's take on a 50,000 loss by ~14% (900 / 6,263).
+        filled, minted, _, keep = fill(99_900 * USDC, "donation",
+                                       5_000 * USDC)
+        self.assertEqual(minted // USDC, 99_502)
+        self.assertFalse(filled)
+        _, minted, _, keep = fill(99_900 * USDC, "loss", 50_000 * USDC)
+        self.assertEqual(minted // USDC, 105_263)
+        self.assertEqual(keep // USDC, 5_363)
+        _, minted, _, keep = fill(99_900 * USDC, "loss",
+                                  100_000 * USDC)
+        self.assertEqual(minted // USDC, 111_111)
+        self.assertEqual(keep // USDC, 11_211)
+        self.assertAlmostEqual(900 / 6_263 * 100, 14.37, places=1)
+
+        # Expiry threshold is exact: donation 10,101 still fills
+        # (mint 99,000 floor); 10,102 does not (mint 98,999).
+        filled, minted, _, _ = fill(99_000 * USDC, "donation",
+                                    10_101 * USDC)
+        self.assertEqual(minted // USDC, 99_000)
+        self.assertTrue(filled)
+        filled, minted, _, _ = fill(99_000 * USDC, "donation",
+                                    10_102 * USDC)
+        self.assertEqual(minted // USDC, 98_999)
+        self.assertFalse(filled)
 
 
 if __name__ == "__main__":
