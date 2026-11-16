@@ -8865,6 +8865,170 @@ class TestChecker(unittest.TestCase):
             self.assertIn(needle, section)
         self.assertIn("on the <strong>assets deposited</strong>", section)
 
+    def test_donation_deposit_fee_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-deposit-fee/
+        # to its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00, Carol holds all 1,000,000 shares, Alice deposits
+        # 100,000 USDC with a 5% deposit fee (5,000), and a 100,000
+        # USDC donation lands before or after her deposit.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers in
+        # base units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-deposit-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_deposit_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        A0, S0 = 1_000_000 * U, 1_000_000
+        DEP, FEE, DON = 100_000 * U, 5_000 * U, 100_000 * U
+
+        def val(sh, A, S):
+            return (sh * A) // S
+
+        # (1) Baseline, fee RETAINED, no donation (overlap:
+        # deposit-fee case 1): Alice 95,000 shares, price 220/219;
+        # Carol 1,004,566.210045, Alice 95,433.789954, loss
+        # 4,566.210046; recapture 433.789954 of the 5,000 fee.
+        A1, S1 = A0 + DEP, S0 + 95_000
+        self.assertEqual(F(A1, U) / S1, F(220, 219))
+        c1, a1 = val(1_000_000, A1, S1), val(95_000, A1, S1)
+        self.assertEqual((c1, a1), (1_004_566_210_045, 95_433_789_954))
+        loss1 = DEP - a1
+        self.assertEqual(loss1, 4_566_210_046)
+        rec1 = F(95_000, S1) * FEE
+        self.assertEqual(int(rec1), 433_789_954)
+        self.assertEqual(loss1, FEE - int(rec1))
+        # (2) Donation FIRST, fee to the MANAGER in assets: price
+        # 1.10 at deposit; Alice mints 86,363 shares, worth
+        # 94,999.355648, loss 5,000.644352; Carol 1,100,000.644351.
+        # Donation-invariant: loss within $1 of the 5,000 fee.
+        A2d, S2d = A0 + DON, S0
+        self.assertEqual(F(A2d, U) / S2d, F(11, 10))
+        mint2 = (95_000 * U) * S2d // A2d
+        self.assertEqual(mint2, 86_363)
+        A2, S2 = A2d + 95_000 * U, S2d + mint2
+        c2, a2 = val(1_000_000, A2, S2), val(mint2, A2, S2)
+        self.assertEqual((c2, a2), (1_100_000_644_351, 94_999_355_648))
+        loss2 = DEP - a2
+        self.assertEqual(loss2, 5_000_644_352)
+        self.assertTrue(FEE < loss2 < FEE + 1 * U)
+        # (3) Donation FIRST, fee RETAINED: same 86,363 shares,
+        # Alice 95,396.842491, loss 4,603.157509; recapture falls to
+        # 397.486843; the donation bills her 36.947463 vs baseline.
+        A3, S3 = A2d + DEP, S2d + mint2
+        c3, a3 = val(1_000_000, A3, S3), val(mint2, A3, S3)
+        self.assertEqual((c3, a3), (1_104_603_157_508, 95_396_842_491))
+        loss3 = DEP - a3
+        self.assertEqual(loss3, 4_603_157_509)
+        rec3 = F(mint2, S3) * FEE
+        self.assertEqual(int(rec3), 397_486_843)
+        self.assertLess(rec3, rec1)
+        cost3 = loss3 - loss1
+        self.assertEqual(cost3, 36_947_463)
+        self.assertGreater(cost3, 0)
+        # Conservation: Alice's -36.947463 + Carol's gain over the
+        # no-donation baseline is exactly the 100,000 donation.
+        self.assertEqual(c3 - c1, 100_036_947_463)
+        self.assertEqual((a3 - a1) + (c3 - c1), DON)
+        # (4) Deposit FIRST (fee retained), then donation: Alice
+        # banks 95,000 shares, captures 8,675.799087; Carol
+        # 1,095,890.410958, captures 91,324.200913. No-fee capture
+        # would be 9,090.909091, so the fee costs 415.110004.
+        A4, S4 = A1 + DON, S1
+        c4, a4 = val(1_000_000, A4, S4), val(95_000, A4, S4)
+        self.assertEqual((c4, a4), (1_095_890_410_958, 104_109_589_041))
+        cap4 = a4 - a1
+        self.assertEqual(cap4, 8_675_799_087)
+        self.assertEqual(c4 - c1, 91_324_200_913)
+        self.assertEqual(cap4 + (c4 - c1), DON)
+        cap_nofee = F(100_000, 1_100_000) * DON
+        self.assertEqual(cap_nofee, F(100_000_000_000, 11))
+        self.assertTrue(415 * U < cap_nofee - cap4 < 416 * U)
+        # Ordering swing: -36.947463 donation-first vs +8,675.799087
+        # deposit-first is 8,712.746550.
+        self.assertEqual(cap4 - (-cost3), 8_712_746_550)
+        # (5) Donation FIRST, fee taken in SHARES: total mint 90,909,
+        # manager 4,545 shares worth 4,999.500416; Alice 86,364
+        # shares worth 95,000.407916, loss 4,999.592084. Also
+        # donation-invariant: loss and manager value within $1 of
+        # the 5,000 fee, against no-donation losses of exactly 5,000.
+        mt5 = DEP * S2d // A2d
+        self.assertEqual(mt5, 90_909)
+        mgr5 = mt5 * 5 // 100
+        self.assertEqual(mgr5, 4_545)
+        al5 = mt5 - mgr5
+        self.assertEqual(al5, 86_364)
+        A5, S5 = A2d + DEP, S2d + mt5
+        c5, a5 = val(1_000_000, A5, S5), val(al5, A5, S5)
+        m5 = val(mgr5, A5, S5)
+        self.assertEqual((c5, a5, m5),
+                         (1_100_000_091_666, 95_000_407_916,
+                          4_999_500_416))
+        loss5 = DEP - a5
+        self.assertEqual(loss5, 4_999_592_084)
+        self.assertTrue(FEE - 1 * U < loss5 < FEE + 1 * U)
+        self.assertTrue(FEE - 1 * U < m5 < FEE + 1 * U)
+        Am, Sm = A0 + 95_000 * U, S0 + 95_000
+        self.assertEqual(DEP - val(95_000, Am, Sm), 5_000 * U)
+        Ash, Ssh = A0 + DEP, S0 + 100_000
+        self.assertEqual(DEP - val(95_000, Ash, Ssh), 5_000 * U)
+        # (6) No-fee control, donation first: Alice 90,909 shares,
+        # worth 99,999.908333, loss 0.091667 of dust. The 36.947463
+        # is the fee's doing, not the donation's.
+        m6 = DEP * S2d // A2d
+        self.assertEqual(m6, 90_909)
+        A6, S6 = A2d + DEP, S2d + m6
+        a6 = val(m6, A6, S6)
+        self.assertEqual(a6, 99_999_908_333)
+        self.assertEqual(DEP - a6, 91_667)
+        self.assertLess(DEP - a6, 1 * U)
+        # (7) Chart widths: captures -36.947463 / -0.091667 /
+        # +8,675.799087, bar lengths are |capture| normalised to
+        # the 8,675.799087 maximum, one decimal.
+        for value, width in ((36_947_463, 0.4), (91_667, 0.0),
+                             (8_675_799_087, 100.0)):
+            self.assertEqual(round(value / 8_675_799_087 * 100, 1),
+                             width)
+
+        # (8) Guide page carries the headline numbers, the chart
+        # widths and the honest-overlap statement.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-deposit-fee/", build)
+        for needle in ("4,566.210046", "433.789954", "86,363",
+                       "94,999.355648", "5,000.644352",
+                       "95,396.842491", "4,603.157509", "397.486843",
+                       "36.947463", "1,104,603.157508",
+                       "100,036.947463", "104,109.589041",
+                       "8,675.799087", "9,090.909091", "415.110004",
+                       "91,324.200913", "8,712.746550", "90,909",
+                       "4,545", "4,999.500416", "86,364",
+                       "95,000.407916", "4,999.592084",
+                       "99,999.908333", "0.091667", "0.644352",
+                       "0.407916",
+                       "width:0.4%", "width:0.0%", "width:100.0%"):
+            self.assertIn(needle, build)
+        self.assertIn("The new content here is cases 2", build)
+
+        # (9) The headline numbers must sit in THIS guide's own
+        # text: "36.947463" and "8,675.799087" appear in the index
+        # entry too, so check the section-scoped presence of the
+        # design-split and control sentences.
+        start = build.index('add("/guides/erc4626-donation-deposit-fee/"')
+        section = build[start:start + 12000]
+        for needle in ("36.947463", "8,675.799087", "8,712.746550",
+                       "397.486843", "4,999.500416", "0.091667"):
+            self.assertIn(needle, section)
+        self.assertIn("the recapture channel does not exist", section)
+        self.assertIn("A donation by itself never bills", section)
+
 
 
 if __name__ == "__main__":
