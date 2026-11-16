@@ -11807,6 +11807,130 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("13,636.363636", build_text[idx:idx_end])
 
 
+    def test_donation_share_classes_guide_numbers(self):
+        # Pins /guides/erc4626-donation-share-classes/ to its
+        # model: a donation into a two-class vault is split by
+        # assets, not by shares, so the price lift per share is
+        # proportional to the class's own price. Vault 1,000,000
+        # USDC in one shared pool; class A 500,000 shares /
+        # 500,000 assets, price 1.00; class B 250,000 shares /
+        # 500,000 assets, price 2.00. Alice holds 100,000 A
+        # shares; Bob holds 100,000 B shares; donation 100,000.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive every headline number
+        # with plain Fraction arithmetic.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-share-classes-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_share_classes_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        TOTAL = Fraction(1_000_000)
+        A_SUPPLY = Fraction(500_000)
+        B_SUPPLY = Fraction(250_000)
+        A_ASSETS = Fraction(500_000)
+        B_ASSETS = Fraction(500_000)
+        DONATION = Fraction(100_000)
+        HOLDING = Fraction(100_000)
+
+        # Base prices: A 1.00, B 2.00.
+        self.assertEqual(A_ASSETS / A_SUPPLY, 1)
+        self.assertEqual(B_ASSETS / B_SUPPLY, 2)
+
+        # S1: the gift splits by each class's share of the pool
+        # — each class holds half, so each gains exactly 50,000
+        # and the total is conserved at 1,100,000.
+        a_new = A_ASSETS + DONATION * A_ASSETS / TOTAL
+        b_new = B_ASSETS + DONATION * B_ASSETS / TOTAL
+        self.assertEqual(a_new, 550_000)
+        self.assertEqual(b_new, 550_000)
+        self.assertEqual(a_new + b_new, TOTAL + DONATION)
+
+        # Prices diverge: A 550,000/500,000 = 1.10 (lift 0.10),
+        # B 550,000/250,000 = 2.20 (lift 0.20). The lift per
+        # share is the donation's share of the pool times the
+        # class's price — 10% of the price here, so a class
+        # priced at 4.00 would lift 0.40 from the same gift.
+        a_price = a_new / A_SUPPLY
+        b_price = b_new / B_SUPPLY
+        self.assertEqual(a_price, Fraction(11, 10))
+        self.assertEqual(b_price, Fraction(11, 5))
+        self.assertEqual(a_price - 1, Fraction(1, 10))
+        self.assertEqual(b_price - 2, Fraction(1, 5))
+        self.assertEqual(DONATION / TOTAL * 1, Fraction(1, 10))
+        self.assertEqual(DONATION / TOTAL * 2, Fraction(1, 5))
+        self.assertEqual(DONATION / TOTAL * 4, Fraction(2, 5))
+
+        # S2: same 100,000-share holding, different class.
+        # Alice 100,000 x 1.10 = 110,000 (gain 10,000, 10% of
+        # the gift); Bob 100,000 x 2.20 = 220,000 (gain 20,000,
+        # 20%). Alice owns 20% of class A, Bob 40% of class B,
+        # so they take 20% / 40% of their class's 50,000.
+        alice_after = HOLDING * a_price
+        bob_after = HOLDING * b_price
+        self.assertEqual(alice_after, 110_000)
+        self.assertEqual(bob_after, 220_000)
+        # Alice's holding was worth 100,000 (price 1.00); Bob's
+        # was worth 200,000 (price 2.00) — the gain is value
+        # after minus value before, not minus the share count.
+        self.assertEqual(alice_after - HOLDING, 10_000)
+        self.assertEqual(bob_after - HOLDING * 2, 20_000)
+        self.assertEqual(HOLDING / A_SUPPLY, Fraction(1, 5))
+        self.assertEqual(HOLDING / B_SUPPLY, Fraction(2, 5))
+        self.assertEqual(Fraction(1, 5) * 50_000, 10_000)
+        self.assertEqual(Fraction(2, 5) * 50_000, 20_000)
+
+        # S3: the donor's net cost depends on the class held.
+        # Bob donates 100,000 and holds B: net cost 80,000.
+        # Had he held A instead: net cost 90,000. Difference
+        # 10,000. Even a donor owning the whole of class B
+        # recovers only the half of the gift that lands in B
+        # (50,000) and still loses the other 50,000.
+        self.assertEqual(DONATION - (bob_after - HOLDING * 2),
+                         80_000)
+        self.assertEqual(DONATION - (alice_after - HOLDING),
+                         90_000)
+        self.assertEqual(90_000 - 80_000, 10_000)
+        self.assertEqual(DONATION * B_ASSETS / TOTAL, 50_000)
+        # Bob recovers 40% of the half that lands in B, which
+        # is 20% of the whole gift.
+        self.assertEqual(Fraction(2, 5) * Fraction(1, 2)
+                         * DONATION, 20_000)
+
+        # The guide page exists exactly once, with its slug and
+        # headline numbers, scoped to this page's add() block.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertEqual(
+            build_text.count(
+                'add("/guides/erc4626-donation-share-classes/"'), 1)
+        start = build_text.find(
+            'add("/guides/erc4626-donation-share-classes/"')
+        end = build_text.find('add("/guides/', start + 10)
+        block = build_text[start:end]
+        for needle in ("50,000", "550,000", "1,100,000", "1.10",
+                       "0.10", "2.20", "0.20", "110,000", "10,000",
+                       "220,000", "20,000", "80,000", "90,000",
+                       "0.40", "4.00"):
+            self.assertIn(needle, block)
+        # The pooled-fee cross-reference (4,125 USDC) is pinned
+        # by test_share_classes_guide_numbers; this page must
+        # carry the same figure.
+        self.assertIn("4,125", block)
+        # Index entry carries the same headline numbers.
+        idx = build_text.find(
+            '<a href="/guides/erc4626-donation-share-classes/">')
+        idx_end = build_text.find("</li>", idx)
+        index_line = build_text[idx:idx_end]
+        for needle in ("50,000", "0.10", "0.20", "10,000",
+                       "20,000", "80,000", "90,000"):
+            self.assertIn(needle, index_line)
+
+
     def test_donation_bridge_shares_guide_numbers(self):
         # Pins /guides/erc4626-donation-bridge-shares/ to its
         # model: a donation landing while bridge-minted shares
