@@ -8600,6 +8600,150 @@ class TestChecker(unittest.TestCase):
         self.assertIn("The new content here is cases 2", build)
         self.assertIn("case 8: a taxed donation repricing", build)
 
+    def test_donation_smoothed_nav_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-smoothed-nav/
+        # to its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00, Alice 100,000 shares (10%), Bob 100,000 (10%),
+        # Carol 800,000 (80%); a 100,000 USDC donation lifts the true
+        # price to 1.10, but the displayed price glides linearly to
+        # it over 10 days and redemptions pay the displayed price.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-smoothed-nav-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_smoothed_nav_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+
+        def disp(day, start, true_p):
+            step = (true_p - start) / 10
+            p = start + step * day
+            return min(p, true_p) if true_p >= start else max(p, true_p)
+
+        # (1) Baseline, no donation (overlap: donation-attack case 1):
+        # Bob redeems 100,000 shares at 1.00, full exit.
+        self.assertEqual(100_000 * F(1), 100_000)
+        # (2) Headline: donation 100,000, Bob redeems day 1 at
+        # displayed 1.01: takes 101,000 for shares truly worth
+        # 110,000, leaves 9,000; stayers' true price 1.11, Alice
+        # 111,000, Carol 888,000.
+        true2 = F(1_100_000, 1_000_000)
+        self.assertEqual(true2, F(11, 10))
+        self.assertEqual(disp(1, F(1), true2), F(101, 100))
+        self.assertEqual(100_000 * disp(1, F(1), true2), 101_000)
+        self.assertEqual(100_000 * true2, 110_000)
+        self.assertEqual(100_000 * true2 - 101_000, 9_000)
+        after2 = F(1_100_000 - 101_000, 900_000)
+        self.assertEqual(after2, F(111, 100))
+        self.assertEqual(100_000 * after2, 111_000)
+        self.assertEqual(800_000 * after2, 888_000)
+        # (3) Bob waits until day 10: displayed caught up at 1.10,
+        # takes the full 110,000, leaves nothing.
+        self.assertEqual(disp(10, F(1), true2), F(11, 10))
+        self.assertEqual(100_000 * disp(10, F(1), true2), 110_000)
+        # (4) Bob redeems day 5 at 1.05: takes 105,000, leaves 5,000;
+        # Alice's shares are now worth 110,555.555556.
+        self.assertEqual(disp(5, F(1), true2), F(105, 100))
+        self.assertEqual(100_000 * disp(5, F(1), true2), 105_000)
+        self.assertEqual(100_000 * true2 - 105_000, 5_000)
+        after4 = F(1_100_000 - 105_000, 900_000)
+        self.assertEqual(after4, F(199, 180))
+        self.assertEqual(round(float(100_000 * after4), 6), 110555.555556)
+        # (5) Two early exits stack: Alice day 1 (101,000, leaves
+        # 9,000), Bob day 5 at 1.05 (105,000). Before Bob's redemption
+        # the vault is 999,000 / 900,000 shares, so his shares are
+        # truly worth 111,000 and he leaves 6,000. Carol ends at
+        # 894,000 against an 880,000 baseline: +14,000, of which
+        # 8,000 from Alice (800/900 of her 9,000, Bob taking 1,000)
+        # plus 6,000 from Bob.
+        mid5 = F(1_100_000 - 101_000, 900_000)
+        self.assertEqual(mid5, F(111, 100))
+        self.assertEqual(100_000 * mid5, 111_000)
+        self.assertEqual(100_000 * mid5 - 105_000, 6_000)
+        carol5 = 800_000 * F(1_100_000 - 101_000 - 105_000, 800_000)
+        self.assertEqual(carol5, 894_000)
+        self.assertEqual(800_000 * true2, 880_000)
+        self.assertEqual(carol5 - 880_000, 14_000)
+        self.assertEqual(F(800, 900) * 9_000, 8_000)
+        self.assertEqual(F(100, 900) * 9_000, 1_000)
+        self.assertEqual(8_000 + 6_000, 14_000)
+        # (6) Loss mirror (overlap: smoothed-nav loss lag): strategy
+        # loses 100,000, true 0.90, Bob redeems day 1 at 0.99, takes
+        # 99,000 for shares truly worth 90,000, overpaid 9,000;
+        # stayers' true price 0.89, Alice 89,000, Carol 712,000.
+        true6 = F(900_000, 1_000_000)
+        self.assertEqual(true6, F(9, 10))
+        self.assertEqual(disp(1, F(1), true6), F(99, 100))
+        self.assertEqual(100_000 * disp(1, F(1), true6), 99_000)
+        self.assertEqual(100_000 * true6, 90_000)
+        self.assertEqual(99_000 - 90_000, 9_000)
+        after6 = F(900_000 - 99_000, 900_000)
+        self.assertEqual(after6, F(89, 100))
+        self.assertEqual(100_000 * after6, 89_000)
+        self.assertEqual(800_000 * after6, 712_000)
+        # (7) Boundary: day 9 leaves 1,000, day 10 leaves zero, and
+        # the glide caps at the true price after day 10.
+        self.assertEqual(disp(9, F(1), true2), F(109, 100))
+        self.assertEqual(100_000 * true2 - 100_000 * disp(9, F(1), true2),
+                         1_000)
+        self.assertEqual(100_000 * true2 - 100_000 * disp(10, F(1), true2),
+                         0)
+        self.assertEqual(disp(11, F(1), true2), true2)
+        # (8) Second donation day 5: new true price 1.20, fresh glide
+        # from 1.05, day 6 displays 1.065. Bob takes 106,500 for
+        # shares truly worth 120,000, leaves 13,500; stayers' true
+        # price 1.215, Alice 121,500, Carol 972,000.
+        true8 = F(1_200_000, 1_000_000)
+        self.assertEqual(true8, F(6, 5))
+        d8 = disp(1, F(105, 100), true8)
+        self.assertEqual(d8, F(213, 200))
+        self.assertEqual(100_000 * d8, 106_500)
+        self.assertEqual(100_000 * true8, 120_000)
+        self.assertEqual(100_000 * true8 - 106_500, 13_500)
+        after8 = F(1_200_000 - 106_500, 900_000)
+        self.assertEqual(after8, F(243, 200))
+        self.assertEqual(100_000 * after8, 121_500)
+        self.assertEqual(800_000 * after8, 972_000)
+        # (9) Chart widths: left-behind 9,000 / 5,000 / 1,000 / 0,
+        # normalised to the 9,000 maximum, one decimal.
+        for value, width in ((9_000, 100.0), (5_000, 55.6),
+                             (1_000, 11.1), (0, 0.0)):
+            self.assertEqual(round(value / 9_000 * 100, 1), width)
+
+        # (10) Guide page carries the headline numbers, the chart
+        # widths and the honest-overlap statement.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-smoothed-nav/", build)
+        for needle in ("101,000", "110,000", "9,000", "105,000",
+                       "5,000", "110,555.555556", "111,000", "6,000",
+                       "894,000", "880,000", "14,000", "99,000",
+                       "90,000", "0.89", "89,000", "712,000", "109,000",
+                       "1,000", "106,500", "120,000", "13,500", "1.215",
+                       "121,500", "972,000", "1.065",
+                       "width:100.0%", "width:55.6%", "width:11.1%",
+                       "width:0.0%"):
+            self.assertIn(needle, build)
+        self.assertIn("The new content here is cases 2", build)
+        self.assertNotIn("donation-smoothed-nav-model.py", build)
+
+        # (11) The day-9 payout 109,000 must sit in THIS guide's own
+        # text, not merely somewhere in build.py: "109,000" also
+        # appears in the fot-claim-window and fot-withdrawal-queue
+        # guides, so a whole-file needle would pass with this guide
+        # never stating the number.
+        start = build.index('add("/guides/erc4626-donation-smoothed-nav/"')
+        section = build[start:start + 12000]
+        self.assertIn("109,000", section)
+        self.assertIn("On day 9 he would take", section)
+
+
 
 if __name__ == "__main__":
     unittest.main()
