@@ -6101,6 +6101,182 @@ class TestChecker(unittest.TestCase):
                       build_text)
         self.assertIn("was deferred, not destroyed", build_text)
 
+    def test_donation_zap_deposit_guide_numbers(self):
+        # Pins /guides/erc4626-donation-zap-deposit/ to its
+        # model: a donation is indistinguishable from a gain,
+        # so a zap that mints on the quote hands the zapper a
+        # pro-rata cut of the gift. Vault 1,000,000 USDC /
+        # 1,000,000 shares at $1.00; Alice 100,000 shares,
+        # Carol 900,000; Bob zaps with a 100,000 quote, 2%
+        # slippage, so 98,000 arrives. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive every headline number with plain Fraction
+        # arithmetic.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-zap-deposit-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_zap_deposit_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        A0 = Fraction(1_000_000)
+        SUPPLY0 = Fraction(1_000_000)
+        ALICE = Fraction(100_000)
+        CAROL = Fraction(900_000)
+        DONATION = Fraction(100_000)
+        QUOTE = Fraction(100_000)
+        ARRIVED = Fraction(98_000)
+
+        def price(assets, supply):
+            return assets / supply
+
+        def value(shares, assets, supply):
+            return shares * price(assets, supply)
+
+        # S0: donation alone — 1,100,000 / 1,000,000 @ 1.10;
+        # Alice 110,000, Carol 990,000; the gift is whole.
+        a_d, s_d = A0 + DONATION, SUPPLY0
+        self.assertEqual(price(a_d, s_d), Fraction(11, 10))
+        self.assertEqual(value(ALICE, a_d, s_d), 110_000)
+        self.assertEqual(value(CAROL, a_d, s_d), 990_000)
+
+        # S1: donation first, gross-mint zap — 98,000 arrives,
+        # 100,000 shares mint on the quote.
+        a1, s1 = a_d + ARRIVED, s_d + QUOTE
+        self.assertEqual((a1, s1), (1_198_000, 1_100_000))
+        self.assertEqual(price(a1, s1), Fraction(599, 550))
+        self.assertEqual(value(ALICE, a1, s1),
+                         Fraction(59_900_000, 550))
+        self.assertEqual(value(CAROL, a1, s1),
+                         Fraction(539_100_000, 550))
+        self.assertEqual(value(QUOTE, a1, s1),
+                         Fraction(59_900_000, 550))
+        # Alice loses 1,090.909091 of her 10,000 gift, Carol
+        # 9,818.181818 of her 90,000; Bob gains 8,909.090909
+        # over his quote; holders' lost gift 10,909.090909
+        # equals Bob's gain plus the 2,000 slippage.
+        self.assertEqual(110_000 - value(ALICE, a1, s1),
+                         Fraction(12_000, 11))
+        self.assertEqual(990_000 - value(CAROL, a1, s1),
+                         Fraction(108_000, 11))
+        self.assertEqual(value(QUOTE, a1, s1) - QUOTE,
+                         Fraction(98_000, 11))
+        self.assertEqual(Fraction(12_000, 11)
+                         + Fraction(108_000, 11),
+                         Fraction(98_000, 11) + 2_000)
+        # Bob's cut is his 1/11 share of the gift minus his
+        # 1/11 share of the slippage.
+        self.assertEqual(value(QUOTE, a1, s1) - QUOTE,
+                         Fraction(100_000, 11)
+                         - Fraction(2_000, 11))
+        self.assertEqual(value(ALICE, a1, s1)
+                         + value(CAROL, a1, s1)
+                         + value(QUOTE, a1, s1), a1)
+
+        # S2: donation first, net-mint zap — Bob mints on what
+        # arrived: 98,000 / 1.10 = 89,090.909091 shares; price
+        # stays 1.10, gift whole, Bob bears his own 2,000.
+        bob_net = Fraction(980_000, 11)
+        a2, s2 = a_d + ARRIVED, s_d + bob_net
+        self.assertEqual(a2, 1_198_000)
+        self.assertEqual(price(a2, s2), Fraction(11, 10))
+        self.assertEqual(value(ALICE, a2, s2), 110_000)
+        self.assertEqual(value(CAROL, a2, s2), 990_000)
+        self.assertEqual(value(bob_net, a2, s2), 98_000)
+
+        # S3: zap first (gross), donation after — identical end
+        # state to S1; the order commutes, the basis decides.
+        a3z, s3z = A0 + ARRIVED, SUPPLY0 + QUOTE
+        self.assertEqual(price(a3z, s3z), Fraction(549, 550))
+        self.assertEqual(value(ALICE, a3z, s3z),
+                         Fraction(54_900_000, 550))
+        self.assertEqual(value(CAROL, a3z, s3z),
+                         Fraction(494_100_000, 550))
+        a3, s3 = a3z + DONATION, s3z
+        self.assertEqual((a3, s3), (a1, s1))
+        self.assertEqual(value(ALICE, a3, s3),
+                         value(ALICE, a1, s1))
+
+        # S4: big zap, gross — 500,000 quote, 10% slippage,
+        # 450,000 arrives, 500,000 shares mint. The gift is
+        # split by shares: Alice 6,666.666667, Carol 60,000,
+        # Bob 33,333.333333 — exactly a third, his share of
+        # the 1,500,000 supply.
+        big_quote = Fraction(500_000)
+        big_arrived = Fraction(450_000)
+        a4, s4 = a_d + big_arrived, s_d + big_quote
+        self.assertEqual((a4, s4), (1_550_000, 1_500_000))
+        self.assertEqual(price(a4, s4), Fraction(31, 30))
+        self.assertEqual(value(ALICE, a4, s4),
+                         Fraction(3_100_000, 30))
+        self.assertEqual(value(CAROL, a4, s4), 930_000)
+        self.assertEqual(value(big_quote, a4, s4),
+                         Fraction(15_500_000, 30))
+        self.assertEqual(value(ALICE, a4, s4)
+                         - Fraction(290_000_000, 3_000),
+                         Fraction(20_000, 3))
+        self.assertEqual(value(CAROL, a4, s4) - 870_000, 60_000)
+        self.assertEqual(value(big_quote, a4, s4)
+                         - Fraction(1_450_000_000, 3_000),
+                         Fraction(100_000, 3))
+        self.assertEqual(Fraction(20_000, 3) + 60_000
+                         + Fraction(100_000, 3), DONATION)
+        # Bob's net gain over his quote is his third of the
+        # gift minus his third of the 50,000 slippage.
+        self.assertEqual(value(big_quote, a4, s4) - big_quote,
+                         Fraction(100_000, 3)
+                         - Fraction(50_000, 3))
+
+        # S5: big zap, net — Bob mints 450,000 / 1.10 =
+        # 409,090.909091 shares; price stays 1.10, gift whole.
+        bob_big_net = Fraction(4_500_000, 11)
+        a5, s5 = a_d + big_arrived, s_d + bob_big_net
+        self.assertEqual(a5, 1_550_000)
+        self.assertEqual(price(a5, s5), Fraction(11, 10))
+        self.assertEqual(value(ALICE, a5, s5), 110_000)
+        self.assertEqual(value(CAROL, a5, s5), 990_000)
+        self.assertEqual(value(bob_big_net, a5, s5), 450_000)
+
+        # S6: redeemer test — a second 100,000 donation lands
+        # on the S1 state; Bob's 100,000 shares are worth
+        # 118,000 if he waits, 108,909.090909 if he redeemed
+        # first. Waiting gains him 9,090.090909 — his
+        # 100,000/1,100,000 share of the gift — and costs
+        # Alice 909.090909, Carol 8,181.818182.
+        a6d, s6d = a1 + DONATION, s1
+        self.assertEqual((a6d, s6d), (1_298_000, 1_100_000))
+        self.assertEqual(price(a6d, s6d), Fraction(649, 550))
+        self.assertEqual(value(QUOTE, a6d, s6d), 118_000)
+        self.assertEqual(118_000 - value(QUOTE, a1, s1),
+                         Fraction(100_000, 11))
+        self.assertEqual(Fraction(32_700_000, 275) - 118_000,
+                         Fraction(10_000, 11))
+        self.assertEqual(Fraction(294_300_000, 275) - 1_062_000,
+                         Fraction(90_000, 11))
+
+        # Chart widths (Alice's kept gift of 10,000, scaled
+        # to 10,000, rounded to one decimal — the site-wide
+        # convention): 89.1 / 100.0 / 66.7 / 100.0.
+        kept = [Fraction(98_000, 11), Fraction(10_000),
+                Fraction(20_000, 3), Fraction(10_000)]
+        widths = [round(float(k) / 10_000 * 100, 1) for k in kept]
+        self.assertEqual(widths, [89.1, 100.0, 66.7, 100.0])
+
+        # Guide text pins: slug registered, the basis sentence
+        # present, and exactly one add() for this slug.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-zap-deposit/",
+                      build_text)
+        self.assertIn("The mint basis, not the order, decides",
+                      build_text)
+        self.assertEqual(
+            build_text.count(
+                'add("/guides/erc4626-donation-zap-deposit/"'), 1)
+
     def test_supply_cap_guide_numbers(self):
         # Pins /guides/erc4626-supply-cap/ to its model: a vault
         # caps totalSupply at 1,000,000 whole shares (10**12 raw
