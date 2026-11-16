@@ -7274,6 +7274,22 @@ class TestChecker(unittest.TestCase):
         self.assertIn("1.003401", build)
         self.assertIn("3,061.224490", build)
 
+        # (8) The 2.0408% rate is the loss per unit redeemed,
+        # not the loss on the stayers' money: on a 100,000
+        # exit the stayers lose 2,040.816326 on their 900,000,
+        # i.e. 0.2268%. (A 2026-11-16 09:37 review caught the
+        # guide claiming 2.0408% "on the stayers' money" for
+        # scenario 2; the 2.0408% only coincides with the
+        # stayers' rate in the run, where the exit equals what
+        # stays behind.)
+        self.assertEqual(round(float(Fraction(fee2, alice)
+                                    * 100), 4), 2.0408)
+        self.assertEqual(round(float(Fraction(fee2,
+                                             900_000 * USDC)
+                                    * 100), 4), 0.2268)
+        self.assertNotIn("2.0408% loss on the stayers", build)
+        self.assertIn("0.2268% of their 900,000", build)
+
 
 if __name__ == "__main__":
     unittest.main()
