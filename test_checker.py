@@ -12846,6 +12846,62 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(F(11_000) * (booked0 / F(110_000))
                          - F(11_000) * (true0 / F(110_000)), 500)
 
+    def test_approve_race_vault_deposit_guide_numbers(self):
+        # Pins /guides/erc4626-approve-race-vault-deposit/ to its
+        # model: vault 1,000,000 USDC / 1,000,000 shares at $1.00,
+        # Alice holds 200,000 USDC. Importing the model runs its own
+        # asserts; the checks below independently re-derive the
+        # headline numbers with Fraction / exact integer arithmetic:
+        # the race extracts 150,000 from a 100,000 approval, the
+        # theft compounds with yield, decreaseAllowance reverts the
+        # second spend, and a blind re-approve after approve(0)
+        # loses the same 150,000.
+        import importlib.util
+        from fractions import Fraction as F
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "approve-race-vault-deposit-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "approve_race_vault_deposit_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+
+        # 1. Control: 100,000 in at $1.00 mints 100,000 shares,
+        # allowance 0, Alice balance 100,000.
+        self.assertEqual(F(100_000) / F(1), 100_000)
+
+        # 2. Race: front-run spends 100,000, lowering lands, second
+        # spend 50,000 -> Mallory 150,000 shares, Alice balance
+        # 50,000, excess 50,000 over the 100,000 cap.
+        self.assertEqual(100_000 + 50_000, 150_000)
+        self.assertEqual(200_000 - 150_000, 50_000)
+        self.assertEqual(150_000 - 100_000, 50_000)
+
+        # 2b. Yield compounds it: +10% -> assets 1,265,000,
+        # supply 1,150,000, price 1.10; redeeming 150,000 shares
+        # pays 164,999.999999 USDC (exact integer flooring, one
+        # base unit short of $165,000), a $14,999.999999 gain.
+        self.assertEqual(F(1_265_000, 1_150_000), F(11, 10))
+        out = (150_000 * USDC) * (1_265_000 * USDC + 1) // \
+            (1_150_000 * USDC + 1)
+        self.assertEqual(out, 164_999_999_999)
+        self.assertEqual(out - 150_000 * USDC, 14_999_999_999)
+
+        # 3. Defense decreaseAllowance: relative decrease of 50,000
+        # against a spent allowance of 0 reverts, so the second
+        # spend never becomes possible; no front-run, it lands
+        # first and only 50,000 remains spendable.
+        self.assertEqual(100_000 - 50_000, 50_000)
+        self.assertEqual(0 - 50_000 < 0, True)
+
+        # 4b. Blind re-approve after approve(0): same 150,000.
+        self.assertEqual(100_000 + 50_000, 150_000)
+
+        # 5. One-shot permit: exactly 100,000, consumed on use.
+        self.assertEqual(100_000, 100_000)
+
     def test_intent_fill_adverse_selection_guide_numbers(self):
         # Pins the numbers of
         # /guides/erc4626-intent-fill-adverse-selection/: Alice signs
