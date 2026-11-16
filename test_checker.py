@@ -10012,6 +10012,146 @@ class TestChecker(unittest.TestCase):
             self.assertIn(f'add("/guides/{href}/"', build,
                           f"dead guide link /guides/{href}/")
 
+    def test_fee_on_leveraged_assets_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-fee-on-leveraged-assets/
+        # to its model: 1,000,000 equity / 1,000,000 shares at $1.00,
+        # Alice holds 10,000 shares; the vault borrows 1,000,000 at
+        # 5% a year and deploys 2,000,000 (2x); management fee 2%/yr
+        # on beginning assets. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers in plain USDC units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fee-on-leveraged-assets-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fee_on_leveraged_assets_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        E, S, H = F(1_000_000), F(1_000_000), F(10_000)
+        D, G = F(1_000_000), F(2_000_000)
+        FEE, BORROW = F(2, 100), F(5, 100)
+
+        # The fee itself: gross 40,000 = 4.00% of equity, net
+        # 20,000 = 2.00%; the 20,000 gap is the fee rate times debt.
+        fee_gross, fee_net = G * FEE, E * FEE
+        self.assertEqual((fee_gross, fee_net), (40_000, 20_000))
+        self.assertEqual(fee_gross / E, F(4, 100))
+        self.assertEqual(fee_net / E, F(2, 100))
+        self.assertEqual(fee_gross - fee_net, 20_000)
+        self.assertEqual(fee_gross - fee_net, FEE * D)
+
+        # Flat year: borrow cost 50,000. Gross equity 910,000,
+        # price 0.91, Alice 9,100; net 930,000, price 0.93, Alice
+        # 9,300. The fee basis alone costs Alice 200.
+        borrow = D * BORROW
+        self.assertEqual(borrow, 50_000)
+        eq_flat_g = E - borrow - fee_gross
+        eq_flat_n = E - borrow - fee_net
+        self.assertEqual((eq_flat_g, eq_flat_n), (910_000, 930_000))
+        self.assertEqual((eq_flat_g / S, eq_flat_n / S),
+                         (F(91, 100), F(93, 100)))
+        self.assertEqual((H * eq_flat_g / S, H * eq_flat_n / S),
+                         (9_100, 9_300))
+        self.assertEqual(H * (eq_flat_n - eq_flat_g) / S, 200)
+
+        # +10% year: gain 200,000. Gross 1,110,000 (+11%), price
+        # 1.11, Alice 11,100; net 1,130,000 (+13%), price 1.13,
+        # Alice 11,300. Same 2% fee reads as a 2-point return gap.
+        gain = G * F(10, 100)
+        self.assertEqual(gain, 200_000)
+        eq_up_g = E + gain - borrow - fee_gross
+        eq_up_n = E + gain - borrow - fee_net
+        self.assertEqual((eq_up_g, eq_up_n), (1_110_000, 1_130_000))
+        self.assertEqual((eq_up_g / S, eq_up_n / S),
+                         (F(111, 100), F(113, 100)))
+        self.assertEqual((H * eq_up_g / S, H * eq_up_n / S),
+                         (11_100, 11_300))
+        self.assertEqual((eq_up_n - E) / E - (eq_up_g - E) / E,
+                         F(2, 100))
+
+        # 3x leverage, flat year: debt 2,000,000, deployed
+        # 3,000,000, borrow 100,000. Gross fee 60,000 = 6% of
+        # equity, equity 840,000, price 0.84, Alice 8,400; net fee
+        # 20,000, equity 880,000, price 0.88, Alice 8,800.
+        D3, G3 = F(2_000_000), F(3_000_000)
+        fee_gross3, borrow3 = G3 * FEE, D3 * BORROW
+        self.assertEqual((fee_gross3, borrow3), (60_000, 100_000))
+        self.assertEqual(fee_gross3 / E, F(6, 100))
+        eq3_g = E - borrow3 - fee_gross3
+        eq3_n = E - borrow3 - fee_net
+        self.assertEqual((eq3_g, eq3_n), (840_000, 880_000))
+        self.assertEqual((eq3_g / S, eq3_n / S),
+                         (F(84, 100), F(88, 100)))
+        self.assertEqual((H * eq3_g / S, H * eq3_n / S),
+                         (8_400, 8_800))
+
+        # -10% year: loss 200,000. Gross 710,000, price 0.71,
+        # Alice 7,100; net 730,000, price 0.73, Alice 7,300. The
+        # 40,000 gross fee is 5.63% of the equity that is left.
+        loss = G * F(10, 100)
+        eq_down_g = E - loss - borrow - fee_gross
+        eq_down_n = E - loss - borrow - fee_net
+        self.assertEqual((eq_down_g, eq_down_n), (710_000, 730_000))
+        self.assertEqual((eq_down_g / S, eq_down_n / S),
+                         (F(71, 100), F(73, 100)))
+        self.assertEqual((H * eq_down_g / S, H * eq_down_n / S),
+                         (7_100, 7_300))
+        self.assertEqual(round(float(fee_gross / eq_down_g) * 100, 2),
+                         5.63)
+
+        # Break-even strategy yield: gross 4.5%, net 3.5%, a full
+        # 1.0 point gap — exactly fee rate x debt / gross assets.
+        be_gross = (borrow + fee_gross) / G
+        be_net = (borrow + fee_net) / G
+        self.assertEqual((be_gross, be_net),
+                         (F(45, 1000), F(35, 1000)))
+        self.assertEqual(be_gross - be_net, F(1, 100))
+        self.assertEqual(be_gross - be_net, FEE * D / G)
+
+        # Unleveraged control: no debt, gross fee = net fee = 20,000.
+        self.assertEqual((E + F(0)) * FEE, E * FEE)
+        self.assertEqual(E * FEE, 20_000)
+
+        # Chart widths: annual fee, scaled to 60,000
+        # (one decimal, the site's convention).
+        self.assertEqual(round(float(fee_gross / 60_000) * 100, 1), 66.7)
+        self.assertEqual(round(float(fee_net / 60_000) * 100, 1), 33.3)
+        self.assertEqual(round(float(fee_gross3 / 60_000) * 100, 1),
+                         100.0)
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-fee-on-leveraged-assets/"')
+        section = build[start:start + 14000]
+        for needle in ("40,000", "20,000", "60,000", "910,000",
+                       "930,000", "1,110,000", "1,130,000", "840,000",
+                       "880,000", "710,000", "730,000", "4.5%", "3.5%",
+                       "5.63%", "4.00%", "$0.91", "$0.93", "$1.11",
+                       "$1.13", "$0.84", "$0.88", "$0.71", "$0.73",
+                       "9,100", "9,300", "11,100", "11,300", "8,400",
+                       "8,800", "7,100", "7,300", "2% × 2 = 4%",
+                       "2% × 3 = 6%", "width:66.7%", "width:33.3%",
+                       "width:100.0%"):
+            self.assertIn(needle, section)
+        self.assertIn("the 2% fee that is 4% of equity", section)
+        # Only one add() for this path in build.py.
+        self.assertEqual(
+            build.count('add("/guides/erc4626-fee-on-leveraged-assets/"'),
+            1)
+        # Every internal guide link inside this guide must resolve
+        # to a real page.
+        import re
+        for href in re.findall(r'href=\\?"/guides/([^"]+)/\\?"',
+                               section):
+            self.assertIn(f'add("/guides/{href}/"', build,
+                          f"dead guide link /guides/{href}/")
+
     def test_no_bare_loss_fill_bars(self):
         # Every chart bar on the site must carry a meaning class:
         # pass (green), fail (red) or dim (grey). A bare
