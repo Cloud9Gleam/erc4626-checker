@@ -11670,5 +11670,129 @@ class TestChecker(unittest.TestCase):
         self.assertIn("13,636.363636", build_text)
 
 
+    def test_donation_bridge_shares_guide_numbers(self):
+        # Pins /guides/erc4626-donation-bridge-shares/ to its
+        # model: a donation landing while bridge-minted shares
+        # are outstanding is split by shares, so the unbacked
+        # shares take a full pro-rata slice — and if the bridge
+        # then fails, the whole gift leaves with their redeemer.
+        # Vault 1,000,000 USDC / 1,000,000 shares at $1.00;
+        # Alice 100,000, Carol 900,000; bridge mints Bob 100,000
+        # shares on message, his 100,000 USDC still in transit;
+        # donation 100,000. Importing the model re-runs its
+        # assertions; the checks below independently re-derive
+        # every headline number with plain Fraction arithmetic,
+        # plus the S3/S4 integer-floor behaviour.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-bridge-shares-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_bridge_shares_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        U = 1_000_000
+        A0 = Fraction(1_000_000)
+        SUPPLY0 = Fraction(1_000_000)
+        ALICE = Fraction(100_000)
+        CAROL = Fraction(900_000)
+        BOB = Fraction(100_000)
+        DONATION = Fraction(100_000)
+
+        def price(assets, supply):
+            return assets / supply
+
+        def value(shares, assets, supply):
+            return shares * price(assets, supply)
+
+        # S0: baseline, no bridge shares — price 11/10, gift
+        # splits 10,000 / 90,000 by shares.
+        self.assertEqual(price(A0 + DONATION, SUPPLY0),
+                         Fraction(11, 10))
+        self.assertEqual(value(ALICE, A0 + DONATION, SUPPLY0),
+                         110_000)
+        self.assertEqual(value(CAROL, A0 + DONATION, SUPPLY0),
+                         990_000)
+
+        # S1: donation with 100,000 unbacked shares outstanding —
+        # price 10/11 before, exactly 1.00 after; gifts
+        # 100,000/11, 100,000/11, 900,000/11; sum 100,000.
+        S1 = SUPPLY0 + BOB
+        self.assertEqual(price(A0, S1), Fraction(10, 11))
+        self.assertEqual(value(ALICE, A0, S1),
+                         Fraction(1_000_000, 11))
+        self.assertEqual(value(BOB, A0, S1),
+                         Fraction(1_000_000, 11))
+        self.assertEqual(value(CAROL, A0, S1),
+                         Fraction(9_000_000, 11))
+        self.assertEqual(price(A0 + DONATION, S1), 1)
+        gift_a = (value(ALICE, A0 + DONATION, S1)
+                  - value(ALICE, A0, S1))
+        gift_b = (value(BOB, A0 + DONATION, S1)
+                  - value(BOB, A0, S1))
+        gift_c = (value(CAROL, A0 + DONATION, S1)
+                  - value(CAROL, A0, S1))
+        self.assertEqual(gift_a, Fraction(100_000, 11))
+        self.assertEqual(gift_b, Fraction(100_000, 11))
+        self.assertEqual(gift_c, Fraction(900_000, 11))
+        self.assertEqual(gift_a + gift_b + gift_c, DONATION)
+
+        # S2: settlement succeeds — price 12/11; Bob worth
+        # 1,200,000/11, net +100,000/11 over his deposit; Alice
+        # the same, Carol 10,800,000/11; sum 1,200,000.
+        A2 = A0 + DONATION + BOB
+        self.assertEqual(price(A2, S1), Fraction(12, 11))
+        self.assertEqual(value(BOB, A2, S1),
+                         Fraction(1_200_000, 11))
+        self.assertEqual(value(BOB, A2, S1) - BOB,
+                         Fraction(100_000, 11))
+        self.assertEqual(value(ALICE, A2, S1),
+                         Fraction(1_200_000, 11))
+        self.assertEqual(value(CAROL, A2, S1),
+                         Fraction(10_800_000, 11))
+        self.assertEqual(value(ALICE, A2, S1)
+                         + value(BOB, A2, S1)
+                         + value(CAROL, A2, S1), A2)
+
+        # S3: bridge fails, Bob redeems right after the donation —
+        # integer redeem exactly 100,000 USDC; without the donation
+        # 90,909,090,909 base units, leaving 909,090,909,091.
+        bob_redeem = (100_000 * U * 1_100_000 * U) // (1_100_000 * U)
+        self.assertEqual(bob_redeem, 100_000 * U)
+        bob_no_don = (100_000 * U * 1_000_000 * U) // (1_100_000 * U)
+        self.assertEqual(bob_no_don, 90_909_090_909)
+        self.assertEqual(1_000_000 * U - bob_no_don, 909_090_909_091)
+
+        # S4: mint only on settlement — Bob mints 90,909,090,909
+        # base units at 1.10 (1 base unit short of the exact
+        # 1,000,000/11 shares), redeems 99,999,999,999; Alice
+        # 110,000,000,000, Carol 990,000,000,000; 1 base unit
+        # of dust stays in the vault.
+        bob_shares = (100_000 * U * 1_000_000 * U) // (1_100_000 * U)
+        self.assertEqual(bob_shares, 90_909_090_909)
+        S4 = 1_000_000 * U + bob_shares
+        A4 = 1_200_000 * U
+        self.assertEqual((bob_shares * A4) // S4, 99_999_999_999)
+        self.assertEqual((100_000 * U * A4) // S4, 110_000_000_000)
+        self.assertEqual((900_000 * U * A4) // S4, 990_000_000_000)
+        self.assertEqual(A4 - (99_999_999_999 + 110_000_000_000
+                               + 990_000_000_000), 1)
+
+        # The guide page exists exactly once, with its slug and
+        # headline numbers.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertEqual(
+            build_text.count(
+                'add("/guides/erc4626-donation-bridge-shares/"'), 1)
+        self.assertIn("9,090.909091", build_text)
+        self.assertIn("109,090.909091", build_text)
+        self.assertIn("81,818.181818", build_text)
+        self.assertIn("90,909.090909", build_text)
+        self.assertIn("99,999.999999", build_text)
+
+
 if __name__ == "__main__":
     unittest.main()
