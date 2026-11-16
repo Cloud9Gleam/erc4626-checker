@@ -7537,6 +7537,88 @@ class TestChecker(unittest.TestCase):
         self.assertIn("costs Bob <strong>200</strong> and Carol <strong>1,800</strong>", build)
         self.assertNotIn("costs Bob <strong>2,000</strong>", build)
 
+    def test_queue_loss_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-queue-loss/ to
+        # its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00. Alice holds 100,000 shares (10%), Carol 900,000
+        # (90%). Alice requests redemption of all her 100,000
+        # shares; the request queues, and a 100,000 loss (or gain)
+        # is recognised while she waits. Importing the model
+        # re-runs its assertions; the checks below independently
+        # re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "queue-loss-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "queue_loss_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        def claim(assets, shares, total_shares):
+            return Fraction(shares * assets, total_shares)
+
+        T, S = 1_000_000, 1_000_000
+        A, C = 100_000, 900_000  # Alice's / Carol's shares
+        L = 100_000  # loss (or gain) recognised while queued
+        S_rem = S - A  # 900,000 shares remain after Alice's burn
+
+        # (1) Design R (request price), loss: Alice 100,000,
+        # Carol 800,000; stayers' price 8/9.
+        self.assertEqual(claim(T - L - A, C, S_rem), 800_000)
+        self.assertEqual(Fraction(T - L - A, S_rem), Fraction(8, 9))
+
+        # (2) Design C (claim price), same loss: Alice 90,000,
+        # Carol 810,000; price 0.90. The design moves exactly
+        # 10,000: Alice 100,000 -> 90,000, Carol 800,000 -> 810,000.
+        price_c = Fraction(T - L, S)
+        self.assertEqual(price_c, Fraction(9, 10))
+        self.assertEqual(claim(T - L, A, S), 90_000)
+        self.assertEqual(claim(T - L - 90_000, C, S_rem), 810_000)
+        self.assertEqual(100_000 - 90_000, 10_000)
+        self.assertEqual(810_000 - 800_000, 10_000)
+
+        # (3) Design R, gain: Alice 100,000, Carol 1,000,000;
+        # stayers' price 10/9. Alice gets none of the gain.
+        self.assertEqual(claim(T + L - A, C, S_rem), 1_000_000)
+        self.assertEqual(Fraction(T + L - A, S_rem), Fraction(10, 9))
+
+        # (4) Design C, same gain: Alice 110,000, Carol 990,000;
+        # price 1.10. Symmetric 10,000 move the other way.
+        self.assertEqual(claim(T + L, A, S), 110_000)
+        self.assertEqual(claim(T + L - 110_000, C, S_rem), 990_000)
+
+        # (5) Full queue, loss: Design R FIFO pays in request
+        # order — Alice first: 100,000 / 800,000; Carol first:
+        # Carol 900,000, Alice 0. Design C: 90,000 / 810,000
+        # regardless of order.
+        self.assertEqual((T - L) - 100_000, 800_000)
+        self.assertEqual((T - L) - 900_000, 0)
+        self.assertEqual(claim(T - L, A, S), 90_000)
+        self.assertEqual(claim(T - L, C, S), 810_000)
+
+        # (6) Control, Alice paid before the loss is recognised:
+        # Alice 100,000, then the loss leaves Carol at 800,000 —
+        # identical to Design R.
+        self.assertEqual(claim(T - A - L, C, S_rem), 800_000)
+
+        # (7) Guide page carries the headline numbers and the
+        # chart widths (Alice 100,000 vs 90,000).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-queue-loss/", build)
+        for needle in ("0.888889", "1.111111", "90,000", "810,000",
+                       "110,000", "990,000", "800,000", "1,000,000",
+                       "width:100.0%", "width:90.0%",
+                       "moves exactly <strong>10,000</strong>"):
+            self.assertIn(needle, build)
+
+        # (8) The loss is never blamed on Alice alone: under
+        # request pricing Carol bears the whole 100,000.
+        self.assertIn("Carol bears the whole 100,000 loss", build)
+        self.assertNotIn("Alice bears the whole 100,000", build)
+
 
 if __name__ == "__main__":
     unittest.main()
