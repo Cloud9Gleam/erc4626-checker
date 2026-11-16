@@ -12761,6 +12761,91 @@ class TestChecker(unittest.TestCase):
                          50_000 * USDC)
         self.assertAlmostEqual((mgr6 - mgr0) / (50_000 * USDC) * 100,
                                21.38, places=2)
+
+    def test_basket_mispriced_donation_guide_numbers(self):
+        # Pins /guides/erc4626-basket-mispriced-donation/ to its
+        # model: vault 100,000 USDC + 100 XYZ, oracle $100, market
+        # $50, 110,000 shares. Importing the model runs its own
+        # asserts; the checks below independently re-derive the
+        # headline numbers with Fraction arithmetic, including the
+        # background-vs-marginal split and the full wealth ledger
+        # that makes this a majority-holder extraction, not theft.
+        import importlib.util
+        from fractions import Fraction as F
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "basket-mispriced-donation-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "basket_mispriced_donation_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        # 0. Baseline: booked $110,000 at $1.00, true $105,000 at
+        # $0.954545 — a $5,000 gap before any donation.
+        booked0 = F(100_000) + 100 * F(100)
+        true0 = F(100_000) + 100 * F(50)
+        self.assertEqual((booked0, true0, booked0 - true0),
+                         (110_000, 105_000, 5_000))
+        self.assertEqual(true0 / F(110_000), F(21, 22))
+
+        # 1. Donation of 100 XYZ (cost $5,000): booked +$10,000 to
+        # $120,000 at $1.090909, true +$5,000 to $110,000 at $1.00.
+        # The gap doubles to $10,000.
+        booked1 = booked0 + 100 * F(100)
+        true1 = true0 + 100 * F(50)
+        self.assertEqual((booked1, true1, booked1 - true1),
+                         (120_000, 110_000, 10_000))
+        self.assertEqual(booked1 / F(110_000), F(12, 11))
+        self.assertEqual(true1 / F(110_000), 1)
+
+        # 2. Next 100,000 USDC deposit mints 91,666.666667 shares
+        # (8,333.333333 short) and loses $4,545.454545 to the
+        # existing holders; conservation holds.
+        minted = F(100_000) / (booked1 / F(110_000))
+        self.assertEqual(minted, F(275_000, 3))
+        price_after = (true1 + F(100_000)) / (F(110_000) + minted)
+        self.assertEqual(price_after, F(126, 121))
+        loss = F(100_000) - minted * price_after
+        self.assertEqual(loss, F(550_000, 121))
+
+        # 2b. Counterfactual, no donation: same deposit still loses
+        # $2,380.952381 to background staleness alone; only
+        # $2,164.502165 of the loss is marginal to the donation.
+        price_bg = (true0 + F(100_000)) / F(210_000)
+        self.assertEqual(price_bg, F(41, 42))
+        loss_bg = F(100_000) - F(100_000) * price_bg
+        self.assertEqual(loss_bg, F(100_000, 42))
+        self.assertEqual(loss - loss_bg, F(5_500_000, 2_541))
+
+        # 3. Attacker ledger: net = -$5,000 + f x $9,545.454545;
+        # break-even 52.381% (121/231); 100% holder +$4,545.454545,
+        # 10% holder -$4,045.454545, 0% holder -$5,000.
+        gain_full = F(5_000) + loss
+        self.assertEqual(gain_full, F(1_155_000, 121))
+        self.assertEqual(F(5_000) / gain_full, F(121, 231))
+        self.assertEqual(-F(5_000) + gain_full, loss)
+        self.assertEqual(-F(5_000) + F(1, 10) * gain_full,
+                         F(-489_500, 121))
+
+        # 5. Defense: fresh $50 mark makes booked == true $110,000
+        # and the deposit mints the full 100,000 shares.
+        booked_fresh = F(100_000) + 200 * F(50)
+        self.assertEqual(booked_fresh, 110_000)
+        self.assertEqual(F(100_000) / (booked_fresh / F(110_000)),
+                         100_000)
+
+        # 6. Redemption: in-kind 11,000 shares pay 10,000 USDC +
+        # 20 XYZ = $11,000 true, no extraction; USDC-only at the
+        # booked price pays $12,000, extracting $1,000 ($500 of it
+        # marginal to the donation).
+        self.assertEqual(F(11_000) * F(100_000) / F(110_000), 10_000)
+        self.assertEqual(F(11_000) * 200 / F(110_000), 20)
+        self.assertEqual(F(11_000) * (booked1 / F(110_000)), 12_000)
+        self.assertEqual(F(11_000) * (booked1 / F(110_000))
+                         - F(11_000) * 1, 1_000)
+        self.assertEqual(F(11_000) * (booked0 / F(110_000))
+                         - F(11_000) * (true0 / F(110_000)), 500)
+
     def test_intent_fill_adverse_selection_guide_numbers(self):
         # Pins the numbers of
         # /guides/erc4626-intent-fill-adverse-selection/: Alice signs
