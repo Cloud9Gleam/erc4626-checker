@@ -8484,6 +8484,122 @@ class TestChecker(unittest.TestCase):
         self.assertIn("The new content here is cases 2", build)
         self.assertNotIn("Alice can withdraw the full 110,000", build)
 
+    def test_fot_withdrawal_queue_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-fot-withdrawal-queue/
+        # to its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00, liquid cash 100,000, deployed 900,000; the underlying
+        # taxes every transfer 10% both directions (net = gross x
+        # 0.9); the queue is FIFO and each payout burns shares at
+        # the claim-time price; Alice 100,000 shares (10%), Bob
+        # 900,000 (90%). Importing the model re-runs its assertions;
+        # the checks below independently re-derive the headline
+        # numbers (cases 3, 6, 8 are the headline; cases 1 and 7 are
+        # the stated overlap anchors, not new numbers).
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fot-withdrawal-queue-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fot_withdrawal_queue_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        T = F(9, 10)
+        # (1) Baseline, no tax (overlap: withdrawal-queue case 1):
+        # Alice 100,000, Bob 900,000, paid in full.
+        self.assertEqual(F(100_000) * 1, 100_000)
+        self.assertEqual(F(900_000) * 1, 900_000)
+        # (2) Tax, ample liquid: Alice net 90,000 (tax 10,000), Bob
+        # net 810,000 (tax 90,000); total tax 100,000 = 10% of the
+        # vault; price stays $1.00.
+        self.assertEqual(100_000 * T, 90_000)
+        self.assertEqual(100_000 * F(1, 10), 10_000)
+        self.assertEqual(900_000 * T, 810_000)
+        self.assertEqual(900_000 * F(1, 10), 90_000)
+        self.assertEqual(10_000 + 90_000, 100_000)
+        self.assertEqual(90_000 + 810_000 + 100_000, 1_000_000)
+        # (3) HEADLINE: liquid 100,000, Alice first -- net-serving
+        # capacity is 0.9 x liquid (90,000); paying 100,000 net
+        # needs 100,000 / 0.9 = 1,000,000/9 gross.
+        self.assertEqual(100_000 * T, 90_000)
+        self.assertEqual(F(100_000) / T, F(1_000_000, 9))
+        self.assertEqual(float(F(1_000_000, 9)), 111111.11111111111)
+        # (4) Harvest 500,000: Bob gross 500,000 -> net 450,000
+        # (tax 50,000); still owed 400,000 shares = 360,000 net.
+        self.assertEqual(500_000 * T, 450_000)
+        self.assertEqual(500_000 * F(1, 10), 50_000)
+        self.assertEqual(900_000 - 500_000, 400_000)
+        self.assertEqual(400_000 * T, 360_000)
+        # (5) Partial processing, liquid 50,000: Alice gross 50,000
+        # -> net 45,000; still owed 50,000 shares = 45,000 net.
+        self.assertEqual(50_000 * T, 45_000)
+        self.assertEqual(100_000 - 50_000, 50_000)
+        # (6) HEADLINE: Carol deposits 100,000 to feed the queue --
+        # lands 90,000 (tax 10,000), mints 90,000 shares; Bob paid
+        # 90,000 gross -> net 81,000 (tax 9,000 more); total tax on
+        # her path 19,000; without the deposit tax Bob nets 90,000,
+        # so the deposit tax costs him 9,000; Bob still owed 810,000
+        # shares; price stays $1.00.
+        self.assertEqual(100_000 * T, 90_000)
+        self.assertEqual(90_000 * T, 81_000)
+        self.assertEqual(90_000 * F(1, 10), 9_000)
+        self.assertEqual(10_000 + 9_000, 19_000)
+        self.assertEqual(100_000 * T, 90_000)
+        self.assertEqual(90_000 - 81_000, 9_000)
+        self.assertEqual(900_000 - 90_000, 810_000)
+        # (7) Round trip (overlap: fot-claim-window number): Dave
+        # 100,000 -> 90,000 shares -> net 81,000; loss 19,000 = 19%
+        # = 1 - 0.9^2.
+        self.assertEqual(100_000 * T, 90_000)
+        self.assertEqual(90_000 * T, 81_000)
+        self.assertEqual(100_000 - 81_000, 19_000)
+        self.assertEqual(F(19_000, 100_000), F(19, 100))
+        self.assertEqual(1 - T * T, F(19, 100))
+        # (8) HEADLINE: donation 100,000 lands 90,000 (tax 10,000),
+        # total 1,090,000, price 109/100; Alice 100,000 shares pay
+        # 109,000 gross -> 98,100 net (was 90,000); Bob 900,000 pay
+        # 981,000 gross -> 882,900 net (was 810,000); conservation:
+        # net paid 981,000 + all tax 119,000 = 1,100,000; donation
+        # net gain Alice +8,100, Bob +72,900, total 81,000 = landed
+        # 90,000 x 0.9.
+        self.assertEqual(100_000 * T, 90_000)
+        self.assertEqual(1_000_000 + 90_000, 1_090_000)
+        self.assertEqual(F(1_090_000, 1_000_000), F(109, 100))
+        self.assertEqual(100_000 * F(109, 100), 109_000)
+        self.assertEqual(109_000 * T, 98_100)
+        self.assertEqual(109_000 * F(1, 10), 10_900)
+        self.assertEqual(900_000 * F(109, 100), 981_000)
+        self.assertEqual(981_000 * T, 882_900)
+        self.assertEqual(981_000 * F(1, 10), 98_100)
+        self.assertEqual(98_100 + 882_900, 981_000)
+        self.assertEqual(10_000 + 10_900 + 98_100, 119_000)
+        self.assertEqual(981_000 + 119_000, 1_100_000)
+        self.assertEqual(98_100 - 90_000, 8_100)
+        self.assertEqual(882_900 - 810_000, 72_900)
+        self.assertEqual(8_100 + 72_900, 81_000)
+        self.assertEqual(90_000 * T, 81_000)
+
+        # (9) Guide page carries the headline numbers and the chart
+        # widths (liquid 100,000 / net capacity 90,000 / gross
+        # needed 111,111.111111 -> 90.0 / 81.0 / 100.0).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-fot-withdrawal-queue/", build)
+        for needle in ("111,111.111111", "90,000", "81,000", "19,000",
+                       "450,000", "360,000", "45,000", "98,100",
+                       "882,900", "109,000", "981,000", "119,000",
+                       "8,100", "72,900", "810,000", "1.09",
+                       "width:90.0%", "width:81.0%", "width:100.0%"):
+            self.assertIn(needle, build)
+
+        # (10) The guide states the honest overlap (case 1 is the
+        # withdrawal-queue case 1, case 7 the fot-claim-window
+        # round trip) and that the new content is cases 2-6 and 8.
+        self.assertIn("The new content here is cases 2", build)
+        self.assertIn("case 8: a taxed donation repricing", build)
+
 
 if __name__ == "__main__":
     unittest.main()
