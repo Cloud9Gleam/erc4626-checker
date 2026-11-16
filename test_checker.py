@@ -3499,7 +3499,12 @@ class TestChecker(unittest.TestCase):
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
         start = build.index('add("/research/gamma/"')
-        end = build.index('add("/research/domain-hijack/"', start)
+        # End at the NEXT page's add(, not a hardcoded neighbour:
+        # parallel rounds insert new research pages after gamma, so a
+        # fixed end marker silently swallows them into this slice.
+        import re
+        nxt = re.search(r'\nadd\("', build[start + 10:])
+        end = start + 10 + nxt.start() + 1
         page = build[start:end]
         self.assertEqual(page.count("<tr><td>"), 25)
         self.assertIn("30,259.31 USDC", page)
