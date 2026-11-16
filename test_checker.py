@@ -6981,6 +6981,96 @@ class TestChecker(unittest.TestCase):
         self.assertIn("99,999.999999", build)
         self.assertIn("0.909091", build)
 
+    def test_flat_fee_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-flat-fee/ to its model:
+        # a flat $10 fee per transaction on a 1,000,000 USDC /
+        # 1,000,000 share vault at $1.00. Same $10 is 10% of a 100
+        # USDC deposit, 1% of 1,000, 0.01% of 100,000 (a 1,000x
+        # spread); splitting 100,000 into a hundred 1,000 deposits
+        # costs $1,000; a 10 USDC deposit mints 0 shares; the round
+        # trip costs $20 flat, beating a 1% fee only above
+        # 200,000/199 = 1,005.025126 USDC; retained, the fee nudges
+        # the price to 110,000/109,999 and the depositor recaptures
+        # 0.909008 of it. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers with Fraction.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "flat-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "flat_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        FLAT = Fraction(10)
+        A = Fraction(1_000_000)
+        S = Fraction(1_000_000)
+
+        # (a) Regressivity: same $10, rates 10% / 1% / 0.01%.
+        for D, expect_rate in ((Fraction(100), Fraction(1, 10)),
+                               (Fraction(1_000), Fraction(1, 100)),
+                               (Fraction(100_000), Fraction(1, 10_000))):
+            self.assertEqual(FLAT / D, expect_rate)
+        self.assertEqual(Fraction(1, 10) / Fraction(1, 10_000), 1000)
+
+        # (b) Splitting multiplies the fee.
+        self.assertEqual(Fraction(100_000) - FLAT, 99_990)
+        self.assertEqual(Fraction(100_000) - 10 * FLAT, 99_900)
+        self.assertEqual(Fraction(100_000) - 100 * FLAT, 99_000)
+        self.assertEqual((100 * FLAT) / Fraction(100_000),
+                         Fraction(1, 100))
+
+        # (c) Below the fee: zero or negative net.
+        self.assertEqual(Fraction(10) - FLAT, 0)
+        self.assertEqual(Fraction(5) - FLAT, -5)
+        self.assertEqual(Fraction(11) - FLAT, 1)
+
+        # (d) Round trip: $20 flat vs 1.99% percentage.
+        dep_shares = Fraction(100_000) - FLAT
+        self.assertEqual(dep_shares, 99_990)
+        self.assertEqual(dep_shares - FLAT, 99_980)
+        self.assertEqual(Fraction(100_000) - (dep_shares - FLAT), 20)
+        D_star = Fraction(20) / Fraction(199, 10_000)
+        self.assertEqual(D_star, Fraction(200_000, 199))
+        self.assertEqual(round(float(D_star), 6), 1005.025126)
+        self.assertEqual(Fraction(1_000) * Fraction(199, 10_000),
+                         Fraction(199, 10))
+        self.assertEqual(Fraction(100_000) * Fraction(199, 10_000),
+                         1_990)
+
+        # (e) Fee retained in the vault: depositor recaptures 0.909008.
+        price_e = Fraction(1_100_000, 1_099_990)
+        self.assertEqual(price_e, Fraction(110_000, 109_999))
+        value_e = (Fraction(100_000) - FLAT) * price_e
+        loss_e = Fraction(100_000) - value_e
+        recapture = FLAT - loss_e
+        self.assertEqual(loss_e, Fraction(10_000_000, 1_099_990))
+        self.assertEqual(recapture, Fraction(999_900, 1_099_990))
+        self.assertEqual(round(float(loss_e), 6), 9.090992)
+        self.assertEqual(round(float(recapture), 6), 0.909008)
+
+        # (f) True cost scales with price even though the fee is flat.
+        shares_f = Fraction(99_990)
+        for price_later, expect_cost in ((Fraction(11, 10), 11),
+                                         (Fraction(9, 10), 9)):
+            self.assertEqual(Fraction(100_000) * price_later
+                             - shares_f * price_later, expect_cost)
+
+        # (g) Single deposit break-even vs a 1% fee: D = 1,000.
+        self.assertEqual(FLAT / Fraction(1, 100), 1_000)
+        self.assertEqual(Fraction(100) * Fraction(1, 100), 1)
+
+        # (h) Guide page carries the headline numbers.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-flat-fee/", build)
+        self.assertIn("1,005.025126", build)
+        self.assertIn("9.090992", build)
+        self.assertIn("0.909008", build)
+        self.assertIn("10.00%", build)
+        self.assertIn("0.01%", build)
 
 
 if __name__ == "__main__":
