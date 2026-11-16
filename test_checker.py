@@ -7413,6 +7413,19 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("loses 901 USDC", build)
         self.assertNotIn("loss of 901", build)
 
+        # (9) The zero-sum close: the three SIGNED figures —
+        # attacker -9,091, victim -victim_loss, others
+        # +others_gain — sum to -0.099249, NOT within 0.09.
+        # The guide must state the 0.10 bound, never 0.09.
+        signed_sum = attacker_net - victim_loss + others_gain
+        self.assertEqual(round(float(abs(signed_sum)), 6), 0.099249)
+        self.assertFalse(abs(signed_sum) < Fraction(9, 100))
+        self.assertLess(abs(signed_sum), Fraction(1, 10))
+        self.assertIn("within <strong>0.10 USDC</strong> of zero-sum",
+                      build)
+        self.assertIn("0.099249 USDC of rounding dust", build)
+        self.assertNotIn("within <strong>0.09 USDC</strong>", build)
+
 
 if __name__ == "__main__":
     unittest.main()
