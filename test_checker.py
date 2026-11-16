@@ -6277,6 +6277,164 @@ class TestChecker(unittest.TestCase):
             build_text.count(
                 'add("/guides/erc4626-donation-zap-deposit/"'), 1)
 
+    def test_donation_lockup_guide_numbers(self):
+        # Pins /guides/erc4626-donation-lockup/ to its model: a
+        # donation is split by shares when it lands, but a lockup
+        # decides who is still holding when the NEXT event lands.
+        # Vault 1,000,000 USDC / 1,000,000 shares at $1.00;
+        # Alice 100,000 shares locked to day 30, Carol 900,000
+        # free; donation 100,000 lands day 1, loss 100,000 is
+        # recognised day 10. Importing the model re-runs its
+        # assertions; the checks below independently re-derive
+        # every headline number with plain Fraction arithmetic.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-lockup-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_lockup_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        A0 = Fraction(1_000_000)
+        SUPPLY0 = Fraction(1_000_000)
+        ALICE = Fraction(100_000)
+        CAROL = Fraction(900_000)
+        DONATION = Fraction(100_000)
+        LOSS = Fraction(100_000)
+
+        def price(assets, supply):
+            return assets / supply
+
+        def value(shares, assets, supply):
+            return shares * price(assets, supply)
+
+        # S0: donation alone, both stay — 1,100,000 / 1,000,000
+        # @ 1.10; Alice 110,000, Carol 990,000; gift whole.
+        a_d, s_d = A0 + DONATION, SUPPLY0
+        self.assertEqual(price(a_d, s_d), Fraction(11, 10))
+        self.assertEqual(value(ALICE, a_d, s_d), 110_000)
+        self.assertEqual(value(CAROL, a_d, s_d), 990_000)
+
+        # S1: Carol exits day 2 at 990,000; vault 110,000 /
+        # 100,000 @ 1.10; Alice still worth 110,000.
+        carol_exit_s1 = value(CAROL, a_d, s_d)
+        self.assertEqual(carol_exit_s1, 990_000)
+        a1, s1 = a_d - carol_exit_s1, s_d - CAROL
+        self.assertEqual((a1, s1), (110_000, 100_000))
+        self.assertEqual(price(a1, s1), Fraction(11, 10))
+        self.assertEqual(value(ALICE, a1, s1), 110_000)
+
+        # S2: both stay, loss day 10 — back to 1,000,000 /
+        # 1,000,000 @ 1.00; gift and loss cancel per holder.
+        a2, s2 = a_d - LOSS, s_d
+        self.assertEqual((a2, s2), (1_000_000, 1_000_000))
+        self.assertEqual(price(a2, s2), 1)
+        self.assertEqual(value(ALICE, a2, s2), 100_000)
+        self.assertEqual(value(CAROL, a2, s2), 900_000)
+
+        # S3: Carol exits day 2, loss day 10 — vault 10,000 /
+        # 100,000 @ 0.10; Alice redeems 10,000. Net Alice
+        # -90,000, Carol +90,000; Alice captured 10,000 of
+        # the gift, then bore the entire 100,000 loss.
+        a3, s3 = a1 - LOSS, s1
+        self.assertEqual((a3, s3), (10_000, 100_000))
+        self.assertEqual(price(a3, s3), Fraction(1, 10))
+        alice_out_s3 = value(ALICE, a3, s3)
+        self.assertEqual(alice_out_s3, 10_000)
+        self.assertEqual(alice_out_s3 + carol_exit_s1, A0)
+        self.assertEqual(100_000 - alice_out_s3, 90_000)
+        self.assertEqual(carol_exit_s1 - 900_000, 90_000)
+        self.assertEqual(value(ALICE, a1, s1) - 100_000, 10_000)
+        self.assertEqual(value(ALICE, a1, s1) - alice_out_s3,
+                         100_000)
+
+        # S4: mirror — loss day 1, Carol exits day 2 at
+        # 810,000, donation day 10: 190,000 / 100,000 @ 1.90;
+        # Alice redeems 190,000. Net Alice +90,000, Carol
+        # -90,000; Alice bore 10,000 of the loss, then
+        # captured the whole 100,000 gift.
+        a4l, s4l = A0 - LOSS, SUPPLY0
+        self.assertEqual(price(a4l, s4l), Fraction(9, 10))
+        self.assertEqual(value(ALICE, a4l, s4l), 90_000)
+        carol_exit_s4 = value(CAROL, a4l, s4l)
+        self.assertEqual(carol_exit_s4, 810_000)
+        a4, s4 = a4l - carol_exit_s4, s4l - CAROL
+        self.assertEqual((a4, s4), (90_000, 100_000))
+        a4d, s4d = a4 + DONATION, s4
+        self.assertEqual((a4d, s4d), (190_000, 100_000))
+        self.assertEqual(price(a4d, s4d), Fraction(19, 10))
+        alice_out_s4 = value(ALICE, a4d, s4d)
+        self.assertEqual(alice_out_s4, 190_000)
+        self.assertEqual(alice_out_s4 + carol_exit_s4, A0)
+        self.assertEqual(alice_out_s4 - 100_000, 90_000)
+        self.assertEqual(900_000 - carol_exit_s4, 90_000)
+        self.assertEqual(100_000 - value(ALICE, a4l, s4l), 10_000)
+        self.assertEqual(alice_out_s4 - value(ALICE, a4l, s4l),
+                         100_000)
+
+        # S5: 5% early-exit fee instead of a hard lock. Gift
+        # timeline: exit day 2 at 1.10, gross 110,000, fee
+        # 5,500, net 104,500 — saves 94,500 vs locked 10,000.
+        # Loss timeline: exit day 2 at 0.90, gross 90,000, fee
+        # 4,500, net 85,500 — costs 104,500 vs locked 190,000.
+        fee_s3 = Fraction(110_000) * Fraction(5, 100)
+        self.assertEqual(fee_s3, 5_500)
+        alice_fee_exit_s3 = 110_000 - fee_s3
+        self.assertEqual(alice_fee_exit_s3, 104_500)
+        self.assertEqual(alice_fee_exit_s3 - alice_out_s3, 94_500)
+        fee_s4 = Fraction(90_000) * Fraction(5, 100)
+        self.assertEqual(fee_s4, 4_500)
+        alice_fee_exit_s4 = 90_000 - fee_s4
+        self.assertEqual(alice_fee_exit_s4, 85_500)
+        self.assertEqual(alice_out_s4 - alice_fee_exit_s4, 104_500)
+
+        # S6: donation lands day 31, after the lock expires.
+        # Alice exits day 30 at 100,000; vault 900,000 /
+        # 900,000; donation day 31: 1,000,000 / 900,000 @
+        # 10/9; Carol redeems 1,000,000 — the whole gift. Had
+        # Alice stayed one more day: 100,000 shares @ 10/9 =
+        # 111,111.111111 truncated; she missed 11,111.111111.
+        alice_exit_s6 = 100_000
+        a6, s6 = A0 - alice_exit_s6, SUPPLY0 - ALICE
+        self.assertEqual((a6, s6), (900_000, 900_000))
+        a6d, s6d = a6 + DONATION, s6
+        self.assertEqual((a6d, s6d), (1_000_000, 900_000))
+        self.assertEqual(price(a6d, s6d), Fraction(10, 9))
+        self.assertEqual(value(CAROL, a6d, s6d), 1_000_000)
+        alice_would_be = value(ALICE, a6d, s6d)
+        self.assertEqual(alice_would_be, Fraction(1_000_000, 9))
+        self.assertEqual(alice_would_be - alice_exit_s6,
+                         Fraction(100_000, 9))
+        self.assertEqual(alice_exit_s6
+                         + value(CAROL, a6d, s6d), A0 + DONATION)
+
+        # Chart widths (Alice's redemption, scaled to
+        # 190,000, rounded to one decimal — the site-wide
+        # convention): 52.6 / 57.9 / 5.3 / 100.0 / 55.0 /
+        # 45.0 / 52.6.
+        redemptions = [Fraction(100_000), Fraction(110_000),
+                       Fraction(10_000), Fraction(190_000),
+                       Fraction(104_500), Fraction(85_500),
+                       Fraction(100_000)]
+        widths = [round(float(r) / 190_000 * 100, 1)
+                  for r in redemptions]
+        self.assertEqual(widths,
+                         [52.6, 57.9, 5.3, 100.0, 55.0, 45.0, 52.6])
+
+        # Guide text pins: slug registered, the residual-claimant
+        # sentence present, and exactly one add() for this slug.
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-lockup/",
+                      build_text)
+        self.assertIn("becomes the sole residual claimant",
+                      build_text)
+        self.assertEqual(
+            build_text.count(
+                'add("/guides/erc4626-donation-lockup/"'), 1)
+
     def test_supply_cap_guide_numbers(self):
         # Pins /guides/erc4626-supply-cap/ to its model: a vault
         # caps totalSupply at 1,000,000 whole shares (10**12 raw
