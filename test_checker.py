@@ -6596,6 +6596,131 @@ class TestChecker(unittest.TestCase):
                       'style="width:81.8%"', build)
         self.assertIn("12,100 USDC", build)
 
+    def test_fee_crystallisation_on_deposit_guide_numbers(self):
+        # Pins the numbers on
+        # /guides/erc4626-fee-crystallisation-on-deposit/ to its
+        # model: a 20% fee accrues on a 100,000 gain but is only
+        # taken at year-end, and Dave deposits 100,000 after the
+        # gain but before crystallisation. Fee minted as shares:
+        # Dave loses 1,639.344262 (1.639344% of his deposit) on a
+        # gain he never earned; crystallise first and he loses 0;
+        # fee withheld as assets costs 1,666.666667, exactly 1/12
+        # of the fee; a 500,000 deposit loses 6,172.839506
+        # (1.234568%); his loss splits into stayers' relief
+        # 1,610.070258 and the manager's extra 29.274005.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers with
+        # Fraction.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fee-crystallisation-on-deposit-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fee_crystallisation_on_deposit_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        A0 = 1_000_000 * USDC
+        S0 = 1_000_000 * USDC
+        ALICE = 100_000 * USDC
+        CAROL = 900_000 * USDC
+        FEE = 20_000 * USDC
+        D = 100_000 * USDC
+        p1 = Fraction(11, 10)  # price after the gain
+
+        # (1) Deposit first, fee minted as shares.
+        dave_shares = Fraction(D) / p1
+        fee_shares = Fraction(FEE) / p1
+        p_mint = Fraction(66, 61)
+        self.assertEqual(dave_shares, Fraction(1_000_000, 11) * USDC)
+        self.assertEqual(fee_shares, Fraction(200_000, 11) * USDC)
+        self.assertEqual(
+            Fraction(1_200_000 * USDC, S0 + dave_shares + fee_shares),
+            p_mint)
+        dave_mint = dave_shares * p_mint
+        loss_mint = Fraction(D) - dave_mint
+        self.assertEqual(loss_mint, Fraction(1_100_000, 671) * USDC)
+        self.assertEqual(round(float(loss_mint / D) * 100, 6),
+                         1.639344)
+        mgr_mint = fee_shares * p_mint
+        self.assertEqual(mgr_mint, Fraction(13_200_000, 671) * USDC)
+        alice_mint = Fraction(ALICE) * p_mint
+        carol_mint = Fraction(CAROL) * p_mint
+        self.assertEqual(
+            loss_mint + (Fraction(ALICE) * p1 - alice_mint)
+            + (Fraction(CAROL) * p1 - carol_mint), mgr_mint)
+
+        # (2) Crystallise first, then deposit: Dave loses 0.
+        p_crys = Fraction(121, 112)
+        self.assertEqual(
+            Fraction(1_100_000 * USDC, S0 + fee_shares), p_crys)
+        self.assertEqual(Fraction(D) / p_crys * p_crys, D)
+        self.assertEqual(Fraction(ALICE) * p_crys,
+                         Fraction(12_100_000, 112) * USDC)
+        self.assertEqual(Fraction(CAROL) * p_crys,
+                         Fraction(108_900_000, 112) * USDC)
+        self.assertEqual(fee_shares * p_crys,
+                         Fraction(24_200_000, 1_232) * USDC)
+
+        # (3) Deposit first, fee withheld as assets: exactly 1/12.
+        p_with = Fraction(649, 600)
+        self.assertEqual(
+            Fraction(1_180_000 * USDC, S0 + dave_shares), p_with)
+        loss_with = Fraction(D) - dave_shares * p_with
+        self.assertEqual(loss_with, Fraction(5_000, 3) * USDC)
+        self.assertEqual(loss_with, Fraction(FEE, 12))
+        self.assertEqual(loss_with - loss_mint,
+                         Fraction(55_000, 2_013) * USDC)
+
+        # (4) Bigger deposit: 500,000 loses 6,172.839506 (1.234568%).
+        D4 = 500_000 * USDC
+        dave4_shares = Fraction(D4) / p1
+        p4 = Fraction(88, 81)
+        self.assertEqual(
+            Fraction(1_600_000 * USDC,
+                     S0 + dave4_shares + fee_shares), p4)
+        loss4 = Fraction(D4) - dave4_shares * p4
+        self.assertEqual(loss4, Fraction(5_500_000, 891) * USDC)
+        self.assertEqual(round(float(loss4 / D4) * 100, 6), 1.234568)
+
+        # (5) Split of Dave's loss: relief + manager extra.
+        stayers_no_dave = (Fraction(ALICE) * p1
+                           - Fraction(ALICE) * p_crys) + \
+            (Fraction(CAROL) * p1 - Fraction(CAROL) * p_crys)
+        stayers_with_dave = (Fraction(ALICE) * p1 - alice_mint) + \
+            (Fraction(CAROL) * p1 - carol_mint)
+        relief = stayers_no_dave - stayers_with_dave
+        mgr_extra = mgr_mint - fee_shares * p_crys
+        self.assertEqual(stayers_no_dave, Fraction(137_500, 7) * USDC)
+        self.assertEqual(relief, Fraction(687_500, 427) * USDC)
+        self.assertEqual(mgr_extra, Fraction(137_500, 4_697) * USDC)
+        self.assertEqual(relief + mgr_extra, loss_mint)
+        # Bar widths, one decimal, as a share of Dave's loss.
+        self.assertEqual(round(float(relief / loss_mint) * 100, 1),
+                         98.2)
+        self.assertEqual(round(float(mgr_extra / loss_mint) * 100, 1),
+                         1.8)
+
+        # Chart markup is present in the guide source.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('loss-label\">Dave\'s loss</span><span '
+                      'class="loss-track"><span class="loss-fill fail" '
+                      'style="width:100.0%"', build)
+        self.assertIn('loss-label\">Stayers relieved</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:98.2%"', build)
+        self.assertIn('loss-label\">Manager extra</span><span '
+                      'class="loss-track"><span class="loss-fill fail" '
+                      'style="width:1.8%"', build)
+        self.assertIn("1,639.344262", build)
+        self.assertIn("1,610.070258", build)
+        self.assertIn("29.274005", build)
+        self.assertIn("1,666.666667", build)
+        self.assertIn("6,172.839506", build)
+
 
 
 if __name__ == "__main__":
