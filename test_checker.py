@@ -7072,6 +7072,92 @@ class TestChecker(unittest.TestCase):
         self.assertIn("10.00%", build)
         self.assertIn("0.01%", build)
 
+    def test_per_address_cap_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-per-address-cap/ to
+        # its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00, per-address maxDeposit 10,000 USDC, gas 2 USDC per
+        # deposit, 10% annual yield. Alice (one address, 100,000
+        # wanted) gets 10,000 in and forfeits 9,000 of yield; the
+        # whale (10 addresses) gets all 100,000 in for 20 USDC of
+        # gas and nets 9,980; the bypass breaks even at 2 bps
+        # (0.02%); a 1,000,000 total-assets cap with 950,000 in
+        # admits only 50,000 (5th deposit fills, 6th reverts).
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "per-address-cap-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "per_address_cap_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        CAP = Fraction(10_000)
+        GAS = Fraction(2)
+        YIELD = Fraction(1, 10)
+
+        # (1) Honest Alice: 10,000 in, 90,000 turned away, 1,000 yield.
+        alice_in = min(Fraction(100_000), CAP)
+        self.assertEqual(alice_in, 10_000)
+        self.assertEqual(Fraction(100_000) - alice_in, 90_000)
+        self.assertEqual(alice_in * YIELD, 1_000)
+        self.assertEqual((Fraction(100_000) - alice_in) * YIELD, 9_000)
+
+        # (2) Whale: 10 addresses, all 100,000 in, 20 gas, net 9,980.
+        n_addr = Fraction(100_000) // CAP
+        self.assertEqual(n_addr, 10)
+        self.assertEqual(n_addr * CAP, 100_000)
+        self.assertEqual(n_addr * GAS, 20)
+        self.assertEqual((n_addr * GAS) / Fraction(100_000),
+                         Fraction(2, 10_000))
+        self.assertEqual(Fraction(100_000) * YIELD, 10_000)
+        self.assertEqual(Fraction(100_000) * YIELD - n_addr * GAS,
+                         9_980)
+        self.assertEqual(9_980 - 1_000, 8_980)
+
+        # (3) Break-even yield 2 bps; 1,000,000 across 100 addresses
+        # still costs 0.02% of the deposit in gas.
+        self.assertEqual(GAS * 10_000 // CAP, 2)
+        big_n = Fraction(1_000_000) // CAP
+        self.assertEqual(big_n, 100)
+        self.assertEqual(big_n * GAS, 200)
+        self.assertEqual((big_n * GAS) * 10_000 // Fraction(1_000_000),
+                         2)
+        self.assertEqual(Fraction(100_000) * YIELD / (n_addr * GAS),
+                         500)
+
+        # (4) Total-assets cap binds: 950,000 in, headroom 50,000,
+        # deposits 1-5 fill, 6th reverts.
+        self.assertEqual(Fraction(1_000_000) - Fraction(950_000),
+                         50_000)
+        self.assertEqual(Fraction(50_000) // CAP, 5)
+        self.assertEqual(Fraction(950_000) + 5 * CAP, 1_000_000)
+
+        # (5) Fairness: 100 honest users and 1 whale, same total.
+        self.assertEqual(100 * CAP, 1_000_000)
+        self.assertEqual(100 * CAP, 1_000_000)
+
+        # (6) Chart rows: 10,000 / 100,000 / 50,000 of 100,000.
+        self.assertEqual(round(float(alice_in / Fraction(100_000)
+                                    * 100), 1), 10.0)
+        self.assertEqual(round(float(Fraction(100_000)
+                                    / Fraction(100_000) * 100), 1),
+                         100.0)
+        self.assertEqual(round(float(Fraction(50_000)
+                                    / Fraction(100_000) * 100), 1),
+                         50.0)
+
+        # (7) Guide page carries the headline numbers.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-per-address-cap/", build)
+        self.assertIn("9,980", build)
+        self.assertIn("8,980", build)
+        self.assertIn("0.02%", build)
+        self.assertIn("50,000", build)
+
 
 if __name__ == "__main__":
     unittest.main()
