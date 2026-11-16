@@ -7913,5 +7913,87 @@ class TestChecker(unittest.TestCase):
                       "from Bob", build)
 
 
+    def test_fot_claim_window_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-fot-claim-window/
+        # to its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00. Alice holds 100,000 shares (10%), Bob 900,000
+        # (90%). Alice requests redemption of all her shares; a
+        # 100,000 USDC donation (or a 100,000 USDC loss) lands
+        # between her request and her claim; the underlying takes
+        # 10% of every transfer. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fot-claim-window-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fot_claim_window_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        # (1) Tax on the payout only: gross 100,000, net 90,000,
+        # wedge 10,000 leaves the system, Bob untouched at 900,000.
+        self.assertEqual(F(100_000 * 9, 10), 90_000)
+        self.assertEqual(100_000 - 90_000, 10_000)
+        # (2) Donation lands as 90,000; vault 1,090,000, price 109/100.
+        self.assertEqual(F(100_000 * 9, 10), 90_000)
+        self.assertEqual(F(1_090_000, 1_000_000), F(109, 100))
+        # (3) Donation, fixed in assets: Alice gross 100,000, net
+        # 90,000, tax still 10,000; Bob 990,000, price 11/10.
+        self.assertEqual(F(990_000, 900_000), F(11, 10))
+        # (4) Donation, priced in shares: gross 109,000, tax 10,900,
+        # net 98,100. Alice keeps 8,100 of her 9,000 donation share;
+        # the other 900 is donation-made tax. Bob 981,000.
+        self.assertEqual(F(100_000 * 1_090_000, 1_000_000), 109_000)
+        self.assertEqual(F(109_000 * 9, 10), 98_100)
+        self.assertEqual(109_000 - 98_100, 10_900)
+        self.assertEqual(10_900 - 10_000, 900)
+        self.assertEqual(98_100 - 90_000, 8_100)
+        self.assertEqual(990_000 - 981_000, 9_000)
+        self.assertEqual(F(981_000, 900_000), F(109, 100))
+        # (5) Loss, fixed in assets: Alice gross 100,000, net 90,000;
+        # Bob 800,000, price 8/9.
+        self.assertEqual(F(800_000, 900_000), F(8, 9))
+        # (6) Loss, priced in shares: gross 90,000, tax 9,000, net
+        # 81,000 — 9,000 worse than fixed, 90% of her 10,000 loss share.
+        self.assertEqual(F(100_000 * 900_000, 1_000_000), 90_000)
+        self.assertEqual(F(90_000 * 9, 10), 81_000)
+        self.assertEqual(90_000 - 81_000, 9_000)
+        self.assertEqual(F(9_000, 10_000), F(9, 10))
+        self.assertEqual(F(810_000, 900_000), F(9, 10))
+        # (7) Timing: share-priced but claim before the donation lands
+        # pays exactly the fixed numbers (net 90,000, Bob 990,000).
+        self.assertEqual(F(100_000 * 9, 10), 90_000)
+        # (8) Round trip: deposit 100,000 -> 90,000 lands -> 90,000
+        # shares -> redeem gross 90,000 -> net 81,000. Loss 19,000
+        # = 19% = 1 - 0.9^2.
+        self.assertEqual(F(90_000 * 9, 10), 81_000)
+        self.assertEqual(100_000 - 81_000, 19_000)
+        self.assertEqual(F(19_000, 100_000), F(19, 100))
+        self.assertEqual(F(1, 1) - F(9, 10) ** 2, F(19, 100))
+
+        # (9) Guide page carries the headline numbers and the chart
+        # widths (Alice's claim by design: gross 109,000 / net 98,100
+        # / fixed net 90,000 -> 100.0 / 90.0 / 82.6).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-fot-claim-window/", build)
+        for needle in ("109,000", "98,100", "10,900", "981,000",
+                       "90,000", "990,000", "1.09", "1.10", "81,000",
+                       "810,000", "0.888889", "8,100", "19,000",
+                       "width:100.0%", "width:90.0%", "width:82.6%",
+                       "1 &minus; 0.9&sup2;"):
+            self.assertIn(needle, build)
+
+        # (10) The guide states the honest overlap (gross figures are
+        # the donation-claim-window numbers repriced) and that the
+        # wedge leaves the system, not to Bob.
+        self.assertIn("The new content here is the tax wedge", build)
+        self.assertIn("it is not a transfer to Bob", build)
+
+
 if __name__ == "__main__":
     unittest.main()
