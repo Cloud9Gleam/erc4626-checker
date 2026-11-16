@@ -9390,6 +9390,190 @@ class TestChecker(unittest.TestCase):
             build.count('add("/guides/erc4626-donation-idle-cash/"'),
             1)
 
+    def test_donation_profit_unlock_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-profit-unlock/
+        # to its model: a 100,000 USDC donation lands in a vault whose
+        # gains unlock linearly over ten days; whether the gift is
+        # locked depends on how the vault measures profit.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers in
+        # base units.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-profit-unlock-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_profit_unlock_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        F = Fraction
+        U = 1_000_000
+        BASE = 1_000_000 * U
+        SUPPLY = 1_000_000 * U
+        ALICE = 100_000 * U
+        CAROL = 900_000 * U
+        DONATION = 100_000 * U
+        V = model.DonationUnlockVault
+        # (S1) Design A -- donation straight to base: day-0 price
+        # 11/10, Alice 110,000, Carol 990,000.
+        va = V(BASE, SUPPLY)
+        va.donate(DONATION, day=0, locked=False)
+        self.assertEqual(va.price(0), F(11, 10))
+        self.assertEqual(ALICE * va.price(0), 110_000 * U)
+        self.assertEqual(CAROL * va.price(0), 990_000 * U)
+        # (S2) Design B -- donation swept into reported profit,
+        # 10-day linear unlock: day 0 price 1.00, day 5 21/20,
+        # day 10 11/10; Alice 100,000 / 105,000 / 110,000.
+        # Exiting day 5 leaves 5,000; exiting day 0 leaves 10,000.
+        vb = V(BASE, SUPPLY)
+        vb.donate(DONATION, day=0, locked=True, unlock_days=10)
+        self.assertEqual(vb.unlocked(0), 0)
+        self.assertEqual(vb.price(0), 1)
+        self.assertEqual(ALICE * vb.price(0), 100_000 * U)
+        self.assertEqual(vb.unlocked(5), 50_000 * U)
+        self.assertEqual(vb.price(5), F(21, 20))
+        self.assertEqual(ALICE * vb.price(5), 105_000 * U)
+        self.assertEqual(vb.unlocked(10), DONATION)
+        self.assertEqual(vb.price(10), F(11, 10))
+        self.assertEqual(ALICE * vb.price(10), 110_000 * U)
+        self.assertEqual(110_000 * U - ALICE * vb.price(5), 5_000 * U)
+        self.assertEqual(110_000 * U - ALICE * vb.price(0), 10_000 * U)
+        # (S3) Alice exits day 0 under B: Carol day 10 1,000,000
+        # (price 10/9), 10,000 more than 990,000 if Alice stayed.
+        v3 = V(BASE, SUPPLY)
+        v3.donate(DONATION, day=0, locked=True, unlock_days=10)
+        self.assertEqual(v3.redeem(ALICE, day=0), 100_000 * U)
+        self.assertEqual(v3.supply, CAROL)
+        self.assertEqual(v3.redeemable(10), 1_000_000 * U)
+        self.assertEqual(v3.price(10), F(10, 9))
+        self.assertEqual(CAROL * v3.price(10), 1_000_000 * U)
+        self.assertEqual(CAROL * v3.price(10) - 990_000 * U,
+                         10_000 * U)
+        # (S4) Loss mirror under B: 100,000 loss day 0 hits at
+        # once -- redeemable day 0 900,000, price 9/10, Alice
+        # 90,000; day 10 redeemable 1,000,000, price 1.00, Alice
+        # 100,000. If Alice exits day 0, Carol ends 910,000
+        # (price 91/90), the whole 10,000 gift; 90,000 + 910,000
+        # = 1,000,000.
+        v4 = V(BASE, SUPPLY)
+        v4.donate(DONATION, day=0, locked=True, unlock_days=10)
+        v4.report_loss(100_000 * U)
+        self.assertEqual(v4.redeemable(0), 900_000 * U)
+        self.assertEqual(v4.price(0), F(9, 10))
+        self.assertEqual(ALICE * v4.price(0), 90_000 * U)
+        self.assertEqual(v4.redeemable(10), 1_000_000 * U)
+        self.assertEqual(v4.price(10), 1)
+        self.assertEqual(ALICE * v4.price(10), 100_000 * U)
+        self.assertEqual(CAROL * v4.price(10), 900_000 * U)
+        v4b = V(BASE, SUPPLY)
+        v4b.donate(DONATION, day=0, locked=True, unlock_days=10)
+        v4b.report_loss(100_000 * U)
+        paid4 = v4b.redeem(ALICE, day=0)
+        self.assertEqual(paid4, 90_000 * U)
+        self.assertEqual(v4b.redeemable(10), 910_000 * U)
+        self.assertEqual(v4b.price(10), F(91, 90))
+        self.assertEqual(CAROL * v4b.price(10), 910_000 * U)
+        self.assertEqual(CAROL * v4b.price(10) - 900_000 * U,
+                         10_000 * U)
+        self.assertEqual(paid4 + CAROL * v4b.price(10),
+                         1_000_000 * U)
+        # (S5) Dave deposits 100,000 day 5 under B at 1.05:
+        # 95,238.095238 shares; day-10 price 126/115, Dave
+        # 104,347.826087 (gains 4,347.826087); Alice
+        # 109,565.217391, Carol 986,086.956522; sum 1,200,000.
+        v5 = V(BASE, SUPPLY)
+        v5.donate(DONATION, day=0, locked=True, unlock_days=10)
+        dave_shares = v5.deposit(100_000 * U, day=5)
+        self.assertEqual(dave_shares, F(2_000_000, 21) * U)
+        self.assertEqual(model.d6(dave_shares / U), "95238.095238")
+        self.assertEqual(v5.price(10), F(126, 115))
+        dave_day10 = dave_shares * v5.price(10)
+        self.assertEqual(model.d6(dave_day10 / U), "104347.826087")
+        alice_day10 = ALICE * v5.price(10)
+        carol_day10 = CAROL * v5.price(10)
+        self.assertEqual(model.d6(alice_day10 / U), "109565.217391")
+        self.assertEqual(model.d6(carol_day10 / U), "986086.956522")
+        self.assertEqual(dave_day10 + alice_day10 + carol_day10,
+                         1_200_000 * U)
+        self.assertEqual(model.d6(F(dave_day10 - 100_000 * U) / U),
+                         "4347.826087")
+        # (S6) Real gain day 0 + donation swept in day 5: day 5
+        # unlocked 50,000, price 21/20; day 10 unlocked 150,000,
+        # price 23/20, Alice 115,000; day 15 unlocked 200,000,
+        # price 6/5, Alice 120,000.
+        v6 = V(BASE, SUPPLY)
+        v6.report_gain(100_000 * U, day=0, unlock_days=10)
+        v6.donate(DONATION, day=5, locked=True, unlock_days=10)
+        self.assertEqual(v6.unlocked(5), 50_000 * U)
+        self.assertEqual(v6.price(5), F(21, 20))
+        self.assertEqual(v6.unlocked(10), 150_000 * U)
+        self.assertEqual(v6.price(10), F(23, 20))
+        self.assertEqual(ALICE * v6.price(10), 115_000 * U)
+        self.assertEqual(v6.unlocked(15), 200_000 * U)
+        self.assertEqual(v6.price(15), F(6, 5))
+        self.assertEqual(ALICE * v6.price(15), 120_000 * U)
+        # (S7) Alice exits day 0 before the gift: 100,000, misses
+        # it entirely. Carol day 10 (B) 1,000,000; Carol day 0
+        # (A) 1,000,000 (price 10/9 in both).
+        v7 = V(BASE, SUPPLY)
+        self.assertEqual(v7.redeem(ALICE, day=0), 100_000 * U)
+        v7.donate(DONATION, day=0, locked=True, unlock_days=10)
+        self.assertEqual(v7.redeemable(10), 1_000_000 * U)
+        self.assertEqual(v7.price(10), F(10, 9))
+        self.assertEqual(CAROL * v7.price(10), 1_000_000 * U)
+        v7a = V(BASE, SUPPLY)
+        self.assertEqual(v7a.redeem(ALICE, day=0), 100_000 * U)
+        v7a.donate(DONATION, day=0, locked=False)
+        self.assertEqual(v7a.price(0), F(10, 9))
+        self.assertEqual(CAROL * v7a.price(0), 1_000_000 * U)
+
+        # Chart widths: Alice's redemption by exit day under B,
+        # scaled to the full deployed value 110,000 (one decimal,
+        # the site's convention).
+        self.assertEqual(round(float(F(100_000, 110_000) * 100), 1),
+                         90.9)
+        self.assertEqual(round(float(F(105_000, 110_000) * 100), 1),
+                         95.5)
+        self.assertEqual(round(float(F(110_000, 110_000) * 100), 1),
+                         100.0)
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-donation-profit-unlock/"')
+        section = build[start:start + 12000]
+        for needle in ("110,000", "105,000", "100,000", "990,000",
+                       "1,000,000", "910,000", "90,000",
+                       "104,347.826087", "95,238.095238",
+                       "109,565.217391", "986,086.956522",
+                       "4,347.826087", "115,000", "120,000",
+                       "width:90.9%", "width:95.5%",
+                       "width:100.0%"):
+            self.assertIn(needle, section)
+        self.assertIn("the gift that unlocks in ten days, or not at all",
+                      section)
+        # Only one add() for this path in build.py.
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-profit-unlock/"'),
+            1)
+        # Every internal guide link inside this guide must resolve
+        # to a real page: the scope note once linked
+        # /guides/erc4626-donation-deposit-into-queue/, a slug that
+        # never existed (live 404), when it meant
+        # /guides/erc4626-donation-deposit-queue/. The 12,000-char
+        # window above ends before the closing scope note (offset
+        # 13,143) — the dead link lived there, so this check spans
+        # the whole add() block.
+        import re
+        full = build[start:build.index('""")', start) + 4]
+        for href in re.findall(r'href=\\?"/guides/([^"]+)/\\?"',
+                               full):
+            self.assertIn(f'add("/guides/{href}/"', build,
+                          f"dead guide link /guides/{href}/")
+
 
 
 if __name__ == "__main__":
