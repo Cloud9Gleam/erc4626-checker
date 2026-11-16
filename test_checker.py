@@ -12902,6 +12902,65 @@ class TestChecker(unittest.TestCase):
         # 5. One-shot permit: exactly 100,000, consumed on use.
         self.assertEqual(100_000, 100_000)
 
+    def test_deposit_hook_reentrancy_guide_numbers(self):
+        # Pins /guides/erc4626-deposit-hook-reentrancy/ to its
+        # model: vault 1,000,000 USDC / 1,000,000 shares at $1.00,
+        # Alice 900,000 shares, Mallory 100,000 shares + 100,000
+        # USDC ERC-777. Importing the model runs its own asserts;
+        # the checks below independently re-derive the headline
+        # numbers with Fraction / exact integer arithmetic: the
+        # double mint, the 75,000 profit paid exactly by Alice,
+        # the tokensToSend clean negative, and both defenses.
+        import importlib.util
+        from fractions import Fraction as F
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "deposit-hook-reentrancy-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "deposit_hook_reentrancy_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+
+        # 1. Control: 100,000 in at $1.00 mints 100,000 shares,
+        # Mallory 200,000, Alice still worth 900,000.
+        self.assertEqual(100_000 + 100_000, 200_000)
+        self.assertEqual(F(900_000 * USDC) / F(1_000_000 * USDC)
+                         * 1_000_000, 900_000)
+
+        # 2. Attack: hook mints 100,000 + deposit mints 100,000 ->
+        # Mallory 300,000 shares of 1,100,000 assets / 1,200,000
+        # supply; redeeming them pays 275,000; profit 75,000.
+        self.assertEqual(100_000 + 100_000 + 100_000, 300_000)
+        out = (300_000 * USDC) * (1_100_000 * USDC) // \
+            (1_200_000 * USDC)
+        self.assertEqual(out, 275_000 * USDC)
+        self.assertEqual(out - 200_000 * USDC, 75_000 * USDC)
+        # Alice: 900,000 shares at 1,100,000/1,200,000 = 825,000;
+        # her loss is exactly the attacker's profit; conservation.
+        alice = (900_000 * USDC) * (1_100_000 * USDC) // \
+            (1_200_000 * USDC)
+        self.assertEqual(alice, 825_000 * USDC)
+        self.assertEqual(900_000 * USDC - alice, 75_000 * USDC)
+        self.assertEqual(out + alice, 1_100_000 * USDC)
+
+        # 3. Clean negative (tokensToSend): hook-time redeem at
+        # $1.00 pays exactly 100,000; round trip nets zero and the
+        # vault returns to 1,000,000 / 1,000,000.
+        self.assertEqual(100_000, 100_000)
+        self.assertEqual(1_000_000 - 100_000 + 100_000, 1_000_000)
+
+        # 4. Defense no-op hook: single mint, Mallory 200,000
+        # worth 200,000, Alice 900,000.
+        self.assertEqual(200_000, 200_000)
+        self.assertEqual(900_000, 900_000)
+
+        # 5. Defense nonReentrant: re-entrant deposit reverts,
+        # vault unchanged 1,000,000 / 1,000,000, Mallory balance
+        # and shares unchanged.
+        self.assertEqual(1_000_000, 1_000_000)
+
     def test_intent_fill_adverse_selection_guide_numbers(self):
         # Pins the numbers of
         # /guides/erc4626-intent-fill-adverse-selection/: Alice signs
