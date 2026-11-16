@@ -6722,6 +6722,68 @@ class TestChecker(unittest.TestCase):
         self.assertIn("6,172.839506", build)
 
 
+    def test_fee_net_vs_gross_chart_numbers(self):
+        # Pins the gap-compounds bar chart on
+        # /guides/erc4626-fee-net-vs-gross/ to its model: a 2%
+        # fee on gross assets takes 20,000 a year, on net assets
+        # 19,607.843137, and the holder's gap between the two
+        # readings compounds — 3.921569 after one year, 7.687812
+        # after two, 18.100130 after five, on a 10,000 USDC
+        # position. Importing the model re-runs its assertions;
+        # the checks below independently re-derive the gaps with
+        # Fraction, so the chart's numbers cannot drift silently.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fee-net-vs-gross-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fee_net_vs_gross_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        A = Fraction(1_000_000)   # vault assets, USDC
+        S = Fraction(1_000_000)   # total shares
+        H = Fraction(10_000)      # our holding, shares
+        f = Fraction(2, 100)      # the 2% fee
+        net = Fraction(100, 102)  # net-basis yearly factor
+
+        # Year 1: holder keeps 200/51 more on net than on gross.
+        gap1 = H * A * (net - (1 - f)) / S
+        self.assertEqual(gap1, Fraction(200, 51))
+        self.assertEqual(round(float(gap1), 6), 3.921569)
+
+        # Year 2: gap is 19,996/2,601, nearly double year 1.
+        gap2 = H * A * (net ** 2 - (1 - f) ** 2) / S
+        self.assertEqual(gap2, Fraction(19996, 2601))
+        self.assertEqual(round(float(gap2), 6), 7.687812)
+
+        # Year 5: gap is 18.100130, more than four times year 1.
+        gap5 = H * A * (net ** 5 - (1 - f) ** 5) / S
+        self.assertEqual(round(float(gap5), 6), 18.100130)
+
+        # Bar widths, one decimal, as a share of the year-5 gap.
+        self.assertEqual(round(float(gap1 / gap5) * 100, 1), 21.7)
+        self.assertEqual(round(float(gap2 / gap5) * 100, 1), 42.5)
+
+        # Chart markup is present in the guide source.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('loss-label\">Year 1</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:21.7%"', build)
+        self.assertIn('loss-label\">Year 2</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:42.5%"', build)
+        self.assertIn('loss-label\">Year 5</span><span '
+                      'class="loss-track"><span class="loss-fill pass" '
+                      'style="width:100.0%"', build)
+        self.assertIn("3.921569", build)
+        self.assertIn("7.687812", build)
+        self.assertIn("18.100130", build)
+
+
 
 if __name__ == "__main__":
     unittest.main()
