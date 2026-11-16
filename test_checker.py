@@ -6721,6 +6721,121 @@ class TestChecker(unittest.TestCase):
         self.assertIn("1,666.666667", build)
         self.assertIn("6,172.839506", build)
 
+    def test_fee_unrealized_gains_guide_numbers(self):
+        # Pins the numbers on
+        # /guides/erc4626-fee-unrealized-gains/ to its model: a 20%
+        # performance fee crystallises on a 100,000 paper gain --
+        # 20,000 USDC minted as shares. When the gain fully
+        # reverses the manager still holds 17,857.142857, 89.285714%
+        # of the nominal fee, while Alice loses 1,785.714286 and
+        # Carol 16,071.428571 on a gain that no longer exists;
+        # charging only on realised gains costs everyone 0; a half
+        # reversal leaves the manager 18,750 (93.75%). Importing
+        # the model re-runs its assertions; the checks below
+        # independently re-derive the headline numbers with
+        # Fraction.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "fee-unrealized-gains-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "fee_unrealized_gains_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        S0 = 1_000_000 * USDC
+        ALICE = 100_000 * USDC
+        CAROL = 900_000 * USDC
+        FEE = 20_000 * USDC
+        GAIN = 100_000 * USDC
+        p1 = Fraction(11, 10)  # price after the paper gain
+
+        # (1) Crystallise on the paper gain, minted as shares.
+        fee_shares = Fraction(FEE) / p1
+        S1 = S0 + fee_shares
+        p_crys = Fraction(1_100_000 * USDC, S1)
+        self.assertEqual(fee_shares, Fraction(200_000, 11) * USDC)
+        self.assertEqual(p_crys, Fraction(121, 112))
+        mgr_crys = fee_shares * p_crys
+        self.assertEqual(mgr_crys, Fraction(24_200_000, 1_232) * USDC)
+        self.assertEqual(Fraction(ALICE) * p_crys,
+                         Fraction(12_100_000, 112) * USDC)
+        self.assertEqual(Fraction(CAROL) * p_crys,
+                         Fraction(108_900_000, 112) * USDC)
+        # Mint-dilution shortfall against the nominal 20,000.
+        self.assertEqual(FEE - mgr_crys, Fraction(2_500, 7) * USDC)
+
+        # (2) The gain fully reverses: manager keeps 89.285714%.
+        p_rev = Fraction(1_000_000 * USDC, S1)
+        self.assertEqual(p_rev, Fraction(55, 56))
+        alice_rev = Fraction(ALICE) * p_rev
+        carol_rev = Fraction(CAROL) * p_rev
+        mgr_rev = fee_shares * p_rev
+        self.assertEqual(mgr_rev, Fraction(125_000, 7) * USDC)
+        self.assertEqual(Fraction(ALICE) - alice_rev,
+                         Fraction(25_000, 14) * USDC)
+        self.assertEqual(Fraction(CAROL) - carol_rev,
+                         Fraction(225_000, 14) * USDC)
+        self.assertEqual((Fraction(ALICE) - alice_rev)
+                         + (Fraction(CAROL) - carol_rev), mgr_rev)
+        self.assertEqual(round(float(mgr_rev / FEE) * 100, 6),
+                         89.285714)
+
+        # (3) Fee deferred until realised: fee 0, everyone whole.
+        # The whole difference from (2) is mgr_rev.
+        self.assertEqual(mgr_rev, Fraction(125_000, 7) * USDC)
+
+        # (4) The gain reverses by half: manager keeps 93.75%.
+        p_half = Fraction(1_050_000 * USDC, S1)
+        self.assertEqual(p_half, Fraction(231, 224))
+        mgr_half = fee_shares * p_half
+        self.assertEqual(mgr_half, Fraction(18_750) * USDC)
+        self.assertEqual(mgr_half, Fraction(15, 16) * FEE)
+        self.assertEqual(Fraction(ALICE) * p_half,
+                         Fraction(103_125) * USDC)
+        self.assertEqual(Fraction(CAROL) * p_half,
+                         Fraction(928_125) * USDC)
+
+        # (5) The reversal splits pro-rata to shares.
+        rev_mgr = mgr_crys - mgr_rev
+        self.assertEqual(rev_mgr, Fraction(25_000, 14) * USDC)
+        self.assertEqual(Fraction(ALICE) * p_crys - alice_rev,
+                         Fraction(137_500, 14) * USDC)
+        self.assertEqual(Fraction(CAROL) * p_crys - carol_rev,
+                         Fraction(1_237_500, 14) * USDC)
+        self.assertEqual((Fraction(ALICE) * p_crys - alice_rev)
+                         + (Fraction(CAROL) * p_crys - carol_rev)
+                         + rev_mgr, GAIN)
+        # The manager's give-back equals Alice's loss exactly.
+        self.assertEqual(rev_mgr, Fraction(ALICE) - alice_rev)
+        # Bar widths, one decimal, as a share of the nominal fee.
+        self.assertEqual(round(float(mgr_crys / FEE) * 100, 1), 98.2)
+        self.assertEqual(round(float(mgr_rev / FEE) * 100, 1), 89.3)
+
+        # Chart markup is present in the guide source.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('loss-label">At minting</span>'
+                      '<span class="loss-track"><span '
+                      'class="loss-fill fail" style="width:100.0%"',
+                      build)
+        self.assertIn('loss-label">Price adjusted'
+                      '</span><span class="loss-track"><span '
+                      'class="loss-fill fail" style="width:98.2%"',
+                      build)
+        self.assertIn('loss-label">Gain reversed'
+                      '</span><span class="loss-track"><span '
+                      'class="loss-fill fail" style="width:89.3%"',
+                      build)
+        self.assertIn("17,857.142857", build)
+        self.assertIn("19,642.857143", build)
+        self.assertIn("1,785.714286", build)
+        self.assertIn("16,071.428571", build)
+        self.assertIn("18,750.000000", build)
+
+
 
     def test_fee_net_vs_gross_chart_numbers(self):
         # Pins the gap-compounds bar chart on
@@ -6782,6 +6897,89 @@ class TestChecker(unittest.TestCase):
         self.assertIn("3.921569", build)
         self.assertIn("7.687812", build)
         self.assertIn("18.100130", build)
+
+    def test_pause_vault_guide_numbers(self):
+        # Pins /guides/erc4626-pause-vault/ to its model: a pause
+        # freezes who can move, not what the strategy is worth.
+        # Deposits-only pause lets Alice exit whole at 1.00 while
+        # Bob's deposit reverts; a full pause on a flat strategy
+        # costs 821.917808 USDC of forgone yield over 30 days at
+        # 10%/yr; a full pause through a 20% loss traps Alice in a
+        # 20,000 loss while the dashboard still reads 1.00; a
+        # 1,000,000 donation during the pause doubles the price to
+        # 2.00 and enriches the holders. Importing the model re-runs
+        # its assertions; the checks below independently re-derive
+        # the headline numbers on the checker's own Vault.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "pause-vault-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "pause_vault_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        import erc4626_checker as ec
+        USDC = 1_000_000
+
+        # 1. Deposits-only pause: Alice exits whole at 1.00.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        self.assertEqual(v.redeem(100_000 * USDC), 100_000 * USDC)
+
+        # 2. Opportunity cost at 10%/yr on 100,000 locked:
+        # 7d 191.780822, 30d 821.917808, 90d 2,465.753425 USDC.
+        self.assertEqual(Fraction(100_000, 10) * Fraction(7, 365),
+                         Fraction(14_000, 73))
+        self.assertEqual(Fraction(100_000, 10) * Fraction(30, 365),
+                         Fraction(60_000, 73))
+        self.assertEqual(Fraction(100_000, 10) * Fraction(90, 365),
+                         Fraction(180_000, 73))
+
+        # 3. Full pause through a 20% loss: price 0.80, Alice gets
+        # 80,000 and loses 20,000.
+        v = ec.Vault(total_assets=800_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        self.assertEqual(v.redeem(100_000 * USDC), 80_000 * USDC)
+
+        # 4. Donation during the pause, established vault: price
+        # doubles to 2.00; Alice redeems 199,999.999999 (gain
+        # 99,999.999999); next depositor mints 50,000.000000 shares
+        # and gets back 99,999.999999, a loss of one base unit.
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        v.donate(1_000_000 * USDC)
+        self.assertEqual(v.total_assets, 2_000_000 * USDC)
+        self.assertEqual(v.redeem(100_000 * USDC), 199_999_999_999)
+        v = ec.Vault(total_assets=1_000_000 * USDC,
+                     total_supply=1_000_000 * USDC, decimals_offset=0)
+        v.donate(1_000_000 * USDC)
+        shares = v.deposit(100_000 * USDC)
+        self.assertEqual(shares, 50_000_000_000)
+        self.assertEqual(v.redeem(shares), 99_999_999_999)
+
+        # 5. Contrast, new vault: attacker seeds 1 USDC, donates
+        # 1,000,000, victim deposits 100,000 and loses 0.909091
+        # (attacker redeems first, as in the model).
+        v = ec.Vault(total_assets=0, total_supply=0, decimals_offset=0)
+        atk_shares = v.deposit(1 * USDC)
+        v.donate(1_000_000 * USDC)
+        vic_shares = v.deposit(100_000 * USDC)
+        v.redeem(atk_shares)
+        self.assertEqual(v.redeem(vic_shares),
+                         100_000 * USDC - 909_091)
+
+        # 6. Guide page carries the headline numbers.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-pause-vault/", build)
+        self.assertIn("821.917808", build)
+        self.assertIn("191.780822", build)
+        self.assertIn("2,465.753425", build)
+        self.assertIn("199,999.999999", build)
+        self.assertIn("99,999.999999", build)
+        self.assertIn("0.909091", build)
 
 
 
