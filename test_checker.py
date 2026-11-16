@@ -7289,6 +7289,129 @@ class TestChecker(unittest.TestCase):
                                     * 100), 4), 0.2268)
         self.assertNotIn("2.0408% loss on the stayers", build)
         self.assertIn("0.2268% of their 900,000", build)
+    def test_donation_sandwich_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-sandwich/ to
+        # its model: a 1,000,000 USDC / 1,000,000 share vault at
+        # $1.00, all held by others. Attacker deposits 100,000
+        # (1/11 of the vault), donates 10,000, price 111/110.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-sandwich-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_sandwich_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1  # Whole-USDC units, matching the model file:
+        # the model floors share minting at 1 whole share, so
+        # re-deriving in 1e6 base units would floor at 1 base
+        # unit and give 99,099.099099 shares instead of 99,099.
+
+        def floor_frac(x):
+            return x.numerator // x.denominator
+
+        # (1) Scenario A: victim deposits 100,000, gets 99,099
+        # shares worth 99,999.908264, loses 0.091736 (dust).
+        T, S = 1_000_000 * USDC, 1_000_000 * USDC
+        A = 100_000 * USDC
+        D = 10_000 * USDC
+        S1, T1 = S + A, T + A
+        T2 = T1 + D
+        self.assertEqual(Fraction(T2, S1), Fraction(111, 110))
+        self.assertEqual(round(float(Fraction(T2, S1)), 6), 1.009091)
+        V = 100_000 * USDC
+        victim_shares = floor_frac(Fraction(V) * S1 / T2)
+        self.assertEqual(victim_shares, 99_099 * USDC)
+        S3, T3 = S1 + victim_shares, T2 + V
+        self.assertEqual(S3, 1_199_099 * USDC)
+        self.assertEqual(T3, 1_210_000 * USDC)
+        victim_value = Fraction(victim_shares) * T3 / S3
+        self.assertEqual(round(float(victim_value), 6), 99_999.908264)
+        victim_loss = V - victim_value
+        self.assertEqual(round(float(victim_loss), 6), 0.091736)
+        self.assertLess(victim_loss, Fraction(T2, S1))
+
+        # (2) Attacker redeems 100,000 shares -> 100,909,
+        # net -9,091.000000; others gain 9,090.992487.
+        attacker_out = floor_frac(Fraction(A) * T3 / S3)
+        self.assertEqual(attacker_out, 100_909 * USDC)
+        attacker_net = Fraction(attacker_out) - (A + D)
+        self.assertEqual(attacker_net, -9_091 * USDC)
+        others_gain = Fraction(1_000_000 * USDC) * T3 / S3 \
+            - 1_000_000 * USDC
+        self.assertEqual(round(float(others_gain), 6), 9_090.992487)
+        self.assertLess(abs(others_gain + attacker_net + victim_loss),
+                        Fraction(1, 10))
+
+        # (3) Theorem: exact net -(1-f)*D = -9,090.909...;
+        # the floored -9,091.000000 is the realized figure.
+        f = Fraction(A, S1)
+        self.assertEqual(f, Fraction(1, 11))
+        exact_net = -(1 - f) * D
+        self.assertEqual(exact_net, Fraction(-100_000, 11) * USDC)
+        self.assertEqual(round(float(exact_net), 6), -9_090.909091)
+
+        # (4) Scenario C: attacker holds half, price 1.005,
+        # victim 995,024 shares, loss 0.587641, attacker
+        # net exactly -5,000.000000.
+        A2 = 1_000_000 * USDC
+        S1c, T1c = S + A2, T + A2
+        T2c = T1c + D
+        self.assertEqual(Fraction(T2c, S1c), Fraction(201, 200))
+        Vc = 1_000_000 * USDC
+        victim_shares_c = floor_frac(Fraction(Vc) * S1c / T2c)
+        self.assertEqual(victim_shares_c, 995_024 * USDC)
+        S3c, T3c = S1c + victim_shares_c, T2c + Vc
+        victim_loss_c = Vc - Fraction(victim_shares_c) * T3c / S3c
+        self.assertEqual(round(float(victim_loss_c), 6), 0.587641)
+        attacker_out_c = floor_frac(Fraction(A2) * T3c / S3c)
+        self.assertEqual(attacker_out_c, 1_005_000 * USDC)
+        self.assertEqual(Fraction(attacker_out_c) - (A2 + D),
+                         -5_000 * USDC)
+
+        # (5) Scenario D: victim 10,000,000 (100x) — same
+        # 0.091736 loss, same -9,091.000000 attacker net.
+        Vd = 10_000_000 * USDC
+        victim_shares_d = floor_frac(Fraction(Vd) * S1 / T2)
+        self.assertEqual(victim_shares_d, 9_909_909 * USDC)
+        S3d, T3d = S1 + victim_shares_d, T2 + Vd
+        victim_loss_d = Vd - Fraction(victim_shares_d) * T3d / S3d
+        self.assertEqual(round(float(victim_loss_d), 6), 0.091736)
+        attacker_out_d = floor_frac(Fraction(A) * T3d / S3d)
+        self.assertEqual(Fraction(attacker_out_d) - (A + D),
+                         -9_091 * USDC)
+
+        # (6) Chart rows: attacker loss 9,091 / 5,000 / 10,000,
+        # widths 90.9 / 50.0 / 100.0 of the max.
+        self.assertEqual(round(float(Fraction(9_091, 10_000) * 100), 1),
+                         90.9)
+        self.assertEqual(round(float(Fraction(5_000, 10_000) * 100), 1),
+                         50.0)
+        self.assertEqual(round(float(Fraction(10_000, 10_000) * 100), 1),
+                         100.0)
+
+        # (7) Guide page carries the headline numbers.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        self.assertIn("/guides/erc4626-donation-sandwich/", build)
+        for needle in ("99,099", "99,999.908264", "0.091736",
+                       "100,909", "9,091.000000", "9,090.992487",
+                       "1.009091", "1.005", "995,024", "0.587641",
+                       "9,909,909", "5,000.000000", "10,000.000000",
+                       "9,090.909"):
+            self.assertIn(needle, build)
+
+        # (8) The victim's loss is the floor dust, not the
+        # 901-share gap: 99,099 shares at 1.009091 are worth
+        # 99,999.908264, so the guide must never state the
+        # victim loses 901 USDC.
+        self.assertIn("0.091736 USDC", build)
+        self.assertNotIn("loses 901 USDC", build)
+        self.assertNotIn("loss of 901", build)
 
 
 if __name__ == "__main__":
