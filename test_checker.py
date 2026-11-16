@@ -11930,6 +11930,25 @@ class TestChecker(unittest.TestCase):
         self.assertIn("90,909.090909", build_text)
         self.assertIn("99,999.999999", build_text)
 
+    def test_audit_price_wording_consistent(self):
+        # Visual verdict #39 (2026-11-17 00:38, real browser,
+        # desktop 1919px): the homepage Paid-service card and
+        # the checker result notice said "about 50 USDC
+        # prepaid" while the /audit/ page states a fixed
+        # "50 USDC" — the same price hedged on one page and
+        # fixed on the order page. The price is fixed 50 USDC
+        # prepaid, so no page may hedge it with "about".
+        from pathlib import Path
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertEqual(build_text.count("about 50 USDC"), 0)
+        self.assertGreaterEqual(
+            build_text.count("up to 15 files, 50 USDC prepaid"),
+            100)
+        self.assertIn(
+            'add("/audit/", "Vault micro-audit — fixed scope, '
+            '50 USDC, 72-hour report"', build_text)
+
     def test_site_internal_links_resolve(self):
         # Two dead internal links shipped on 2026-11-16 and were caught
         # by a built-site sweep, not by any test: the preview-rounding
