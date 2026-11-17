@@ -15994,6 +15994,78 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/guides/erc4626-morpho-supply-on-behalf/">',
                       build)
 
+    def test_depositmulti_short_array_model_numbers(self):
+        # ACryptoS depositMulti short-array guide (site/depositmulti-
+        # short-array-model.py): a one-item amounts array reprices a
+        # two-token vault on its first token alone. Re-derived here
+        # with plain integer arithmetic (cents where a fraction of a
+        # dollar appears), independent of the model file, so the
+        # guide's numbers cannot drift silently.
+        # Vault 1 ETH + 1 BTC, post-mortem marks ETH $2,226, BTC $75,662.
+        from fractions import Fraction
+        ETH, BTC = 2_226, 75_662
+        V = ETH + BTC
+        self.assertEqual(V, 77_888)
+        V_BUG = ETH
+        self.assertEqual(V_BUG, 2_226)
+        # Under-mark factor 77,888 / 2,226 = 34.9901x (4 dp).
+        self.assertEqual(Fraction(V, V_BUG), Fraction(38_944, 1_113))
+        self.assertEqual(round(V / V_BUG, 4), 34.9901)
+        # 1 ETH with amounts=[1 ETH]: mints 100% of existing supply.
+        S0 = 77_888
+        minted = 1 * ETH * S0 // V_BUG
+        self.assertEqual(minted, 77_888)
+        self.assertEqual(minted, S0)
+        # Redeem: 50% of the new supply, pro-rata slice of BOTH tokens.
+        eth_out = Fraction(1, 2) * (1 + 1)
+        btc_out = Fraction(1, 2) * 1
+        self.assertEqual(eth_out, 1)
+        self.assertEqual(btc_out, Fraction(1, 2))
+        redeemed = eth_out * ETH + btc_out * BTC
+        self.assertEqual(redeemed, 40_057)
+        profit = redeemed - 1 * ETH
+        self.assertEqual(profit, 37_831)
+        holders_left = V + 1 * ETH - redeemed
+        self.assertEqual(holders_left, 40_057)
+        self.assertEqual(V - holders_left, profit)
+        # 9 ETH: 90% of the new supply (cents for the .80/.20 figures).
+        minted2 = 9 * ETH * S0 // V_BUG
+        self.assertEqual(minted2, 9 * S0)
+        redeemed2_c = 9 * ETH * 100 + 9 * BTC * 100 // 10
+        self.assertEqual(redeemed2_c, 8_812_980)  # $88,129.80
+        profit2_c = redeemed2_c - 9 * ETH * 100
+        self.assertEqual(profit2_c, 6_809_580)    # $68,095.80
+        holders_left2_c = (V + 9 * ETH) * 100 - redeemed2_c
+        self.assertEqual(holders_left2_c, 979_220)  # $9,792.20
+        self.assertEqual(V * 100 - holders_left2_c, profit2_c)
+        # Honest counterfactual: length check enforced, 1 ETH mints
+        # 2,226 shares and an immediate redeem returns exactly $2,226.
+        minted_h = 1 * ETH * S0 // V
+        self.assertEqual(minted_h, 2_226)
+        redeemed_h = minted_h * (V + 1 * ETH) // (S0 + minted_h)
+        self.assertEqual(redeemed_h, 2_226)
+        # Post-mortem chain figures: $1 rounding gap, not a missing chain.
+        chain_sum = 230_213 + 190_845 + 134_686 + 69_813 + 39_871
+        self.assertEqual(chain_sum, 665_428)
+        self.assertEqual(665_429 - chain_sum, 1)
+
+    def test_depositmulti_short_array_guide_page(self):
+        # Pins the guide page: the guide add() must exist in build.py
+        # with the headline numbers, and the /guides/ index must link
+        # to it. The numbers are re-derived in
+        # test_depositmulti_short_array_model_numbers; this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-depositmulti-short-array/"',
+                      build)
+        for num in ("77,888", "40,057", "37,831", "88,129.80",
+                    "68,095.80", "2,226", "665,429", "665,428",
+                    "34.9901", "9,792.20", "230,213", "135"):
+            self.assertIn(num, build)
+        self.assertIn('<a href="/guides/erc4626-depositmulti-short-array/">',
+                      build)
+
 
 if __name__ == "__main__":
     unittest.main()
