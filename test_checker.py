@@ -15185,5 +15185,89 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/guides/erc4626-flash-mint-fee-tier/">',
                       build)
 
+    def test_eip2771_per_address_cap_model_numbers(self):
+        # Pins the EIP-2771 x per-address-cap model (theme named
+        # 2026-11-17 ~20:09, built this run): vault at $1.00,
+        # per-address cap 10,000 USDC; a vault keying the cap on
+        # msg.sender while crediting shares to _msgSender() collapses
+        # every relayed user into the forwarder's single bucket.
+        # Importing the model runs its own asserts; the checks below
+        # independently re-derive the lockout, the monopoly, the
+        # accounting wedge, and the _msgSender() fix.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "eip2771-per-address-cap-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "eip2771_per_address_cap_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = model.USDC
+        CAP = model.PER_ADDRESS_CAP
+        F = "forwarder"
+        self.assertEqual(CAP, 10_000 * USDC)
+
+        # Control: direct deposits keep separate buckets.
+        buckets, shares = {}, {}
+        self.assertTrue(model.deposit_direct(buckets, shares, "alice",
+                                             10_000 * USDC))
+        self.assertTrue(model.deposit_direct(buckets, shares, "bob",
+                                             10_000 * USDC))
+        self.assertEqual(sum(shares.values()), 20_000 * USDC)
+
+        # Vulnerable: Alice's relay fills F's bucket; Bob's 1 USDC
+        # relay reverts at 0 shares / 0 deposits, yet Bob direct
+        # still succeeds.
+        buckets, shares = {}, {}
+        self.assertTrue(model.deposit_relayed_vulnerable(
+            buckets, shares, F, "alice", 10_000 * USDC))
+        self.assertEqual(buckets[F], CAP)
+        self.assertEqual(shares["alice"], 10_000 * USDC)
+        self.assertFalse(model.deposit_relayed_vulnerable(
+            buckets, shares, F, "bob", 1 * USDC))
+        self.assertEqual(shares.get("bob", 0), 0)
+        self.assertTrue(model.deposit_direct(buckets, shares, "bob",
+                                             10_000 * USDC))
+
+        # Monopoly: one relayed deposit locks out nine users wanting
+        # 90,000; 9,000 USDC/yr of yield forfeited at 10%.
+        buckets, shares = {}, {}
+        self.assertTrue(model.deposit_relayed_vulnerable(
+            buckets, shares, F, "mallory", 10_000 * USDC))
+        for i in range(9):
+            self.assertFalse(model.deposit_relayed_vulnerable(
+                buckets, shares, F, f"user{i}", 1 * USDC))
+        self.assertEqual(sum(shares.values()), 10_000 * USDC)
+        self.assertEqual(9 * 10_000 * USDC * model.YIELD_BPS // 10_000,
+                         9_000 * USDC)
+
+        # Wedge: cap consumed under Bob's key is 10,000 while Bob's
+        # shares, own deposits, and headroom are all 0.
+        buckets, shares = {}, {}
+        self.assertTrue(model.deposit_relayed_vulnerable(
+            buckets, shares, F, "alice", 10_000 * USDC))
+        self.assertEqual(buckets[F], CAP)
+        self.assertEqual(shares.get("bob", 0), 0)
+        self.assertEqual(buckets.get("bob", 0), 0)
+        self.assertEqual(CAP - buckets[F], 0)
+
+        # Fix: cap keyed on _msgSender() restores per-user buckets --
+        # 13 relayed users x 10,000 all in; the forwarder's own
+        # direct deposit uses its own bucket.
+        buckets, shares = {}, {}
+        for u in ("alice", "bob", "carol"):
+            self.assertTrue(model.deposit_relayed_fixed(
+                buckets, shares, F, u, 10_000 * USDC))
+        for i in range(10):
+            self.assertTrue(model.deposit_relayed_fixed(
+                buckets, shares, F, f"user{i}", 10_000 * USDC))
+        self.assertEqual(sum(shares.values()), 130_000 * USDC)
+        self.assertNotIn("forwarder", buckets)
+        self.assertTrue(model.deposit_direct(buckets, shares, F,
+                                             10_000 * USDC))
+        self.assertEqual(buckets[F], CAP)
+        self.assertEqual(buckets["alice"], CAP)
+
 if __name__ == "__main__":
     unittest.main()
