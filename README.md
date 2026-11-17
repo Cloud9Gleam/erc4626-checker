@@ -12,7 +12,8 @@ integer arithmetic (like Solidity), no chain access, no spend.
 2. **Donation / first-depositor inflation** — attacker deposits, donates
    directly to the vault, victim deposits, both redeem. PASS = attacker
    never profits and victim loss stays <= 1000 base units (0.001 USDC
-   at 6 decimals, the bound the 2026-11-03 audit observed).
+   at 6 decimals, the bound the 2026-11-03 audit observed) and
+   <= 0.1% of the victim deposit — the tighter of the two bounds.
 3. **Minimum viable deposit** — the smallest deposit that mints at least
    one share at the vault's live price. Deposit rounds down, so below a
    threshold a deposit mints zero shares. PASS = a 1 USDC deposit mints
