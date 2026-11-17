@@ -3144,15 +3144,18 @@ class TestChecker(unittest.TestCase):
         # complaint). Near-zero rows show an empty slot, not a fill:
         # the bordered track is visibly present at 25px height without
         # implying any magnitude (verdict #72: a grey fill read as a
-        # full-length loss bar). The empty slot's frame is darker
-        # (#6b7280 vs the filled rows' #9ca3af): verdict #73 found
-        # the light frame read as a missing piece on a quick scan.
+        # full-length loss bar). Every bare track — filled or empty —
+        # shares the one darker #6b7280 frame: verdict #73 found the
+        # light frame read as a missing piece on a quick scan, and
+        # verdict #74 found the filled rows' old #9ca3af frame reading
+        # as a third, paler empty slot next to the dark empty slots.
+        # There is no separate empty-slot border rule any more.
         self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
-                      "border:1px solid #9ca3af;box-sizing:border-box}",
+                      "border:1px solid #6b7280;box-sizing:border-box}",
                       build.CSS)
-        self.assertIn(".loss-chart--bare .loss-track--empty{background:transparent;"
-                      "border-color:#6b7280}",
-                      build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-track--empty{background:transparent;"
+                         "border-color:",
+                         build.CSS)
         self.assertIn("Bars are scaled to the worst row in this table", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
         # The two small rows (0 and 0.000006 USDC) would draw a 0.0%
@@ -3200,8 +3203,11 @@ class TestChecker(unittest.TestCase):
         # so the slot is visibly present without implying a loss
         # (verdict #72: the earlier grey fill read as a full-length
         # loss bar; verdict #73: the light #9ca3af frame read as a
-        # missing piece on a quick scan, so the empty slot's frame is
-        # the darker #6b7280). Widths, numbers, and the linear scale
+        # missing piece on a quick scan, so the empty slot's frame went
+        # darker; verdict #74: the filled rows kept the old light frame,
+        # reading as a third, paler empty slot — so every bare track
+        # now shares the one #6b7280 frame and the empty-slot override
+        # is gone). Widths, numbers, and the linear scale
         # are unchanged (pinned by test_donation_loss_chart).
         import re
         import sys
@@ -3214,9 +3220,12 @@ class TestChecker(unittest.TestCase):
         m = re.search(r"\.loss-row\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".loss-row rule not found")
         self.assertIn("margin:.25em 0", m.group(0))
-        self.assertIn(".loss-chart--bare .loss-track--empty{background:transparent;"
-                      "border-color:#6b7280}",
+        self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
+                      "border:1px solid #6b7280;box-sizing:border-box}",
                       build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-track--empty{background:transparent;"
+                         "border-color:",
+                         build.CSS)
         self.assertNotIn("An empty frame means the row lost too little",
                          build.CSS + str(build.PAGES))
         html = build.results_html(
