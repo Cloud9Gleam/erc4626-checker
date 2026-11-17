@@ -14,6 +14,14 @@ inputs:
     description: 'Victim deposit in the donation-attack scenario, USDC'
     required: false
     default: '100000'
+  vault-assets-usdc:
+    description: 'Assets already in the vault before the attack, USDC (default 0 = a new vault). Give both vault-state inputs, or leave both at 0'
+    required: false
+    default: '0'
+  vault-shares:
+    description: 'Shares already in the vault before the attack, raw count (default 0). Give both vault-state inputs, or leave both at 0'
+    required: false
+    default: '0'
   perf-fee-bps:
     description: 'Performance fee in basis points'
     required: false
@@ -25,7 +33,7 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - run: python3 "${{ github.action_path }}/check_vault.py" --offset "${{ inputs.decimals-offset }}" --min-deposit-usdc "${{ inputs.min-deposit-usdc }}" --victim-deposit-usdc "${{ inputs.victim-deposit-usdc }}" --perf-fee-bps "${{ inputs.perf-fee-bps }}" --mgmt-fee-bps-per-year "${{ inputs.mgmt-fee-bps-per-year }}"
+    - run: python3 "${{ github.action_path }}/check_vault.py" --offset "${{ inputs.decimals-offset }}" --min-deposit-usdc "${{ inputs.min-deposit-usdc }}" --victim-deposit-usdc "${{ inputs.victim-deposit-usdc }}" --vault-assets-usdc "${{ inputs.vault-assets-usdc }}" --vault-shares "${{ inputs.vault-shares }}" --perf-fee-bps "${{ inputs.perf-fee-bps }}" --mgmt-fee-bps-per-year "${{ inputs.mgmt-fee-bps-per-year }}"
       shell: bash
 branding:
   icon: 'check-circle'
