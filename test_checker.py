@@ -2244,7 +2244,14 @@ class TestChecker(unittest.TestCase):
         self.assertLess(hero.index("Run the free ERC-4626 checker"),
                         stats_idx)
         self.assertLess(stats_idx, hero.index('<aside class="hero-checks">'))
-        for fact in ("<strong>152</strong> exact-integer vault models",
+        # Rule (p): the hero model count drifts with every new model,
+        # so derive it fresh from the site's *-model.py files instead
+        # of hardcoding it (the old literal 152 went stale when the
+        # epoch pro-rata model made it 155).
+        from pathlib import Path
+        model_count = len(list((Path.home() / "workspace/taskmarket/site")
+                               .glob("*-model.py")))
+        for fact in (f"<strong>{model_count}</strong> exact-integer vault models",
                      "<strong>6</strong> checks per run",
                      "<strong>0</strong> wallet, signup, or fee needed"):
             self.assertIn(fact, hero)
@@ -15296,6 +15303,82 @@ class TestChecker(unittest.TestCase):
                                              10_000 * USDC))
         self.assertEqual(buckets[F], CAP)
         self.assertEqual(buckets["alice"], CAP)
+
+    def test_epoch_prorata_redemption_model_numbers(self):
+        # Pins the epoch pro-rata redemption model (theme named
+        # 2026-11-17 ~21:17, model built that run, guide this run):
+        # vault 1,000,000 USDC / 1,000,000 shares at $1.00, epoch cap
+        # 5% = 50,000 USDC (Ark Funds rule); fills are pro-rata, not
+        # first-come-first-served. Importing the model runs its own
+        # asserts; the checks below independently re-derive the even
+        # split, the integer dust, the FCFS comparison, the roll
+        # forward with no seniority, and the clean roll.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "epoch-prorata-redemption-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "epoch_prorata_redemption_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = model.USDC
+        CAP = 50_000 * USDC
+
+        # 1: even split -- 30k/20k/10k/40k of 100k, cap 50k -> halves.
+        fills1, dust1 = model.prorata_fill(
+            [30_000 * USDC, 20_000 * USDC, 10_000 * USDC, 40_000 * USDC],
+            CAP)
+        self.assertEqual(fills1, [15_000 * USDC, 10_000 * USDC,
+                                  5_000 * USDC, 20_000 * USDC])
+        self.assertEqual(dust1, 0)
+
+        # 2: integer dust -- three 7k requests, 10k available.
+        fills2, dust2 = model.prorata_fill([7_000 * USDC] * 3,
+                                           10_000 * USDC)
+        self.assertEqual(fills2, [3_333_333_333] * 3)
+        self.assertEqual(sum(fills2), 9_999_999_999)
+        self.assertEqual(dust2, 1)
+
+        # 3: pro-rata 5k/5k/40k vs FCFS 10k/10k/30k; 10k moves to Eve.
+        req3 = [10_000 * USDC, 10_000 * USDC, 80_000 * USDC]
+        fills3, _ = model.prorata_fill(req3, CAP)
+        fcfs3 = model.fcfs_fill(req3, CAP)
+        self.assertEqual(fills3, [5_000 * USDC, 5_000 * USDC,
+                                  40_000 * USDC])
+        self.assertEqual(fcfs3, [10_000 * USDC, 10_000 * USDC,
+                                 30_000 * USDC])
+        self.assertEqual(fcfs3[0] - fills3[0], 5_000 * USDC)
+        self.assertEqual(fills3[2] - fcfs3[2], 10_000 * USDC)
+
+        # 4: rolled 5k/5k/40k + new 50k -> halves; Alice's 5k -> 2.5k.
+        rolled = [r - f for r, f in zip(req3, fills3)]
+        fills4, _ = model.prorata_fill(rolled + [50_000 * USDC], CAP)
+        self.assertEqual(fills4, [2_500 * USDC, 2_500 * USDC,
+                                  20_000 * USDC, 25_000 * USDC])
+
+        # 5: rolled alone clears in full.
+        fills5, _ = model.prorata_fill(rolled, CAP)
+        self.assertEqual(fills5, rolled)
+
+    def test_epoch_prorata_redemption_guide_page(self):
+        # Pins the guide page: the guide add() must exist in build.py
+        # with the headline numbers, and the /guides/ index must link
+        # to it. The numbers themselves are pinned by
+        # test_epoch_prorata_redemption_model_numbers; this pins the
+        # page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-epoch-prorata-redemption/"', build)
+        self.assertIn("<strong>155</strong> exact-integer vault models",
+                      build)
+        for num in ("5,000.000000", "40,000.000000", "3,333,333,333",
+                    "2,500.000000", "9,999,999,999", "10,000 USDC"):
+            self.assertIn(num, build)
+        self.assertIn('<a href="/guides/erc4626-epoch-prorata-redemption/">',
+                      build)
+
 
 if __name__ == "__main__":
     unittest.main()
