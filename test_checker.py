@@ -2443,6 +2443,32 @@ class TestChecker(unittest.TestCase):
         self.assertIn("flex:0 1 auto", m2.group(0))
         self.assertNotIn("flex:1 1 100%", m2.group(0))
 
+    def test_footer_closes_the_page_tightly(self):
+        # Visual verdict #69: the page ending felt loose -- the small
+        # grey footer text floated ~34px below the white card and the
+        # page bottom carried ~70px of beige blank. The footer is the
+        # page's close, so its spacing is tight now: 1em above the
+        # footer (was 2em), 1.25em below it inside .wrap (was 2.5em),
+        # and a thin top border so the footer reads as a deliberate
+        # closing band rather than floating text.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        m = re.search(r"footer\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, "footer rule not found")
+        self.assertIn("margin-top:1em", m.group(0))
+        self.assertIn("border-top:1px solid #d1d5db", m.group(0))
+        self.assertNotIn("margin-top:2em", m.group(0))
+        w = re.search(r"\.wrap\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(w, ".wrap rule not found")
+        self.assertIn("padding:0 1.25em 1.25em", w.group(0))
+        self.assertNotIn("2.5em", w.group(0))
+        home = build.page("t", "d", "k", "<p>x</p>", "/")
+        self.assertIn("<footer>", home)
+        self.assertIn("Independent security research", home)
+
     def test_harvest_timing_carries_cache_variant_defenses(self):
         # Reflection #297: the stale-total-assets-cache model is a
         # partial collision with harvest-timing #32 S1 (same stale-price
