@@ -2168,6 +2168,25 @@ class TestChecker(unittest.TestCase):
         self.assertIsNotNone(m, "hero padding rule not found")
         self.assertEqual(m.group(1), "1.5em 1.75em .9em")
 
+    def test_h1_uses_balanced_text_wrap(self):
+        # Visual verdict #58 remainder: at narrower viewports the home
+        # title "Independent security research for ERC-4626 vaults"
+        # wrapped with "vaults" orphaned alone on line 2. text-wrap:
+        # balance makes a two-line wrap split evenly instead; a
+        # single-line title is unaffected. The rule is global (all h1
+        # titles), and the home title copy itself must not change.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        m = re.search(r"h1\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, "h1 rule not found")
+        self.assertIn("text-wrap:balance", m.group(0))
+        pages = dict((p, t) for p, t, d, k, b in build.PAGES)
+        self.assertEqual(pages["/"],
+                         "Independent security research for ERC-4626 vaults")
+
     def test_harvest_timing_carries_cache_variant_defenses(self):
         # Reflection #297: the stale-total-assets-cache model is a
         # partial collision with harvest-timing #32 S1 (same stale-price
