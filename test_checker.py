@@ -2403,6 +2403,44 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Show full address", audit)
         self.assertIn("Copy payment address", audit)
 
+    def test_audit_pay_row_right_side_note(self):
+        # Visual verdict #67: with the address box hugging its
+        # content, the pay-row's right side was ~650px of empty light
+        # green -- the row's content occupied only ~40% of the
+        # pay-box width, left-heavy. The fix fills the right side
+        # with a payment-safety note the payer actually needs (the
+        # payment is irreversible), not decoration: pushed right by
+        # margin-left:auto, capped so it wraps to at most two lines,
+        # and dropped below the controls on narrow widths by the
+        # row's flex-wrap. The address box itself must stay hugging
+        # its content (verdict #59) -- the note fills the row, it
+        # does not re-stretch the address box.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        note = ("Double-check the address before sending — USDC sent "
+                "to the wrong address cannot be recovered.")
+        self.assertIn(note, audit)
+        # The note sits inside the pay-row, after the copy button, so
+        # it occupies the row's right end rather than a new line.
+        row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
+        self.assertIsNotNone(row, "pay-row not found")
+        self.assertIn(note, row.group(0))
+        self.assertLess(row.group(0).index("Copy payment address"),
+                        row.group(0).index(note))
+        m = re.search(r"\.pay-row \.pay-note\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, ".pay-row .pay-note rule not found")
+        self.assertIn("margin-left:auto", m.group(0))
+        self.assertIn("max-width:26em", m.group(0))
+        # The address box is still the hugging one from verdict #59.
+        m2 = re.search(r"\.pay-row code\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m2)
+        self.assertIn("flex:0 1 auto", m2.group(0))
+        self.assertNotIn("flex:1 1 100%", m2.group(0))
+
     def test_harvest_timing_carries_cache_variant_defenses(self):
         # Reflection #297: the stale-total-assets-cache model is a
         # partial collision with harvest-timing #32 S1 (same stale-price
