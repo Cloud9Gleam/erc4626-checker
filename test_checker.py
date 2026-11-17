@@ -14769,6 +14769,71 @@ class TestChecker(unittest.TestCase):
         self.assertIn("0.000013", readme)
         self.assertIn("incomplete vault state", readme)
 
+    def test_treasury_self_holding_guide_numbers(self):
+        # Pins /guides/erc4626-treasury-self-holding/ to its model:
+        # vault 1,000,000 USDC cash / 1,000,000 shares at $1.00;
+        # treasury buys back T shares at $1.00 and holds them in
+        # inventory; the naive totalAssets counts the inventory
+        # shares at market price on top of the cash. Importing the
+        # model runs its own asserts; the checks below independently
+        # re-derive the headline, sweep, first-mover mirror, and
+        # both defenses with Fraction arithmetic.
+        import importlib.util
+        from fractions import Fraction as F
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "treasury-self-holding-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "treasury_self_holding_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        C, S = 1_000_000, 1_000_000
+
+        # Headline (T = 100,000): naive price $1.10, external
+        # 900,000 shares redeem 990,000 (excess 90,000), cash left
+        # 10,000, post price $0.10, treasury 100,000 -> 10,000.
+        p = F(C + 100_000) / F(S)
+        self.assertEqual(p, F(11, 10))
+        self.assertEqual(900_000 * p, 990_000)
+        self.assertEqual(900_000 * p - 900_000, 90_000)
+        self.assertEqual(C - 900_000 * p, 10_000)
+        self.assertEqual(F(10_000) / F(100_000), F(1, 10))
+        self.assertEqual(100_000 * F(1, 10), 10_000)
+
+        # Sweep: excess = outside supply x (price - 1); post price
+        # = cash left / inventory left; conservation every case.
+        for t, excess, post in ((0, 0, None),
+                                (50_000, 47_500, F(1, 20)),
+                                (100_000, 90_000, F(1, 10)),
+                                (250_000, 187_500, F(1, 4)),
+                                (500_000, 250_000, F(1, 2))):
+            price = F(C + t) / F(S)
+            e = S - t
+            self.assertEqual(e * (price - 1), excess)
+            if t:
+                paid = e * price
+                self.assertEqual(F(C - paid) / F(t), post)
+
+        # First-mover mirror: treasury redeems first at $1.10 and
+        # takes 110,000 (+10,000); price falls to 0.988889 and the
+        # outside holders redeem 890,000 (-10,000).
+        self.assertEqual(100_000 * F(11, 10), 110_000)
+        p2 = F(890_000) / F(900_000)
+        self.assertEqual(p2, F(89, 90))
+        self.assertEqual(900_000 * p2, 890_000)
+
+        # Defense A: totalAssets = cash only, supply counts all
+        # shares -> $1.00 for every T in the sweep.
+        for t in (0, 50_000, 100_000, 250_000, 500_000):
+            self.assertEqual(F(C) / F(S), 1)
+
+        # Defense B (NOT a fix): supply excludes treasury shares ->
+        # $1.111111, outside holders redeem all 1,000,000 cash.
+        pb = F(C) / F(900_000)
+        self.assertEqual(pb, F(10, 9))
+        self.assertEqual(900_000 * pb, 1_000_000)
+
 
 if __name__ == "__main__":
     unittest.main()
