@@ -2458,6 +2458,13 @@ class TestChecker(unittest.TestCase):
         # footer (was 2em), 1.25em below it inside .wrap (was 2.5em),
         # and a thin top border so the footer reads as a deliberate
         # closing band rather than floating text.
+        # Visual verdict #70: the bottom beige blank was STILL the
+        # loosest spot on the page -- ~41px, about two thirds of the
+        # footer text block's own height. Its parts: .wrap bottom
+        # 1.25em (~21px) + footer padding-bottom .5em (~7.5px) +
+        # footer <p> bottom margin .65em (~10px). So the wrapper
+        # bottom padding drops again, 1.25em -> .5em desktop
+        # (mobile 1.5em -> .75em), leaving ~26px of bottom blank.
         import re
         import sys
         from pathlib import Path
@@ -2470,8 +2477,13 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("margin-top:2em", m.group(0))
         w = re.search(r"\.wrap\{[^}]*\}", build.CSS)
         self.assertIsNotNone(w, ".wrap rule not found")
-        self.assertIn("padding:0 1.25em 1.25em", w.group(0))
+        self.assertIn("padding:0 1.25em .5em", w.group(0))
         self.assertNotIn("2.5em", w.group(0))
+        self.assertNotIn("padding:0 1.25em 1.25em", build.CSS)
+        mob = re.search(r"@media \(max-width:640px\)\{\.wrap\{padding:0 0 [^}]*\}", build.CSS)
+        self.assertIsNotNone(mob, "mobile .wrap rule not found")
+        self.assertIn("padding:0 0 .75em", mob.group(0))
+        self.assertNotIn("padding:0 0 1.5em", build.CSS)
         home = build.page("t", "d", "k", "<p>x</p>", "/")
         self.assertIn("<footer>", home)
         self.assertIn("Independent security research", home)
