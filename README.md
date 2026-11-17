@@ -50,6 +50,20 @@ python3 check_vault.py --offset 6 --min-deposit-usdc 1 \
 # exit 0 = ALL PASS, exit 1 = SOME FAILED
 ```
 
+Check a vault that already holds funds — seed the model with its live
+state. Give both flags, or leave both at 0; only the donation and
+minimum-viable-deposit checks use them. Half a state fails honestly
+instead of guessing (exit 1, "incomplete vault state"):
+
+```sh
+python3 check_vault.py --offset 0 --victim-deposit-usdc 100000
+# exit 1 = SOME FAILED: new vault, worst victim loss 0.909091 USDC
+python3 check_vault.py --offset 0 --vault-assets-usdc 50000000 \
+    --vault-shares 50000000000000
+# exit 0 = ALL PASS: same vault seeded with 50,000,000 USDC and
+# 50,000,000,000,000 shares (price 1.00), worst loss 0.000013 USDC
+```
+
 Try it in the browser instead: https://check.n1netw3n.live/checker/
 
 ## Guides
