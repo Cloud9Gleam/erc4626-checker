@@ -14912,6 +14912,55 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(
             build.count('add("/guides/erc4626-donation-dead-shares/"'), 1)
 
+    def test_checker_reproduces_dead_shares_guide_row(self):
+        # The checker takes a dead pile as vault state: the same
+        # 1,000 USDC pile the /guides/erc4626-donation-dead-shares/
+        # table is built on must reproduce its row in the checker
+        # itself (1,000 USDC assets = 1e9 base units, 1,000 shares
+        # at 6 decimals = 1e9 raw shares), not only in the model
+        # file. Guards the guide's claim that the checker can run
+        # the attack against a dead pile.
+        v = Vault(decimals_offset=0, min_deposit=0)
+        r = check_donation(v, victim_deposit=100_000_000_000,
+                           vault_assets=1_000_000_000,
+                           vault_supply=1_000_000_000)
+        rows = {row["donation"]: row for row in r["detail"]}
+        self.assertEqual(rows[1_000_000_000_000]["victim_loss"], 182)
+        self.assertEqual(rows[1_000_000_000_000]["attacker_net"],
+                         -999_000_999_002)
+        self.assertEqual(rows[1_000_000_000_000_000]["victim_loss"],
+                         898_913)
+        self.assertFalse(r["pass"])
+        # Control: no dead pile, the same run loses 0.909091.
+        r0 = check_donation(v, victim_deposit=100_000_000_000)
+        rows0 = {row["donation"]: row for row in r0["detail"]}
+        self.assertEqual(rows0[1_000_000_000_000]["victim_loss"], 909_091)
+
+    def test_dead_shares_guide_no_stale_checker_claim(self):
+        # The guide used to say the checker "tests a new vault with
+        # no seed" and "does not model dead shares" — both false
+        # since the checker took vault-state inputs. The guide must
+        # say the checker models a dead pile as vault state and link
+        # the pre-filled run that reproduces its table row.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        start = build.index('add("/guides/erc4626-donation-dead-shares/"')
+        end = build.index(
+            'add("/guides/erc4626-donation-deposit-hook-reentrancy/"',
+            start)
+        page = build[start:end]
+        self.assertNotIn("tests a new vault with no seed", page)
+        self.assertNotIn("does not model dead shares", page)
+        self.assertNotIn("assume a new vault with no starting deposits",
+                         page)
+        self.assertIn("models a dead pile as vault state", page)
+        self.assertIn(
+            "/checker/?preset=noprot&amp;vault_assets_usdc=1000"
+            "&amp;vault_shares=1000#results", page)
+        self.assertIn(
+            "0.000182 USDC lost at a 1,000,000 USDC donation", page)
+
     def test_donation_deposit_hook_reentrancy_guide_numbers(self):
         # Pins /guides/erc4626-donation-deposit-hook-reentrancy/ to
         # its model (offset 0): seed 1 base unit / 1 share-base-unit
