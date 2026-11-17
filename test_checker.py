@@ -3227,9 +3227,20 @@ class TestChecker(unittest.TestCase):
         # light frame read as a missing piece on a quick scan, and
         # verdict #74 found the filled rows' old #9ca3af frame reading
         # as a third, paler empty slot next to the dark empty slots.
-        # There is no separate empty-slot border rule any more.
+        # Verdict #89 breaks the uniformity for the empty slot only:
+        # the solid-framed empty slot read as an unfilled input box
+        # at desktop width — the site's inputs are white with a solid
+        # border, and the slot was a long bordered empty box. The
+        # empty slot now wears a dashed frame on the track's own grey
+        # fill (#f3f4f6, the filled rows' track background): dashed +
+        # grey cannot be a control (controls are white + solid) and
+        # cannot be a bar (no solid fill, and the "too small to draw"
+        # label says so). Filled rows keep the solid #6b7280 frame.
         self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
                       "border:1px solid #6b7280;box-sizing:border-box}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-track--empty{background:#f3f4f6;"
+                      "border:1px dashed #6b7280}",
                       build.CSS)
         self.assertNotIn(".loss-chart--bare .loss-track--empty{background:transparent;"
                          "border-color:",
