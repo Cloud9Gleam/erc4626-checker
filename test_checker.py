@@ -15383,12 +15383,90 @@ class TestChecker(unittest.TestCase):
         build = (Path.home() / "workspace/taskmarket/site/build.py"
                  ).read_text()
         self.assertIn('"/guides/erc4626-epoch-prorata-redemption/"', build)
-        self.assertIn("<strong>155</strong> exact-integer vault models",
+        # Rule (p): the hero model count drifts with every new model,
+        # so derive it fresh instead of hardcoding it (the old literal
+        # 155 went stale when the donation-operator-allowance model
+        # made it 156).
+        model_count = len(list((Path.home() / "workspace/taskmarket/site"
+                                ).glob("*-model.py")))
+        self.assertIn(f"<strong>{model_count}</strong> exact-integer vault models",
                       build)
         for num in ("5,000.000000", "40,000.000000", "3,333,333,333",
                     "2,500.000000", "9,999,999,999", "10,000 USDC"):
             self.assertIn(num, build)
         self.assertIn('<a href="/guides/erc4626-epoch-prorata-redemption/">',
+                      build)
+    def test_donation_operator_allowance_model_numbers(self):
+        # Pins the donation x operator-allowance model (theme named
+        # 2026-11-17 ~21:39, model built that run, guide this run):
+        # vault 1,000,000 USDC / 1,000,000 shares at $1.00, Alice
+        # 100,000 shares, Carol 900,000. Mallory is both donor and
+        # operator. Importing the model runs its own asserts; the
+        # checks below independently re-derive the wedge, the
+        # asset-denominated defence, and the no-approval control.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-operator-allowance-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_operator_allowance_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = model.USDC
+
+        # S2: wedge -- approval at $1.00, donation 100k -> $1.10,
+        # operator redeems Alice's 100k shares for 109,999.999999;
+        # Mallory nets +9,999.999999; Carol keeps 990,000.000000.
+        v, alice, carol = model.fresh_vault()
+        allow = model.Allowance()
+        allow.approve("alice", "mallory", 100_000 * USDC)
+        v.donate(100_000 * USDC)
+        allow.spend("alice", "mallory", alice)
+        out = v.redeem(alice)
+        self.assertEqual(out, 109_999_999_999)
+        self.assertEqual(out - 100_000 * USDC, 9_999_999_999)
+        self.assertEqual(v.convert_to_assets(carol), 990_000 * USDC)
+
+        # S3: defence -- value-capped at 100,000 USDC: at most
+        # 90,909.090909 shares, 99,999.999999 out; Alice keeps
+        # 9,090.909091 shares worth exactly 10,000.000000.
+        v, alice, carol = model.fresh_vault()
+        v.donate(100_000 * USDC)
+        max_shares = v.convert_to_shares(100_000 * USDC)
+        self.assertEqual(max_shares, 90_909_090_909)
+        out = v.redeem(max_shares)
+        self.assertEqual(out, 99_999_999_999)
+        kept = alice - max_shares
+        self.assertEqual(kept, 9_090_909_091)
+        self.assertEqual(v.convert_to_assets(kept), 10_000 * USDC)
+        self.assertEqual(out - 100_000 * USDC, -1)
+
+        # S4: control -- same donation, no approval: redeem blocked,
+        # Alice keeps 109,999.999999, Carol 989,999.999999.
+        v, alice, carol = model.fresh_vault()
+        allow = model.Allowance()
+        v.donate(100_000 * USDC)
+        with self.assertRaises(AssertionError):
+            allow.spend("alice", "mallory", alice)
+        self.assertEqual(v.convert_to_assets(alice), 109_999_999_999)
+        self.assertEqual(v.convert_to_assets(carol), 989_999_999_999)
+
+    def test_donation_operator_allowance_guide_page(self):
+        # Pins the guide page: the guide add() must exist in build.py
+        # with the headline numbers, and the /guides/ index must link
+        # to it. The numbers themselves are pinned by
+        # test_donation_operator_allowance_model_numbers; this pins
+        # the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-donation-operator-allowance/"',
+                      build)
+        for num in ("109,999.999999", "9,999.999999", "90,909.090909",
+                    "99,999.999999", "10,000.000000", "989,999.999999"):
+            self.assertIn(num, build)
+        self.assertIn('<a href="/guides/erc4626-donation-operator-allowance/">',
                       build)
 
 
