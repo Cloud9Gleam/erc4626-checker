@@ -3374,6 +3374,58 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
 
+    def test_loss_chart_tiny_slots_are_short_placeholders(self):
+        # Visual verdict #90: the dashed "too small to draw" slot
+        # spanned the whole ~705px track at desktop width — exactly as
+        # wide as the worst row's full red bar — so a quick scan read
+        # three rows as roughly equal losses. The tiny-loss slot is now
+        # a short fixed-width placeholder chip (loss-track--tiny,
+        # 10em), dashed + grey + labelled, and short, so it cannot be
+        # read as magnitude. The chip keeps the --empty class (dashed
+        # grey look) and the words; a zero loss still draws no bar.
+        # Error rows keep the bare full-width empty slot: no number to
+        # label, no magnitude to misread.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".loss-track--tiny{flex:0 0 auto;width:10em}",
+                      build.CSS)
+        # noprot: the two small rows (0 and 0.000006 USDC) get the
+        # short chip; the two real bars are unchanged.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertEqual(html.count("loss-track--tiny"), 2)
+        self.assertEqual(html.count("loss-track--empty"), 2)
+        self.assertEqual(html.count("loss-too-small"), 2)
+        self.assertIn("width:100.0%", html)
+        self.assertIn("width:11.0%", html)
+        # Offset 18: every loss is 0 — all four rows are chips, no bar.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertEqual(html.count("loss-track--tiny"), 4)
+        self.assertEqual(html.count("loss-track--empty"), 4)
+        self.assertEqual(html.count("loss-too-small"), 4)
+        # Mixed table: one tiny row gets the chip, the error row keeps
+        # the bare full-width empty slot (no tiny class, no words).
+        mixed = [{"name": "donation_inflation", "pass": False, "detail": [
+            {"donation": 1_000_000_000, "victim_loss": 6,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000_000, "victim_loss": 909091,
+             "attacker_net": -90909},
+            {"donation": 1_000_000_000_000_000, "victim_loss": None,
+             "attacker_net": None, "error": "below minimum deposit"}]}]
+        html = build.results_html(mixed, vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertEqual(html.count("loss-track--tiny"), 1)
+        self.assertEqual(html.count("loss-track--empty"), 2)
+        self.assertEqual(html.count("loss-too-small"), 1)
+        self.assertIn("loss-track loss-track--empty'></span>",
+                      html)
+        # The Worker-side template renders the same short chip.
+        self.assertIn("loss-track--tiny", build.checker_results_html_js())
+
     def test_donation_table_puts_victim_loss_second(self):
         # Mobile render at 360px (2026-11-18): the donation table is
         # 411px wide inside a 284px scroll wrap, so the third column
@@ -16253,8 +16305,13 @@ class TestChecker(unittest.TestCase):
         def mint(assets, total_assets, total_supply, offset=0):
             return assets * (total_supply + 10 ** offset) // (total_assets + 1)
 
-        def redeem(shares, total_assets, total_supply):
-            return shares * total_assets // total_supply
+        def redeem(shares, total_assets, total_supply, offset=0):
+            # OZ convertToAssets: shares * (totalAssets + 1 virtual
+            # asset) // (totalSupply + 10**offset virtual shares).
+            # The +1 matters here: without it the attacker's step-4
+            # redeem floors to 0 instead of exactly 1 wei.
+            return (shares * (total_assets + 1)
+                    // (total_supply + 10 ** offset))
 
         # 1. One wei mints S+1 shares = 50.0000000000% of new supply.
         m1 = mint(1, 0, S)
@@ -16306,8 +16363,9 @@ class TestChecker(unittest.TestCase):
                          50.0000250)
         total_supply6 = S + atk6
         total_assets6 = 1 + 1_000_000 * USDC
-        self.assertEqual(redeem(atk6, total_assets6, total_supply6),
-                         500_000_000_500)
+        self.assertEqual(redeem(atk6, total_assets6, total_supply6,
+                                offset=6),
+                         500_000_000_001)
         # 8. Fix counterfactual: truly empty vault, 1 wei mints 1 share.
         self.assertEqual(mint(1, 0, 0), 1)
 
@@ -16323,7 +16381,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn('"/guides/erc4626-firelight-post-slash-zero-assets/"',
                       build)
         for num in ("1,000,000,000,001", "99.5024876", "500,000.000001",
-                    "995,024.875821", "50.0000250", "500,000.000500",
+                    "995,024.875821", "50.0000250",
                     "1,001,000,000,001,000", "500,501,000", "#88330",
                     "1,000,000,000,001,000,000,000,000"):
             self.assertIn(num, build)
