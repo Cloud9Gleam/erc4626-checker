@@ -2063,6 +2063,41 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:640px){.flow{flex-direction:column}"
                       ".flow-arrow{transform:rotate(90deg)}}", build.CSS)
 
+    def test_hero_flow_step_bodies_are_single_line(self):
+        # Visual verdict #57: step 3's body wrapped to two lines
+        # ("0.909091 USDC of a 100,000 USDC deposit") while steps 1-2
+        # were one line, so the equal-height cards left ~35px of dead
+        # white space at the bottom of steps 1-2. The full sentence
+        # already sits in the paragraph directly above the flow and in
+        # the flow's aria-label, so the step body is just the figure.
+        # Every step body must be short enough to stay on one line at
+        # the desktop card width (~220px at .95em).
+        import re
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        steps = re.findall(
+            r'<div class="flow-step[^"]*">(.*?)</div>', home, re.S)
+        self.assertEqual(len(steps), 3)
+        for body in steps:
+            # Title (<strong>, display:block) and body are separate
+            # lines; measure each, not the concatenation.
+            m = re.match(r'<span[^>]*>\d</span><strong>([^<]*)</strong>(.*)$',
+                         body.strip(), re.S)
+            self.assertIsNotNone(m, "flow step shape changed: %r" % body)
+            title, rest = m.group(1), m.group(2).strip()
+            self.assertLessEqual(len(title), 21,
+                                 "flow step title wraps: %r" % title)
+            self.assertLessEqual(len(rest), 26,
+                                 "flow step body wraps: %r" % rest)
+        self.assertIn("<strong>Victim loses</strong>0.909091 USDC</div>", home)
+        self.assertNotIn("0.909091 USDC of a 100,000 USDC deposit</div>", home)
+        # The full sentence survives just above the flow and in the
+        # aria-label, so nothing was lost by shortening the step body.
+        self.assertIn("loses <strong>0.909091 USDC</strong> of a 100,000 USDC",
+                      home)
+        self.assertIn("the victim's 100,000 USDC deposit loses 0.909091 USDC",
+                      home)
+
     def test_reward_token_guide_numbers(self):
         # Reward-token guide (site/reward-token-model.py): yield paid
         # out as a separate token never touches the share price.
