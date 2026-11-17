@@ -3381,6 +3381,15 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("'", hint)
         self.assertIn(hint, src)
         self.assertNotIn("Fee on yield, in basis points — 1000 bps = 10%.", src)
+        # The last sentence is pinned in both copies too: a
+        # parallel round once deployed "USDC to the manager" live
+        # while build.py still said "in fees", and the next
+        # build+deploy silently overwrote live. Both render paths
+        # must carry the same sentence (rule (z)).
+        last = ("At 1000 bps, 10,000 USDC of yield pays 1,000 USDC "
+                "to the manager.")
+        self.assertEqual(src.count(last), 2)
+        self.assertNotIn("pays 1,000 in fees.", src)
         model = (Path.home() / "workspace/taskmarket/erc4626-checker"
                  / "erc4626_checker.py").read_text()
         self.assertIn("fee = yield_amount * self.perf_fee_bps // 10_000", model)
