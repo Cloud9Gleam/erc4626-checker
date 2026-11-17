@@ -292,7 +292,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("vault shares now", page)
         self.assertIn("not the raw totalSupply", page)
         self.assertIn("Give both, or", page)
-        self.assertIn("Only the donation check uses them", page)
+        self.assertIn("Only the donation and minimum-viable-deposit checks use them", page)
         self.assertIn("never fills them in", page)
 
     def test_minfeeonly_preset_numbers(self):
@@ -1818,6 +1818,47 @@ class TestChecker(unittest.TestCase):
         self.assertLess(audit.index('href="#audit-order"'),
                         audit.index('<h2>Scope</h2>'))
         self.assertIn("a.cta{display:inline-block", build.CSS)
+
+    def test_audit_pay_address_is_truncated_with_full_in_data_attr(self):
+        # Verdict #55: the 42-char address pasted raw was the ugliest
+        # element on /audit/. Default display is first-6 + ellipsis +
+        # last-4; the full address stays in data-full so the copy button
+        # (which reads data-full) can never copy the truncated form.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
+                      audit)
+        self.assertIn(build.PAY_ADDR_SHORT, audit)
+        self.assertEqual(build.PAY_ADDR_SHORT, "0xD07C\u2026dC64")
+        # The full address must NOT appear as the span's visible text.
+        self.assertNotIn('id="pay-addr">' + build.PAY_ADDR + '<', audit)
+        self.assertIn("Show full address", audit)
+        self.assertIn("function togglePayAddr(btn)", audit)
+        self.assertIn("getAttribute('data-full')", audit)
+        self.assertIn(".pay-row .addr-toggle{", build.CSS)
+
+    def test_vault_state_hint_names_both_checks(self):
+        # The old hint said only the donation check uses vault state;
+        # the model docstring says the donation AND minimum-viable-deposit
+        # checks use it. Both render paths (Python form + Worker JS form)
+        # and the API table must say so; the old wording must be gone.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        checker = dict((p, b) for p, t, d, k, b in build.PAGES)["/checker/"]
+        self.assertIn("The donation and minimum-viable-deposit checks use this.",
+                      checker)
+        self.assertIn("Seeds the donation and minimum-viable-deposit checks;",
+                      checker)
+        self.assertNotIn("Only the donation check uses", checker)
+        self.assertNotIn("Seeds only the donation check", checker)
+        self.assertIn("The donation and minimum-viable-deposit checks use this.",
+                      build.worker_js(
+                          dict((p, b) for p, t, d, k, b in build.PAGES)))
 
     def test_audit_track_record_groups_fold(self):
         # /audit/ Track record was 40 items in 5 groups rendered as one
@@ -14403,6 +14444,25 @@ class TestChecker(unittest.TestCase):
             with self.assertRaises(SystemExit) as cm:
                 cli_main(["--offset", "0", "--vault-assets-usdc", "-5"])
         self.assertEqual(cm.exception.code, 2)
+
+    def test_readme_documents_vault_state_flags(self):
+        # The CLI gained --vault-assets-usdc / --vault-shares (and
+        # --victim-deposit-usdc) but the README's CLI section only showed
+        # the four original flags: a repo visitor could not discover the
+        # seeded-vault scenario. The README must name all three flags,
+        # state the give-both-or-neither rule, and show the verified
+        # example numbers (new vault 0.909091 worst loss; seeded vault
+        # 0.000013; half a state fails honestly).
+        from pathlib import Path
+        readme = (Path(__file__).parent / "README.md").read_text()
+        self.assertIn("--vault-assets-usdc", readme)
+        self.assertIn("--vault-shares", readme)
+        self.assertIn("--victim-deposit-usdc", readme)
+        self.assertIn("50000000", readme)
+        self.assertIn("50000000000000", readme)
+        self.assertIn("0.909091", readme)
+        self.assertIn("0.000013", readme)
+        self.assertIn("incomplete vault state", readme)
 
 
 if __name__ == "__main__":
