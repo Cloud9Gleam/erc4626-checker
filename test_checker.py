@@ -1838,17 +1838,18 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<details class="track-group" open>\n'
                       '<summary>Ended contests — full awarded set re-verified (3)</summary>',
                       track)
-        # The 32-item First Flight wall is collapsed by default — and its
-        # heading count is honest: two reviews were added after the (30)
-        # heading was written, so it now says (32).
+        # The 33-item First Flight wall is collapsed by default — and its
+        # heading count is honest: three reviews were added after the (30)
+        # heading was written (Vyper Vested Claims, Curve Storage Proofs,
+        # SNARKeling), so it now says (33).
         self.assertIn('<details class="track-group">\n'
-                      '<summary>CodeHawks First Flight — practice and study reviews (32)</summary>',
+                      '<summary>CodeHawks First Flight — practice and study reviews (33)</summary>',
                       track)
-        self.assertNotIn("(30)</summary>", track)
-        # No group lost its items: 3 + 32 + 3 + 1 + 1 = 40 research links
+        self.assertNotIn("(32)</summary>", track)
+        # No group lost its items: 3 + 33 + 3 + 1 + 1 = 41 research links
         # inside the five details blocks, and no bare h3 survives in the
         # Track record section.
-        self.assertEqual(track.count('<a href="/research/'), 40)
+        self.assertEqual(track.count('<a href="/research/'), 41)
         self.assertNotIn("<h3>", track)
         # Summary reads like the h3 it replaces.
         self.assertIn(".track-group summary{cursor:pointer;font-size:1.1em;"
@@ -14274,6 +14275,134 @@ class TestChecker(unittest.TestCase):
         self.assertIn('.result-banner.fail{background:#b91c1c;color:#fff',
                       src)
         self.assertNotIn('.result-banner.fail{background:#fdecea', src)
+
+
+    def test_guide_link_is_named_and_at_card_bottom(self):
+        # Visual verdict #54 item c (2026-11-17): "Read the guide
+        # &rarr;" appeared six times, word for word, between each
+        # card's description and its result numbers — six identical
+        # green links that interrupted the desc-to-numbers flow and
+        # read as noise. The link now sits at the bottom of each
+        # card, after the numbers, muted grey and small, and names
+        # its check ("Guide: Donation inflation &rarr;") so the six
+        # links are no longer identical. The JS renderer mirrors
+        # this (verified by the /tmp node harness, not this suite).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertNotIn("Read the guide", html)
+        expected = [
+            ("Rounding directions", "/guides/erc4626-rounding-errors/"),
+            ("Donation inflation", "/guides/erc4626-donation-attack/"),
+            ("Preview consistency", "/guides/erc4626-preview-consistency/"),
+            ("Fee conservation", "/guides/erc4626-fee-conservation/"),
+            ("Share-price sanity", "/guides/vault-share-price-manipulation/"),
+            ("Minimum viable deposit", "/guides/erc4626-minimum-deposit/"),
+        ]
+        self.assertEqual(html.count("class='check-guide'"), 6)
+        cards = html.split("<section class='check-card'>")[1:]
+        self.assertEqual(len(cards), 6)
+        # Card order follows run_all(), not CHECK_META — match by title.
+        # Each chunk runs to the next card's opening tag, so cut it at
+        # its own closing tag first (the last card has no next card —
+        # its chunk runs on into the notice div).
+        by_title = {}
+        for card in cards:
+            card = card.split("</section>", 1)[0]
+            title = card.split("</span> ", 1)[1].split("</h3>", 1)[0]
+            by_title[title] = card
+        self.assertEqual(sorted(by_title),
+                         sorted(title for title, _ in expected))
+        for title, href in expected:
+            card = by_title[title]
+            self.assertIn(f"<p class='check-guide'><a href='{href}'>"
+                          f"Guide: {title} &rarr;</a></p>", card)
+            # The guide link is the card's last paragraph: it comes
+            # after the description and after every result number.
+            self.assertTrue(card.rstrip().endswith(
+                f"<p class='check-guide'><a href='{href}'>"
+                f"Guide: {title} &rarr;</a></p>"))
+        src = (Path.home() / "workspace/taskmarket/site/build.py"
+               ).read_text()
+        self.assertIn(".check-guide{font-size:.85em;color:#6b7280", src)
+        self.assertIn(".check-guide a{color:#6b7280", src)
+        self.assertNotIn("Read the guide", src)
+
+    def test_cli_seeded_vault_passes_where_new_vault_fails(self):
+        # The hosted checker lets a user seed the vault state (assets +
+        # shares already in it); the repo CLI could not, so a live 50M
+        # USDC vault at offset 0 could not be reproduced from the repo.
+        # Verified against the model: a new vault at offset 0 fails
+        # the donation check (worst victim loss 0.909091 USDC); the
+        # same vault seeded with 50M USDC at price 1.00 passes all
+        # six (worst victim loss 0.000013 USDC).
+        import io
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from check_vault import main as cli_main
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cli_main(["--offset", "0"]), 1)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = cli_main(["--offset", "0",
+                           "--vault-assets-usdc", "50000000",
+                           "--vault-shares", "50000000000000"])
+        self.assertEqual(rc, 0)
+        self.assertIn("ALL PASS", out.getvalue())
+
+    def test_cli_vault_shares_parse_exact_large_integers(self):
+        # Shares are raw integers and can exceed float precision (an
+        # 18-decimal vault holds ~1e25 raw shares); the parser must
+        # never round them through float. Commas and underscores are
+        # accepted, as in the USDC parser.
+        from pathlib import Path
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from check_vault import _shares
+        self.assertEqual(_shares("50,000,000,000,000"), 50_000_000_000_000)
+        self.assertEqual(_shares("5_000"), 5000)
+        self.assertEqual(_shares("50000000000000000000000000"), 5 * 10**25)
+        with self.assertRaises(ValueError):
+            _shares("1.5")
+
+    def test_cli_half_filled_vault_state_fails_honestly(self):
+        # Assets without shares (or vice versa) is not a vault: the
+        # model refuses the donation check instead of inventing a
+        # verdict, and the CLI must surface that as SOME FAILED
+        # (exit 1), not a traceback.
+        import io
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from check_vault import main as cli_main
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = cli_main(["--offset", "0",
+                           "--vault-assets-usdc", "50000000"])
+        self.assertEqual(rc, 1)
+        self.assertIn("incomplete vault state", out.getvalue())
+
+    def test_cli_negative_vault_state_is_rejected(self):
+        # A negative asset or share count is not a vault either; the
+        # CLI rejects it at parse time (exit 2) instead of reporting
+        # a verdict about impossible state.
+        import io
+        from contextlib import redirect_stderr
+        from pathlib import Path
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from check_vault import main as cli_main
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as cm:
+                cli_main(["--offset", "0", "--vault-assets-usdc", "-5"])
+        self.assertEqual(cm.exception.code, 2)
 
 
 if __name__ == "__main__":
