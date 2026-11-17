@@ -2290,6 +2290,30 @@ class TestChecker(unittest.TestCase):
         aside = hero[hero.index('<aside class="hero-checks">'):]
         self.assertIn('class="cta2"', aside)
 
+    def test_hero_stats_sits_flush_at_column_bottom(self):
+        # Visual verdict #90 (desktop 1919x998): the right panel's
+        # bottom edge sat ~14px below the left column's stats text
+        # (panel y576 vs stats text y562) — the hero's ugliest point.
+        # Cause: .hero-stats is a <p>, and the base rule gives every
+        # <p> margin-bottom .65em (~10px at the strip's .9em size);
+        # margin-top:auto pins the strip to the column bottom, so its
+        # bottom margin is pure misalignment — the strip floats above
+        # the panel's bottom edge. The remaining ~3px is line-height
+        # leading below the last text line, not a layout error (the
+        # panel's own note text has the same slack above its padding).
+        # Invariant (reflection #353 rule candidate (aj), adopted
+        # here): the stats strip's box bottom must equal the panel's
+        # bottom edge — i.e. no bottom margin on the pinned strip.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn("p{margin:.65em 0}", build.CSS)
+        start = build.CSS.index(".hero-stats{display:flex;")
+        rule = build.CSS[start:build.CSS.index("}", start) + 1]
+        self.assertIn("margin-top:auto", rule)
+        self.assertIn("margin-bottom:0", rule)
+
     def test_hero_checks_panel_note_fills_right_column(self):
         # Visual verdict #65: the stats strip fixed the left column,
         # but the blank band moved to the right — the panel ended
@@ -15405,6 +15429,13 @@ class TestChecker(unittest.TestCase):
         # Both renderers (Python static + Worker JS) must agree: the
         # JS side is verified by the /tmp result-banner harness (node),
         # not by this suite.
+        # Visual verdict #91 (2026-11-18): the &#10005; (U+2715) cross
+        # rendered as a tofu box in the headless-Chromium font stack —
+        # Dingbats glyphs are not in system-ui on this Linux install,
+        # and &#10003; (U+2713) is the same block, so it carries the
+        # same risk. Both marks are now inline SVG (currentColor,
+        # font-independent); no Dingbats entity may remain in either
+        # renderer's banner.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -15413,15 +15444,21 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn('class="result-banner fail"', failed)
-        self.assertIn("&#10005; Result: SOME FAILED &mdash; "
+        self.assertIn("Result: SOME FAILED &mdash; "
                       "1 of 6 failed: Donation inflation", failed)
+        self.assertIn('<svg class="banner-mark"', failed)
+        self.assertIn('M3.5 3.5l9 9M12.5 3.5l-9 9', failed)
+        self.assertNotIn("&#10005;", failed)
         passed = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
         self.assertIn('class="result-banner pass"', passed)
-        self.assertIn("&#10003; Result: ALL PASS &mdash; "
+        self.assertIn("Result: ALL PASS &mdash; "
                       "6 of 6 checks passed", passed)
+        self.assertIn('<svg class="banner-mark"', passed)
+        self.assertIn('M2.5 8.5 6.5 12.5 13.5 3.5', passed)
+        self.assertNotIn("&#10003;", passed)
         # The fail banner is saturated red with white text, not the old
         # pale pink strip.
         src = (Path.home() / "workspace/taskmarket/site/build.py"
@@ -15429,6 +15466,14 @@ class TestChecker(unittest.TestCase):
         self.assertIn('.result-banner.fail{background:#b91c1c;color:#fff',
                       src)
         self.assertNotIn('.result-banner.fail{background:#fdecea', src)
+        # The SVG marks are sized by CSS, and the JS mirror carries the
+        # identical markup (both path strings appear twice in build.py:
+        # once in the Python constants, once in the JS renderer).
+        self.assertIn('.result-banner .banner-mark{width:.9em', src)
+        self.assertEqual(src.count('M2.5 8.5 6.5 12.5 13.5 3.5'), 2)
+        self.assertEqual(src.count('M3.5 3.5l9 9M12.5 3.5l-9 9'), 2)
+        self.assertNotIn('&#10003;', src)
+        self.assertNotIn('&#10005;', src)
 
 
     def test_guide_link_is_named_and_at_card_bottom(self):
