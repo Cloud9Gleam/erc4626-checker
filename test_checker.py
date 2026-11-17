@@ -2144,9 +2144,11 @@ class TestChecker(unittest.TestCase):
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn(
-            ".hero-top{display:flex;gap:2em;align-items:flex-start}",
+            ".hero-top{display:flex;gap:2em;align-items:stretch}",
             build.CSS)
-        self.assertIn(".hero-top>div{flex:1;min-width:0}", build.CSS)
+        self.assertIn(
+            ".hero-top>div{flex:1;min-width:0;display:flex;"
+            "flex-direction:column}", build.CSS)
         self.assertIn(
             ".hero-checks{flex:0 0 320px;background:rgba(255,255,255,.09);",
             build.CSS)
@@ -2218,13 +2220,24 @@ class TestChecker(unittest.TestCase):
         # (~90px vs ~82px at 1919px) and the block numbers sit over
         # their labels. The <=640px stacked layout keeps the same
         # centering; no copy changes.
+        # Visual verdict #71: the strip was pinned to the CTA, so the
+        # left column ended ~80px above the checks panel's bottom edge
+        # and the flow diagram below looked detached, sunk under a
+        # blank deep-green band spanning the left two-thirds. Fix: the
+        # left column is now a flex column (stretch to the row height)
+        # and the strip's margin-top is auto, so it sits at the
+        # column's foot, level with the panel bottom, and the gap to
+        # the flow is just the flow's own .9em margin. No copy change;
+        # when the left column is taller than the panel (narrow
+        # widths) auto computes to 0 and the CTA paragraph's .65em
+        # bottom margin still separates it from the strip's border.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn(
-            ".hero-stats{display:flex;gap:1.5em;margin-top:1em;",
+            ".hero-stats{display:flex;gap:1.5em;margin-top:auto;",
             build.CSS)
         self.assertIn(".hero-stats strong{display:block;font-size:1.5em;",
                       build.CSS)
