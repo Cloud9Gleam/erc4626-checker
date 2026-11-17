@@ -3198,6 +3198,37 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
 
+    def test_donation_table_puts_victim_loss_second(self):
+        # Mobile render at 360px (2026-11-18): the donation table is
+        # 411px wide inside a 284px scroll wrap, so the third column
+        # sits off-screen until the visitor discovers the horizontal
+        # swipe — and the third column was Victim loss, the number the
+        # verdict turns on (0.909091 USDC on the noprot preset). Victim
+        # loss is now the second column in both render paths, so it is
+        # in view without scrolling; Attacker net moves third. Numbers
+        # and breach marking are unchanged, only the order.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        header = "<th>Donation (USDC)</th><th>Victim loss (USDC)</th>" \
+            "<th>Attacker net (USDC)</th><th>Note</th>"
+        self.assertIn(header, html)
+        # The 1,000,000 USDC row: victim loss 0.909091 first, then
+        # attacker net -0.090909, both in that order in the row.
+        row = html[html.index("1,000,000</td>"):]
+        self.assertLess(row.index("0.909091"), row.index("-0.090909"))
+        self.assertIn("<td class='breach'>0.909091</td>", html)
+        # The Worker-side template renders the same order.
+        js = build.checker_results_html_js()
+        self.assertIn("<th>Donation (USDC)</th><th>Victim loss (USDC)</th>"
+                      "<th>Attacker net (USDC)</th><th>Note</th>", js)
+        self.assertNotIn("<th>Donation (USDC)</th><th>Attacker net (USDC)</th>"
+                         "<th>Victim loss (USDC)</th>", js)
+
     def test_loss_chart_bars_are_thick_and_rows_tight(self):
         # Visual verdict #59: on /checker/?preset=noprot the Victim loss
         # chart read as broken — four ~11px hairline bars in a ~140px
@@ -3303,6 +3334,40 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn("#checker-form .hint{min-height:4.95em}", build.CSS)
+
+    def test_checker_perf_fee_hint_says_what_the_model_does(self):
+        # Visual verdict #78: the min-height fix made the boxes equal,
+        # but the Performance fee hint itself is still 1 line of text in
+        # a 3-line box -- a ~48px x ~545px blank grey area above the
+        # button, the largest short-hint hole on the page. The honest
+        # fix is longer copy, not more height. Verdict #78's hypothesis
+        # ("fee only above a high-water mark") is WRONG for this model:
+        # erc4626_checker.py charges fee = yield * bps // 10000 on the
+        # gain itself (checker.js accrueYieldAndPerfFee likewise), with
+        # no high-water mark and no hurdle anywhere in either model.
+        # The hint must therefore say exactly that -- 0 = no fee, and
+        # no HWM/hurdle -- and must not claim a high-water mark.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        # Regression guard: the form HTML is duplicated in a
+        # single-quoted JS string (worker-side renderer mirror), so an
+        # apostrophe in any hint breaks worker.js at node --check. The
+        # first draft used "manager's" and did exactly that.
+        hint = ("The cut the manager takes from the yield, in basis points — "
+                "1000 bps = 10% of the gain. 0 = no performance fee. "
+                "The model takes it on the gain itself, with no "
+                "high-water mark or hurdle.")
+        self.assertNotIn("'", hint)
+        self.assertIn(hint, src)
+        self.assertNotIn("Fee on yield, in basis points — 1000 bps = 10%.", src)
+        model = (Path.home() / "workspace/taskmarket/erc4626-checker"
+                 / "erc4626_checker.py").read_text()
+        self.assertIn("fee = yield_amount * self.perf_fee_bps // 10_000", model)
+        self.assertNotIn("high_water", model.lower())
+        self.assertNotIn("high-water", model.lower())
 
     def test_donation_nonmonotonic_explanation(self):
         # The donation loss is not monotonic in the donation size (1B
