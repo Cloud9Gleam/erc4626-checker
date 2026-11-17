@@ -2474,6 +2474,12 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart", html)
+        # The checker chart carries no grey track: a partial bar used to
+        # trail a light-grey remainder while tiny rows had no track at all
+        # and the worst row showed none — the track's presence was
+        # inconsistent, reading as a half-empty bar. Bars now float on
+        # white; width alone carries the scale (verdict #51).
+        self.assertIn("loss-chart loss-chart--bare", html)
         self.assertIn("Bars are scaled to the worst row in this table", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
         # The two small rows (0 and 0.000006 USDC) would draw a 0.0%
@@ -13522,48 +13528,68 @@ class TestChecker(unittest.TestCase):
             1)
 
     def test_donation_withdrawal_cap_guide_numbers(self):
-        # Pins /guides/erc4626-donation-withdrawal-cap/ to exact
-        # integer arithmetic. NOTE: unlike the other five guides in
-        # this batch, this guide has NO dedicated model file
-        # (donation-withdrawal-cap-model.py does not exist; the
-        # withdrawal-cap-model.py in the repo covers the cap alone,
-        # without the donation). The numbers below are the guide's
-        # own setup recomputed in plain integers, so the test pins
-        # them even though no model file backs them.
+        # Pins /guides/erc4626-donation-withdrawal-cap/ to its model.
+        # Importing the model re-runs its module-level assertions
+        # (S1 control, S2 donation, S3 donor P&L, S4 asset cap); the
+        # checks below pin the guide's headline numbers directly.
+        # NOTE: withdrawal-cap-model.py is the cap ALONE in a
+        # different setup (1,000,000 vault, 50,000 per-tx/per-block
+        # cap) -- it does model donations, but none of its numbers
+        # is this guide's 1,110,000 / $2.00 / 10,000-share-per-epoch
+        # setup. donation-withdrawal-cap-model.py is the dedicated
+        # model for the guide's own setup.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-withdrawal-cap-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_withdrawal_cap_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
         USDC = 1_000_000
         # Setup: vault 1,110,000 USDC / 1,110,000 shares at $1.00,
         # cap 10,000 shares per epoch; attacker donates 1,110,000,
         # exactly the pre-donation totalAssets, so the price doubles
         # to $2.00 exactly.
-        assets_before = 1_110_000 * USDC
-        supply = 1_110_000 * USDC
-        donation = 1_110_000 * USDC
-        # Price is assets per share-base-unit: 2 base units per
-        # share-base-unit is $2.00 per whole share.
-        price_after = (assets_before + donation) // supply
-        self.assertEqual(price_after, 2)
-
-        # Control: 10,000 shares per epoch is $10,000 per epoch.
-        cap_shares = 10_000 * USDC
-        self.assertEqual(cap_shares, 10_000 * USDC)
+        v = model.Vault(1_110_000 * USDC, 1_110_000 * USDC)
+        v.donate(1_110_000 * USDC)
+        self.assertEqual(v.price(), 2 * USDC)
         # After the donation the same 10,000 shares are $20,000, and
         # the whale's 100,000 shares drain $200,000 in 10 epochs.
-        attacker_out = cap_shares * price_after
+        attacker_out = v.redeem_share_cap(10_000 * USDC,
+                                          10_000 * USDC)
         self.assertEqual(attacker_out, 20_000 * USDC)
-        whale_shares = 100_000 * USDC
-        whale_out = whale_shares * price_after
+        whale_out = 0
+        v.next_epoch()
+        for _ in range(10):
+            whale_out += v.redeem_share_cap(10_000 * USDC,
+                                            10_000 * USDC)
+            v.next_epoch()
         self.assertEqual(whale_out, 200_000 * USDC)
-        self.assertEqual(whale_shares // cap_shares, 10)
         # The donor still loses $1,100,000: 10,000 in + 1,110,000
         # donated - 20,000 out.
-        self.assertEqual(attacker_out - 10_000 * USDC - donation,
-                         -1_100_000 * USDC)
+        self.assertEqual(attacker_out - 10_000 * USDC
+                         - 1_110_000 * USDC, -1_100_000 * USDC)
         # Asset-denominated cap of $10,000 per epoch: the attacker
         # needs 2 epochs for 10,000 shares, the whale 20 epochs.
-        asset_cap = 10_000 * USDC
-        attacker_epochs = -(-attacker_out // asset_cap)
+        v2 = model.Vault(1_110_000 * USDC, 1_110_000 * USDC)
+        v2.donate(1_110_000 * USDC)
+        attacker_epochs = 0
+        attacker_asset_out = 0
+        while attacker_asset_out < 20_000 * USDC:
+            attacker_asset_out += v2.redeem_asset_cap(
+                5_000 * USDC, 10_000 * USDC)
+            attacker_epochs += 1
+            v2.next_epoch()
         self.assertEqual(attacker_epochs, 2)
-        whale_epochs = -(-whale_out // asset_cap)
+        whale_epochs = 0
+        whale_asset_out = 0
+        while whale_asset_out < 200_000 * USDC:
+            whale_asset_out += v2.redeem_asset_cap(
+                5_000 * USDC, 10_000 * USDC)
+            whale_epochs += 1
+            v2.next_epoch()
         self.assertEqual(whale_epochs, 20)
 
         # No duplicate add() for this guide in build.py.
