@@ -2098,6 +2098,36 @@ class TestChecker(unittest.TestCase):
         self.assertIn("the victim's 100,000 USDC deposit loses 0.909091 USDC",
                       home)
 
+    def test_home_cards_bodies_are_balanced(self):
+        # Visual verdict #57 remainder: the Free tool card's body was
+        # ~2 lines while Paid service and Research were ~4, so the
+        # equal-height grid (.card-link margin-top:auto) left a
+        # ~90-100px gap above the Free tool link vs ~40-50px on the
+        # other two. Fix: the Free tool body now names the six checks
+        # (same list as the /checker/ page description), so all three
+        # bodies are in the same length band and the auto gaps match.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        cards = re.findall(
+            r'<section class="card"><h2>([^<]*)</h2>\s*<p>(.*?)</p>',
+            home, re.S)
+        self.assertEqual(len(cards), 3)
+        bodies = {}
+        for title, body in cards:
+            text = re.sub(r"<[^>]+>", "", body)
+            bodies[title] = len(text)
+        self.assertIn("rounding, donation inflation, preview consistency, "
+                      "fee conservation, share-price sanity, minimum viable "
+                      "deposit", home)
+        for title, n in bodies.items():
+            self.assertGreaterEqual(n, 180, "%s body too short: %d" % (title, n))
+        self.assertLessEqual(max(bodies.values()) / min(bodies.values()), 1.4,
+                             "card bodies unbalanced: %r" % bodies)
+
     def test_reward_token_guide_numbers(self):
         # Reward-token guide (site/reward-token-model.py): yield paid
         # out as a separate token never touches the share price.
