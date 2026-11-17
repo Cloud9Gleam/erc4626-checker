@@ -2106,7 +2106,9 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("rgba(255,255,255,.14)", build.CSS)
         self.assertNotIn("#a7f3c9", build.CSS)
         self.assertIn("@media (max-width:640px){.flow{flex-direction:column}"
-                      ".flow-arrow{transform:rotate(90deg)}}", build.CSS)
+                      ".flow-arrow{transform:rotate(90deg)}"
+                      ".hero-stats{flex-direction:column;gap:.35em}"
+                      ".hero-stats span{flex:none}}", build.CSS)
 
     def test_hero_paragraphs_use_balanced_text_wrap(self):
         # Visual verdict #62: the hero intro paragraph wrapped so the
@@ -2207,6 +2209,14 @@ class TestChecker(unittest.TestCase):
         # verifiable facts — 152 exact-integer models in the site
         # tree, 6 checks per run, 0 wallet/signup/fee. Numbers are
         # facts about the product, not marketing claims.
+        # Visual verdict #65: the three columns were content-sized,
+        # so the long first label left a big empty gap before the
+        # second stat and the row read loose-left/tight-right; the
+        # third fact ("0 wallet, signup, or fee") read ambiguously
+        # on its own. Fix: equal-width columns (flex:1 1 0) and
+        # "needed" on the third label; on <=640px the strip stacks
+        # vertically instead of squeezing three nowrap labels into
+        # ~100px columns.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2217,6 +2227,11 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertIn(".hero-stats strong{display:block;font-size:1.5em;",
                       build.CSS)
+        self.assertIn(".hero-stats span{flex:1 1 0;white-space:nowrap}",
+                      build.CSS)
+        self.assertIn(
+            ".hero-stats{flex-direction:column;gap:.35em}",
+            build.CSS)
         start = home.index('<div class="hero">')
         end = home.index("This site is one independent researcher", start)
         hero = home[start:end]
@@ -2229,7 +2244,7 @@ class TestChecker(unittest.TestCase):
         self.assertLess(stats_idx, hero.index('<aside class="hero-checks">'))
         for fact in ("<strong>152</strong> exact-integer vault models",
                      "<strong>6</strong> checks per run",
-                     "<strong>0</strong> wallet, signup, or fee"):
+                     "<strong>0</strong> wallet, signup, or fee needed"):
             self.assertIn(fact, hero)
 
     def test_hero_flow_step_bodies_are_single_line(self):
@@ -15028,6 +15043,85 @@ class TestChecker(unittest.TestCase):
         pb = F(C) / F(900_000)
         self.assertEqual(pb, F(10, 9))
         self.assertEqual(900_000 * pb, 1_000_000)
+
+    def test_flash_mint_fee_tier_guide_numbers(self):
+        # Pins the flash-mint fee-tier model (theme named 2026-11-17
+        # ~19:29, built this run): vault 900,000 assets / 900,000
+        # shares at $1.00; deposit fee tier keyed on totalSupply at
+        # deposit time (< 1,000,000 -> 5%, >= 1,000,000 -> 1%);
+        # attacker flash-mints shares to cross the threshold, then
+        # burns them. Importing the model runs its own asserts; the
+        # checks below independently re-derive the headline, sweep,
+        # flash-fee sensitivity, and both defenses.
+        import importlib.util
+        from fractions import Fraction as F
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "flash-mint-fee-tier-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "flash_mint_fee_tier_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        C, S = 900_000, 900_000
+
+        # Honest deposit: 5% tier, fee 5,000, net 95,000, 95,000 shares.
+        self.assertEqual(model.tier_rate(S), F(5, 100))
+        fee, net, sh = model.deposit(F(100_000), S, C)
+        self.assertEqual((fee, net, sh), (5_000, 95_000, 95_000))
+
+        # Headline attack (flash-mint 900,000): mid price $0.50, 1%
+        # tier, fee 1,000, net 99,000 buys 198,000 shares; post price
+        # 111/122; attacker value 10,989,000/61; total gain
+        # 5,194,000/61 = fee saved 4,000 + dilution 4,950,000/61.
+        self.assertEqual(model.tier_rate(S + 900_000), F(1, 100))
+        mid_price = F(C) / F(S + 900_000)
+        self.assertEqual(mid_price, F(1, 2))
+        shares = F(99_000) * F(S + 900_000) / F(C)
+        self.assertEqual(shares, 198_000)
+        post_price = F(999_000) / F(1_098_000)
+        self.assertEqual(post_price, F(111, 122))
+        value = shares * post_price
+        self.assertEqual(value, F(10_989_000, 61))
+        self.assertEqual(value - 95_000, F(5_194_000, 61))
+        self.assertEqual(F(5_000) - F(1_000), 4_000)
+        self.assertEqual(value - 99_000, F(4_950_000, 61))
+        self.assertEqual(value - 95_000,
+                         4_000 + F(4_950_000, 61))
+        # Existing holders lose exactly the dilution amount.
+        self.assertEqual(F(C) - F(S) * post_price, F(4_950_000, 61))
+
+        # Sweep: gain grows with mint size; M = 100,000 suffices to
+        # cross the threshold.
+        for m, val, gain in ((100_000, F(10_989_000, 101),
+                              F(1_394_000, 101)),
+                             (300_000, F(10_989_000, 86),
+                              F(1_409_500, 43)),
+                             (900_000, F(10_989_000, 61),
+                              F(5_194_000, 61))):
+            r = model.attack(m)
+            self.assertEqual(r["value"], val)
+            self.assertEqual(r["gain"], gain)
+
+        # Flash-mint fee sensitivity: 0.09% (810) and 1% (9,000) fees
+        # leave the attack hugely profitable.
+        self.assertEqual(F(5_194_000, 61) - 810, F(5_144_590, 61))
+        self.assertEqual(F(5_194_000, 61) - 9_000, F(4_645_000, 61))
+
+        # Defense A (tier on totalAssets): fee flip fixed (5,000),
+        # but dilution remains -- value 18,905,000/109, gain
+        # 8,550,000/109.
+        shares_a = F(95_000) * F(1_800_000) / F(C)
+        self.assertEqual(shares_a, 190_000)
+        price_a = F(995_000) / F(1_090_000)
+        self.assertEqual(price_a, F(199, 218))
+        self.assertEqual(shares_a * price_a, F(18_905_000, 109))
+        self.assertEqual(shares_a * price_a - 95_000,
+                         F(8_550_000, 109))
+
+        # Boundary exactness: exactly 1,000,000 supply gets 1%.
+        self.assertEqual(model.tier_rate(1_000_000), F(1, 100))
+        self.assertEqual(model.tier_rate(999_999), F(5, 100))
 
 
 if __name__ == "__main__":
