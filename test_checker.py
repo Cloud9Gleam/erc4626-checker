@@ -2168,6 +2168,37 @@ class TestChecker(unittest.TestCase):
         self.assertLess(hero.index("Is your vault"),
                         hero.index('<aside class="hero-checks">'))
 
+    def test_hero_checks_panel_note_fills_right_column(self):
+        # Visual verdict #65: the stats strip fixed the left column,
+        # but the blank band moved to the right — the panel ended
+        # ~58px above the left column's bottom edge, leaving an empty
+        # deep-green rectangle below it and the panel looking afloat.
+        # The fix is content inside the panel: a short note under the
+        # link, separated by a hairline, stating what the checks run
+        # on — exact integers, no floats, no live chain read (the same
+        # fact the home card already states about the checker).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        self.assertIn(
+            ".hero-checks-note{margin:.7em 0 0;padding-top:.7em;"
+            "border-top:1px solid rgba(255,255,255,.28);",
+            build.CSS)
+        start = home.index('<div class="hero">')
+        end = home.index("This site is one independent researcher", start)
+        hero = home[start:end]
+        aside_start = hero.index('<aside class="hero-checks">')
+        aside_end = hero.index("</aside>", aside_start)
+        aside = hero[aside_start:aside_end]
+        note = ('<p class="hero-checks-note">Exact integers only — '
+                'no floats, no rounding, no live chain read.</p>')
+        self.assertIn(note, aside)
+        # The note sits after the panel link, at the panel's foot.
+        self.assertLess(aside.index("Run the checker"),
+                        aside.index("hero-checks-note"))
+
     def test_hero_stats_strip_fills_left_column(self):
         # Visual verdict #64: the intro text ended ~150px above the
         # checks panel's bottom edge, leaving a blank deep-green band
