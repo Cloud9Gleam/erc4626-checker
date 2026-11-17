@@ -2102,12 +2102,57 @@ class TestChecker(unittest.TestCase):
         # numbers stay exactly as the model computed them; the fix is
         # balancing, the same technique the h1 already uses
         # (text-wrap:balance), so the browser spreads the paragraph
-        # evenly across its lines instead of leaving an orphan.
+        # evenly across its lines instead of leaving an orphan. The
+        # paragraphs now sit in the .hero-top text column (verdict #63
+        # put a checks panel on the right), so the rule targets them
+        # there instead of as direct .hero children.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn(".hero>p{text-wrap:balance}", build.CSS)
+        self.assertIn(".hero-top p{text-wrap:balance}", build.CSS)
+
+    def test_hero_checks_panel_fills_right_half(self):
+        # Visual verdict #63: after balancing, the hero intro lines
+        # filled only ~55% of the hero width, leaving ~500px of blank
+        # deep green on the right. The fix is content, not width: the
+        # hero top is now two columns — the intro paragraphs on the
+        # left, a panel listing the checker's six exact-integer checks
+        # on the right. The six names are the checker's own (same list
+        # the checker page and the home card use); the panel link has
+        # no arrow glyph — the flow-diagram test forbids &rarr; anywhere
+        # in the hero before the CTA.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        self.assertIn(
+            ".hero-top{display:flex;gap:2em;align-items:flex-start}",
+            build.CSS)
+        self.assertIn(".hero-top>div{flex:1;min-width:0}", build.CSS)
+        self.assertIn(
+            ".hero-checks{flex:0 0 320px;background:rgba(255,255,255,.09);",
+            build.CSS)
+        self.assertIn(
+            "@media (max-width:900px){.hero-top{flex-direction:column}"
+            ".hero-checks{flex:none}}", build.CSS)
+        start = home.index('<div class="hero">')
+        end = home.index("This site is one independent researcher", start)
+        hero = home[start:end]
+        self.assertIn('<div class="hero-top">', hero)
+        self.assertIn('<aside class="hero-checks">', hero)
+        for check in ("Rounding", "Donation inflation",
+                      "Preview consistency", "Fee conservation",
+                      "Share-price sanity", "Minimum viable deposit"):
+            self.assertIn("<li>" + check + "</li>", hero)
+        self.assertIn('<a href="/checker/">Run the checker</a>', hero)
+        # The intro paragraphs live inside the text column, ahead of
+        # the panel in document order.
+        top = hero.index('<div class="hero-top">')
+        self.assertLess(top, hero.index("Is your vault"))
+        self.assertLess(hero.index("Is your vault"),
+                        hero.index('<aside class="hero-checks">'))
 
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
