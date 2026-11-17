@@ -2014,12 +2014,14 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
-        # The flow diagram is the hero's only diagram. The hero's CTA
-        # now lives in the left column of .hero-top (visual verdict
-        # #64: the CTA below the flow left a ~150px blank band under
-        # the intro text), so the flow is the hero's closing element:
-        # it must sit after the CTA and before the paragraph that
-        # follows the hero.
+        # The flow diagram is the hero's only diagram. The hero CTA
+        # lives in the left column of .hero-top (visual verdict #64:
+        # the CTA below the flow left a ~150px blank band under the
+        # intro text), so the flow sits after the CTA and before the
+        # paragraph that follows the hero. The left column is filled
+        # by the intro, the CTA and the hero-stats strip; a model-
+        # caveat line was tried here and dropped, because with all
+        # three the column overshot the checks panel by ~71px.
         hero_start = home.index('<div class="hero">')
         hero_end = home.index('<p>This site is one independent researcher')
         hero = home[hero_start:hero_end]
@@ -2028,10 +2030,6 @@ class TestChecker(unittest.TestCase):
         self.assertLess(hero_start, cta)
         self.assertLess(cta, flow)
         self.assertLess(flow, hero_end)
-        # The left column now carries the model caveat as well as the
-        # CTA, so it fills the panel's height instead of leaving a
-        # blank band under the intro text.
-        self.assertIn("It is a model, not a chain read", hero)
         self.assertIn('<div class="flow"', hero)
         self.assertEqual(hero.count('<div class="flow-step'), 3)
         # The victim step is the red one: numbered badges on all three,
@@ -2097,8 +2095,8 @@ class TestChecker(unittest.TestCase):
             "margin:.9em 0 .2em}", build.CSS)
         # No glyph left in the arrow spans, and no disc either: the
         # span itself has no background and no border-radius. (Scoped
-        # to the flow diagram: the hero CTA legitimately carries an
-        # &rarr; of its own since it moved into the left column.)
+        # to the flow diagram: the hero CTA below the flow legitimately
+        # carries an &rarr; of its own.)
         flow_html = hero[hero.index('<div class="flow"'):]
         self.assertEqual(flow_html.count("&rarr;"), 0)
         arrow_rule = build.CSS[build.CSS.index(".flow-arrow{"):]
