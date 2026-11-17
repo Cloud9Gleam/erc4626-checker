@@ -13215,6 +13215,512 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(
             build.count('add("/guides/erc4626-async-escrow-counted/"'),
             1)
+    def test_donation_hook_offset6_guide_numbers(self):
+        # Pins /guides/erc4626-donation-deposit-hook-reentrancy-offset6/
+        # to its model: the same five scenarios as the offset-0 guide,
+        # re-run at offset 6. The offset kills the donation attack in
+        # the control (-999,989.000110), the hook recovers 473,906.035035
+        # of it donation-first, and hook-first is 9 base units from the
+        # offset-0 result. The guide uses exact integers: Alice's
+        # hook-first share count is ...363,785,124 (a float print shows
+        # ...363.785126) and Mallory's pre-donation shares are
+        # 100,000,100,000.000001 (a float print shows .000000).
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-deposit-hook-reentrancy-offset6-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_deposit_hook_reentrancy_offset6_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        hook = model._hook
+        USDC = model.USDC
+
+        # Setup: preview of 100,000 USDC at 1/1, offset 6.
+        _, vault = hook.fresh(offset=6)
+        self.assertEqual(vault.preview_deposit(100_000 * USDC),
+                         50_000_050_000_000_000)
+
+        # 1. Control: Alice mints 0.100000 shares, Mallory redeems the
+        # seed for 10.999890, profit -999,989.000110.
+        _, vault = hook.fresh(offset=6)
+        vault.donate("mallory", 1_000_000 * USDC)
+        minted = vault.deposit("alice", 100_000 * USDC, "alice")
+        self.assertEqual(minted, 100_000)
+        out = vault.redeem("mallory", 1)
+        self.assertEqual(out, 10_999_890)
+        self.assertEqual(out - 1_000_000 * USDC, -999_989_000_110)
+
+        # 2. Donation first, hook deposit: Mallory's deposit mints
+        # 0.100000, Alice's 0.109090; Mallory redeems 573,917.035925,
+        # profit -526,082.964075; Alice's shares worth 626,082.964076.
+        _, vault = hook.fresh(hook_mode="auto-credit", offset=6)
+        vault.donate("mallory", 1_000_000 * USDC)
+        m1 = vault.deposit("mallory", 100_000 * USDC, "mallory")
+        m2 = vault.deposit("alice", 100_000 * USDC, "alice")
+        self.assertEqual((m1, m2), (100_000, 109_090))
+        out = vault.redeem("mallory", vault.shares["mallory"])
+        self.assertEqual(out, 573_917_035_925)
+        self.assertEqual(out - 1_100_000 * USDC, -526_082_964_075)
+        self.assertEqual(vault.share_value("alice"), 626_082_964_076)
+        self.assertEqual(out + vault.share_value("alice"),
+                         1_200_000_000_001)
+
+        # 3. Hook first: Mallory holds 100,000,100,000.000001 shares
+        # pre-donation; Alice double-mints 18,181,836,363.785124;
+        # Mallory redeems 1,015,384.615384, profit -84,615.384616.
+        _, vault = hook.fresh(hook_mode="auto-credit", offset=6)
+        vault.deposit("mallory", 100_000 * USDC, "mallory")
+        self.assertEqual(vault.shares["mallory"],
+                         100_000_100_000_000_001)
+        vault.donate("mallory", 1_000_000 * USDC)
+        vault.deposit("alice", 100_000 * USDC, "alice")
+        self.assertEqual(vault.shares["alice"], 18_181_836_363_785_124)
+        out = vault.redeem("mallory", vault.shares["mallory"])
+        self.assertEqual(out, 1_015_384_615_384)
+        self.assertEqual(out - 1_100_000 * USDC, -84_615_384_616)
+        self.assertEqual(vault.share_value("alice"), 184_615_384_617)
+
+        # 4. Victim-side hook: Alice's deposit mints 0.100000; Mallory
+        # redeems the seed for 5.499972.
+        _, vault = hook.fresh(hook_mode="auto-credit", offset=6)
+        vault.donate("mallory", 1_000_000 * USDC)
+        m = vault.deposit("alice", 100_000 * USDC, "alice")
+        self.assertEqual(m, 100_000)
+        self.assertEqual(vault.redeem("mallory", 1), 5_499_972)
+
+        # 5. No-op defense: both mint 0.100000 once; Mallory redeems
+        # all for 600,002.999985, profit -499,997.000015.
+        _, vault = hook.fresh(hook_mode="noop", offset=6)
+        vault.donate("mallory", 1_000_000 * USDC)
+        m1 = vault.deposit("mallory", 100_000 * USDC, "mallory")
+        m2 = vault.deposit("alice", 100_000 * USDC, "alice")
+        self.assertEqual((m1, m2), (100_000, 100_000))
+        out = vault.redeem("mallory", vault.shares["mallory"])
+        self.assertEqual(out, 600_002_999_985)
+        self.assertEqual(out - 1_100_000 * USDC, -499_997_000_015)
+
+        # No duplicate add() for this guide in build.py.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-deposit-hook-reentrancy-offset6/"'),
+            1)
+
+    def test_donation_time_decay_exit_fee_guide_numbers(self):
+        # Pins /guides/erc4626-donation-time-decay-exit-fee/ to its
+        # model: seed 1 base unit, donate 100,000 USDC, fee 500 bps
+        # day 0 decaying linearly to 0 on day 30, fee retained.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-time-decay-exit-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_time_decay_exit_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+
+        # Big victim 100,000: day-0 net 190,000.000001, profit 90,000;
+        # day-30 net 200,000.000001, profit 100,000; day-15 fee 5,000.
+        ta, s = model.attack_offset0(100_000 * USDC)
+        gross, fee, net = model.redeem(ta, s, 1, 0)
+        self.assertEqual((gross, fee, net),
+                         (200_000_000_001, 10_000_000_000,
+                          190_000_000_001))
+        self.assertEqual(net - model.DONATION - 1, 90_000 * USDC)
+        _, _, net30 = model.redeem(ta, s, 1, 30)
+        self.assertEqual(net30, 200_000_000_001)
+        _, fee15, net15 = model.redeem(ta, s, 1, 15)
+        self.assertEqual((fee15, net15), (5_000_000_000, 195_000_000_001))
+
+        # Small victim 1,000: day-0 fee 5,050 flips profit to -4,050;
+        # day-30 profit 1,000. Break-even victim 5,263.157895 USDC:
+        # 5,263 loses 0.15, 5,264 gains 0.80.
+        ta, s = model.attack_offset0(1_000 * USDC)
+        gross, fee, net = model.redeem(ta, s, 1, 0)
+        self.assertEqual((gross, fee, net),
+                         (101_000_000_001, 5_050_000_000, 95_950_000_001))
+        self.assertEqual(net - model.DONATION - 1, -4_050 * USDC)
+        _, _, net30 = model.redeem(ta, s, 1, 30)
+        self.assertEqual(net30 - model.DONATION - 1, 1_000 * USDC)
+        for v, want_profit in ((5_263, -150_000), (5_264, 800_000)):
+            ta, s = model.attack_offset0(v * USDC)
+            _, _, net = model.redeem(ta, s, 1, 0)
+            self.assertEqual(net - model.DONATION - 1, want_profit)
+
+        # Offset 6: victim mints 1,999,999 shares; attacker day-0 net
+        # 63,333.354445 (loss -36,666.645556), day-30 net 66,666.688889.
+        vshares = (100_000 * USDC) * (1_000_000 + 1_000_000) // (
+            100_000_000_001 + 1)
+        self.assertEqual(vshares, 1_999_999)
+        ta6 = 100_000_000_001 + 100_000 * USDC
+        s6 = 1_000_000 + vshares
+        _, _, net = model.redeem(ta6, s6, 1_000_000, 0)
+        self.assertEqual(net, 63_333_354_445)
+        self.assertEqual(net - model.DONATION - 1, -36_666_645_556)
+        _, _, net30 = model.redeem(ta6, s6, 1_000_000, 30)
+        self.assertEqual(net30, 66_666_688_889)
+
+        # No duplicate add() for this guide in build.py.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-time-decay-exit-fee/"'),
+            1)
+
+    def test_donation_maxmint_cap_guide_numbers(self):
+        # Pins /guides/erc4626-donation-maxmint-cap/ to its model:
+        # caps 100,000 USDC maxDeposit / 100,000 shares maxMint,
+        # seed 1 base unit, donate 1,000,000 USDC.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-maxmint-cap-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_maxmint_cap_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+
+        # After the donation, offset 0: victim 100,000 mints 0 shares;
+        # minting the full maxMint costs 50,000,000,000,100,000 USDC,
+        # 500,000,000,001x the assets cap.
+        A = 1 + model.DONATION
+        S = 1
+        self.assertEqual(
+            model.shares_for_deposit(100_000 * USDC, A, S, 0), 0)
+        cost = model.assets_for_mint(model.MAX_MINT, A, S, 0)
+        self.assertEqual(cost // USDC, 50_000_000_000_100_000)
+        self.assertEqual(cost, 50_000_000_000_100_000_000_000)
+
+        # Threshold: 500,000.000000 mints 0, 500,000.000001 mints 1.
+        self.assertEqual(
+            model.shares_for_deposit(500_000_000_000, A, S, 0), 0)
+        self.assertEqual(
+            model.shares_for_deposit(500_000_000_001, A, S, 0), 1)
+
+        # maxDeposit caps the loss at 100,000; maxMint alone lets a
+        # 500,000 victim lose 500,000; a 1,000,000 victim mints 1
+        # share-base-unit, half the vault, and loses 0.
+        ta = A + 100_000 * USDC
+        gross = model.assets_for_redeem(1, ta, S)
+        self.assertEqual(gross - model.DONATION - 1, 100_000 * USDC)
+        ta_mid = A + 500_000 * USDC
+        gross_mid = model.assets_for_redeem(1, ta_mid, S)
+        self.assertEqual(gross_mid - model.DONATION - 1, 500_000 * USDC)
+        self.assertEqual(
+            model.shares_for_deposit(1_000_000 * USDC, A, S, 0), 1)
+        ta_big = A + 1_000_000 * USDC
+        gross_big = model.assets_for_redeem(1, ta_big, S + 1)
+        self.assertEqual(gross_big - model.DONATION - 1, -1)
+        self.assertEqual(
+            model.assets_for_redeem(1, ta_big, S + 1)
+            - 1_000_000 * USDC, 0)
+
+        # Offset 6: victim mints 199,999 share-base-units and redeems
+        # 183,332.569443 (profit +83,332.569443); attacker redeems
+        # 916,667.430557 (profit -83,332.569444); minting maxMint
+        # still costs 500,000.000001x the assets cap.
+        S6 = 1_000_000
+        vshares = model.shares_for_deposit(100_000 * USDC, A, S6, 6)
+        self.assertEqual(vshares, 199_999)
+        cost6 = model.assets_for_mint(model.MAX_MINT, A, S6, 6)
+        self.assertEqual(cost6, 50_000_000_000_100_000)
+        ta6 = A + 100_000 * USDC
+        s6 = S6 + vshares
+        gross_v = model.assets_for_redeem(vshares, ta6, s6)
+        self.assertEqual(gross_v, 183_332_569_443)
+        self.assertEqual(gross_v - 100_000 * USDC, 83_332_569_443)
+        gross_a = model.assets_for_redeem(S6, ta6, s6)
+        self.assertEqual(gross_a, 916_667_430_557)
+        self.assertEqual(gross_a - model.DONATION - 1, -83_332_569_444)
+
+        # No duplicate add() for this guide in build.py.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-maxmint-cap/"'), 1)
+
+    def test_donation_per_address_cap_guide_numbers(self):
+        # Pins /guides/erc4626-donation-per-address-cap/ to its model:
+        # 10,000 USDC per-address cap, seed 1 base unit, donate
+        # 1,000,000 USDC, victim 100,000 USDC, 2 USDC gas per deposit.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-per-address-cap-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_per_address_cap_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+
+        # After the donation, offset 0: every address mints 0 shares,
+        # 10 addresses or one; attacker redeems 1,100,000.000001 for a
+        # +100,000 profit; the 10-way split costs 20 USDC of gas.
+        A = 1 + model.DONATION
+        S = 1
+        self.assertEqual(
+            model.shares_for_deposit(model.PER_ADDRESS_CAP, A, S, 0), 0)
+        self.assertEqual(
+            model.shares_for_deposit(100_000 * USDC, A, S, 0), 0)
+        ta = A + 100_000 * USDC
+        gross = model.assets_for_redeem(1, ta, S)
+        self.assertEqual(gross, 1_100_000_000_001)
+        self.assertEqual(gross - model.DONATION - 1, 100_000 * USDC)
+        self.assertEqual(10 * model.GAS_PER_DEPOSIT, 20 * USDC)
+
+        # The inversion: the 500,000.000001 threshold for one share is
+        # just over 50x the cap, so a 1,000,000 victim who survives in
+        # one deposit loses 0, but split across 100 capped addresses
+        # loses the full 1,000,000 plus 200 USDC of gas.
+        self.assertEqual(
+            model.shares_for_deposit(500_000_000_000, A, S, 0), 0)
+        self.assertEqual(
+            model.shares_for_deposit(500_000_000_001, A, S, 0), 1)
+        self.assertEqual(
+            model.shares_for_deposit(1_000_000 * USDC, A, S, 0), 1)
+        ta_big = A + 1_000_000 * USDC
+        gross_v = model.assets_for_redeem(1, ta_big, S + 1)
+        self.assertEqual(gross_v, 1_000_000_000_000)
+        self.assertEqual(gross_v - 1_000_000 * USDC, 0)
+        self.assertEqual(
+            100 * model.shares_for_deposit(
+                model.PER_ADDRESS_CAP, A, S, 0), 0)
+        self.assertEqual(100 * model.GAS_PER_DEPOSIT, 200 * USDC)
+
+        # Offset 6: one 100,000 deposit mints 199,999 and redeems
+        # 183,332.569443; split 10 x 10,000 mints 19,999 each (199,990
+        # total, 9 base units lost to flooring) and redeems
+        # 183,325.694380 total — the split costs 6.875063 USDC.
+        S6 = 1_000_000
+        v_one = model.shares_for_deposit(100_000 * USDC, A, S6, 6)
+        self.assertEqual(v_one, 199_999)
+        v_split = model.shares_for_deposit(
+            model.PER_ADDRESS_CAP, A, S6, 6)
+        self.assertEqual(v_split, 19_999)
+        self.assertEqual(10 * v_split, 199_990)
+        ta6 = A + 100_000 * USDC
+        s6_one = S6 + v_one
+        gross_one = model.assets_for_redeem(v_one, ta6, s6_one)
+        self.assertEqual(gross_one, 183_332_569_443)
+        s6_split = S6 + 10 * v_split
+        gross_each = model.assets_for_redeem(v_split, ta6, s6_split)
+        self.assertEqual(gross_each, 18_332_569_438)
+        self.assertEqual(10 * gross_each, 183_325_694_380)
+        self.assertEqual(gross_one - 10 * gross_each, 6_875_063)
+        gross_a6 = model.assets_for_redeem(S6, ta6, s6_split)
+        self.assertEqual(gross_a6, 916_674_305_620)
+        self.assertEqual(gross_a6 - model.DONATION - 1, -83_325_694_381)
+
+        # No duplicate add() for this guide in build.py.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-per-address-cap/"'),
+            1)
+
+    def test_donation_withdrawal_cap_guide_numbers(self):
+        # Pins /guides/erc4626-donation-withdrawal-cap/ to exact
+        # integer arithmetic. NOTE: unlike the other five guides in
+        # this batch, this guide has NO dedicated model file
+        # (donation-withdrawal-cap-model.py does not exist; the
+        # withdrawal-cap-model.py in the repo covers the cap alone,
+        # without the donation). The numbers below are the guide's
+        # own setup recomputed in plain integers, so the test pins
+        # them even though no model file backs them.
+        USDC = 1_000_000
+        # Setup: vault 1,110,000 USDC / 1,110,000 shares at $1.00,
+        # cap 10,000 shares per epoch; attacker donates 1,110,000,
+        # exactly the pre-donation totalAssets, so the price doubles
+        # to $2.00 exactly.
+        assets_before = 1_110_000 * USDC
+        supply = 1_110_000 * USDC
+        donation = 1_110_000 * USDC
+        # Price is assets per share-base-unit: 2 base units per
+        # share-base-unit is $2.00 per whole share.
+        price_after = (assets_before + donation) // supply
+        self.assertEqual(price_after, 2)
+
+        # Control: 10,000 shares per epoch is $10,000 per epoch.
+        cap_shares = 10_000 * USDC
+        self.assertEqual(cap_shares, 10_000 * USDC)
+        # After the donation the same 10,000 shares are $20,000, and
+        # the whale's 100,000 shares drain $200,000 in 10 epochs.
+        attacker_out = cap_shares * price_after
+        self.assertEqual(attacker_out, 20_000 * USDC)
+        whale_shares = 100_000 * USDC
+        whale_out = whale_shares * price_after
+        self.assertEqual(whale_out, 200_000 * USDC)
+        self.assertEqual(whale_shares // cap_shares, 10)
+        # The donor still loses $1,100,000: 10,000 in + 1,110,000
+        # donated - 20,000 out.
+        self.assertEqual(attacker_out - 10_000 * USDC - donation,
+                         -1_100_000 * USDC)
+        # Asset-denominated cap of $10,000 per epoch: the attacker
+        # needs 2 epochs for 10,000 shares, the whale 20 epochs.
+        asset_cap = 10_000 * USDC
+        attacker_epochs = -(-attacker_out // asset_cap)
+        self.assertEqual(attacker_epochs, 2)
+        whale_epochs = -(-whale_out // asset_cap)
+        self.assertEqual(whale_epochs, 20)
+
+        # No duplicate add() for this guide in build.py.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-withdrawal-cap/"'),
+            1)
+
+    def test_donation_dead_shares_guide_numbers(self):
+        # Pins /guides/erc4626-donation-dead-shares/ to its model.
+        # Importing the model re-runs its module-level assertions
+        # (loss table, verdicts, cost-of-pass bisection, live-deposit
+        # exit, conservation); the checks below pin the guide's
+        # headline numbers directly.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "dead-shares-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "dead_shares_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+
+        # Control, no dead shares: victim loses 0.909091, attacker
+        # nets -0.090909, victim mints 99,999 shares.
+        loss, net, vic_shares, _, _, _, _ = model.attack(
+            0, 1_000_000 * USDC)
+        self.assertEqual((loss, net, vic_shares),
+                         (909_091, -90_909, 99_999))
+
+        # 1,000 USDC dead shares at a 1,000,000 USDC donation: victim
+        # loss 0.000182, attacker nets -999,000.999002, victim mints
+        # 99,999,900 shares; attacker recovers 1,000.000998, victim
+        # redeems 99,999.999818, 1,000,000.999184 stays behind dead
+        # shares.
+        loss, net, vic_shares, att_out, vic_out, left_a, left_s = (
+            model.attack(1_000, 1_000_000 * USDC))
+        self.assertEqual(loss, 182)
+        self.assertEqual(net, -999_000_999_002)
+        self.assertEqual(vic_shares, 99_999_900)
+        self.assertEqual(att_out, 1_000_000_998)
+        self.assertEqual(vic_out, 99_999_999_818)
+        self.assertEqual(left_a, 1_000_000_999_184)
+        self.assertEqual(left_s, 1_000_000_000)
+
+        # Same dead shares at a 1,000,000,000 USDC donation: loss
+        # 0.898913 — dilution, not a bound; 100 USDC dead shares
+        # leave 9.890893 there, worse than no protection (0.099890).
+        self.assertEqual(
+            model.attack(1_000, 1_000_000_000 * USDC)[0], 898_913)
+        self.assertEqual(
+            model.attack(100, 1_000_000_000 * USDC)[0], 9_890_893)
+        self.assertEqual(
+            model.attack(0, 1_000_000_000 * USDC)[0], 99_890)
+
+        # Offset 6 with no dead shares holds 0.000900 at the largest
+        # scale the checker tests; 1,000,000 USDC of dead shares
+        # holds 0.000702 there.
+        self.assertEqual(model.verdict(0, offset=6),
+                         (True, [0, 0, 1, 900]))
+        self.assertEqual(
+            model.attack(1_000_000, 1_000_000_000 * USDC)[0], 702)
+
+        # No duplicate add() for this guide in build.py.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-dead-shares/"'), 1)
+
+    def test_donation_deposit_hook_reentrancy_guide_numbers(self):
+        # Pins /guides/erc4626-donation-deposit-hook-reentrancy/ to
+        # its model (offset 0): seed 1 base unit / 1 share-base-unit
+        # at $1.00; Mallory has 100,000 USDC to deposit plus
+        # 1,000,000 USDC to donate; Alice has 100,000 USDC.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-deposit-hook-reentrancy-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_deposit_hook_reentrancy_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        USDC = model.USDC
+
+        # 1. Control, donation only: Alice mints 0 shares, Mallory
+        # redeems the seed for 1,100,000.000001, profit 100,000.000001.
+        _, vault = model.fresh()
+        vault.donate("mallory", 1_000_000 * USDC)
+        self.assertEqual(vault.deposit("alice", 100_000 * USDC, "alice"),
+                         0)
+        out = vault.redeem("mallory", 1)
+        self.assertEqual(out, 1_100_000 * USDC + 1)
+        self.assertEqual(out - 1_000_000 * USDC - 1, 100_000 * USDC)
+
+        # 2. Donation first, hook deposit: hook mint 0, deposit 0,
+        # Mallory still holds only the seed; redeem 1,200,000.000001,
+        # profit identical to the control.
+        _, vault = model.fresh(hook_mode="auto-credit")
+        vault.donate("mallory", 1_000_000 * USDC)
+        self.assertEqual(
+            vault.deposit("mallory", 100_000 * USDC, "mallory"), 0)
+        self.assertEqual(vault.shares["mallory"], 1)
+        self.assertEqual(vault.deposit("alice", 100_000 * USDC, "alice"),
+                         0)
+        out = vault.redeem("mallory", 1)
+        self.assertEqual(out, 1_200_000 * USDC + 1)
+        self.assertEqual(out - 1_100_000 * USDC - 1, 100_000 * USDC)
+
+        # 3. Hook first: Mallory holds 200,001 shares; Alice's
+        # double mint is 36,363.636362 shares; Mallory redeems
+        # 1,015,384.615393, profit -84,615.384607; Alice's shares are
+        # worth 184,615.384608; the ledger closes exactly.
+        _, vault = model.fresh(hook_mode="auto-credit")
+        vault.deposit("mallory", 100_000 * USDC, "mallory")
+        self.assertEqual(vault.shares["mallory"], 200_000 * USDC + 1)
+        vault.donate("mallory", 1_000_000 * USDC)
+        vault.deposit("alice", 100_000 * USDC, "alice")
+        self.assertEqual(vault.shares["alice"], 36_363_636_362)
+        self.assertEqual(vault.total_supply, 236_363_636_363)
+        out = vault.redeem("mallory", vault.shares["mallory"])
+        self.assertEqual(out, 1_015_384_615_393)
+        self.assertEqual(out - 1_100_000 * USDC, -84_615_384_607)
+        self.assertEqual(vault.share_value("alice"), 184_615_384_608)
+        self.assertEqual(out + vault.share_value("alice"),
+                         1_200_000 * USDC + 1)
+
+        # 4. Victim-side hook: Alice's hook mint 0, deposit 0;
+        # Mallory redeems the seed for 1,100,000.000001, as control.
+        _, vault = model.fresh(hook_mode="auto-credit")
+        vault.donate("mallory", 1_000_000 * USDC)
+        self.assertEqual(vault.deposit("alice", 100_000 * USDC, "alice"),
+                         0)
+        self.assertEqual(vault.shares["alice"], 0)
+        out = vault.redeem("mallory", 1)
+        self.assertEqual(out, 1_100_000 * USDC + 1)
+
+        # 5. No-op defense: single mint (0 at the inflated price);
+        # Alice also deposits 0; Mallory redeems 1,200,000.000001.
+        _, vault = model.fresh(hook_mode="noop")
+        vault.donate("mallory", 1_000_000 * USDC)
+        self.assertEqual(
+            vault.deposit("mallory", 100_000 * USDC, "mallory"), 0)
+        self.assertEqual(vault.shares["mallory"], 1)
+        self.assertEqual(vault.deposit("alice", 100_000 * USDC, "alice"),
+                         0)
+        out = vault.redeem("mallory", 1)
+        self.assertEqual(out, 1_200_000 * USDC + 1)
+
+        # No duplicate add() for this guide in build.py.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-deposit-hook-reentrancy/"'),
+            1)
 
 
 if __name__ == "__main__":
