@@ -2462,9 +2462,11 @@ class TestChecker(unittest.TestCase):
         # visible: bars scaled to the worst row, red where the row breaches
         # the pass bound. The chart adds no new numbers; every figure is
         # the model's own, and the bar widths are pinned here. A row whose
-        # bar would be under 0.5% of the worst row gets no slot — an empty
-        # grey slot for a zero loss reads as a broken bar — and the scale
-        # stays linear to the worst row (no log scale, no minimum width).
+        # bar would be under 0.5% of the worst row gets an empty framed
+        # slot instead of a fill — the frame is the same hairline border
+        # every row carries, so a near-zero loss reads as intentionally
+        # empty, not missing (verdict #51) — and the scale stays linear
+        # to the worst row (no log scale, no minimum width).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2474,17 +2476,24 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart", html)
-        # The checker chart carries no grey track: a partial bar used to
-        # trail a light-grey remainder while tiny rows had no track at all
-        # and the worst row showed none — the track's presence was
-        # inconsistent, reading as a half-empty bar. Bars now float on
-        # white; width alone carries the scale (verdict #51).
+        # The checker chart carries no grey fill: a partial bar used to
+        # trail a light-grey remainder while tiny rows had no track at
+        # all — the track's presence was inconsistent, reading as a
+        # half-empty bar. Bars now sit inside the same hairline frame
+        # every row carries (verdict #51); width alone carries the scale.
         self.assertIn("loss-chart loss-chart--bare", html)
+        # Every track in the bare chart — filled or empty — carries the
+        # same hairline frame: no grey fill remainder (verdict #51's
+        # half-empty-bar complaint), no invisible row (its missing-bar
+        # complaint). Empty slots show the frame with no fill.
+        self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
+                      "border:1px solid #d1d5db;box-sizing:border-box}",
+                      build.CSS)
         self.assertIn("Bars are scaled to the worst row in this table", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
         # The two small rows (0 and 0.000006 USDC) would draw a 0.0%
-        # fill — an empty grey slot that reads as a broken bar — so
-        # they get no slot at all, just the number.
+        # fill, so they get an empty framed slot — frame visible, no
+        # fill — instead of a bar, and the number stands beside it.
         self.assertEqual(html.count("loss-fill pass"), 0)
         self.assertEqual(html.count("loss-track--empty"), 2)
         self.assertIn("A row with no bar lost too little to draw at this scale.", html)
@@ -2505,7 +2514,9 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
         self.assertIn("loss-chart", html)
-        # Every loss is 0 — no bar is drawn anywhere, the numbers stand alone.
+        # Every loss is 0 — no bar is drawn anywhere, but each row still
+        # shows its framed empty slot, so the chart does not read as
+        # missing rows.
         self.assertEqual(html.count("width:0.0%"), 0)
         self.assertEqual(html.count("loss-track--empty"), 4)
         self.assertIn("A row with no bar lost too little to draw at this scale.", html)
