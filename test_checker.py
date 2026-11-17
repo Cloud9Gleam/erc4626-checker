@@ -2218,7 +2218,10 @@ class TestChecker(unittest.TestCase):
         # on the right. The six names are the checker's own (same list
         # the checker page and the home card use); the panel link has
         # no arrow glyph — the flow-diagram test forbids &rarr; anywhere
-        # in the hero before the CTA.
+        # in the hero before the CTA. Visual verdict #89: the link was
+        # bare bold text next to the filled white CTA on the left, so
+        # it did not read as an action; it is now a secondary outline
+        # button (class cta2), still with no arrow glyph.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2245,13 +2248,47 @@ class TestChecker(unittest.TestCase):
                       "Preview consistency", "Fee conservation",
                       "Share-price sanity", "Minimum viable deposit"):
             self.assertIn("<li>" + check + "</li>", hero)
-        self.assertIn('<a href="/checker/">Run the checker</a>', hero)
+        self.assertIn('<a class="cta2" href="/checker/">Run the checker</a>', hero)
         # The intro paragraphs live inside the text column, ahead of
         # the panel in document order.
         top = hero.index('<div class="hero-top">')
         self.assertLess(top, hero.index("Is your vault"))
         self.assertLess(hero.index("Is your vault"),
                         hero.index('<aside class="hero-checks">'))
+
+    def test_hero_checks_panel_link_is_a_secondary_button(self):
+        # Visual verdict #89: the right panel's "Run the checker" link
+        # was bare bold white text — same destination as the filled
+        # white CTA on the left, but with none of its affordance, so
+        # the panel's action did not read as an action. It is now a
+        # secondary outline button: transparent, white border, same
+        # white bold text — visibly a button, visibly secondary to the
+        # filled primary CTA. No arrow glyph (the flow-diagram test
+        # forbids &rarr; in the hero before the CTA).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        self.assertIn(
+            ".hero-checks a.cta2{display:inline-block;"
+            "border:1px solid rgba(255,255,255,.65);",
+            build.CSS)
+        self.assertIn(
+            ".hero-checks a.cta2:hover{background:rgba(255,255,255,.12);"
+            "text-decoration:none}", build.CSS)
+        # The primary CTA stays filled white — the two buttons differ
+        # in kind, not just in position.
+        self.assertIn(
+            ".hero a.cta{display:inline-block;background:#fff;",
+            build.CSS)
+        start = home.index('<div class="hero">')
+        end = home.index("This site is one independent researcher", start)
+        hero = home[start:end]
+        self.assertIn(
+            '<a class="cta2" href="/checker/">Run the checker</a>', hero)
+        aside = hero[hero.index('<aside class="hero-checks">'):]
+        self.assertIn('class="cta2"', aside)
 
     def test_hero_checks_panel_note_fills_right_column(self):
         # Visual verdict #65: the stats strip fixed the left column,
@@ -16197,6 +16234,100 @@ class TestChecker(unittest.TestCase):
                     "34.9901", "9,792.20", "230,213", "135"):
             self.assertIn(num, build)
         self.assertIn('<a href="/guides/erc4626-depositmulti-short-array/">',
+                      build)
+
+    def test_firelight_post_slash_zero_assets_model_numbers(self):
+        # Firelight post-slash zero-asset guide (site/firelight-post-
+        # slash-zero-assets-model.py): a slash payout zeroes totalAssets
+        # but leaves the shares outstanding, so the OZ mint divides by
+        # 1. Re-derived here with plain integer arithmetic and
+        # fractions.Fraction, independent of the model file, so the
+        # guide's numbers cannot drift silently.
+        # Vault 1,000,000 USDC / 1,000,000 shares at $1.00 pre-slash;
+        # USDC 6 decimals, so S = 10**12 share base units.
+        from fractions import Fraction
+        USDC = 1_000_000
+        S = 1_000_000 * USDC
+        self.assertEqual(S, 10 ** 12)
+
+        def mint(assets, total_assets, total_supply, offset=0):
+            return assets * (total_supply + 10 ** offset) // (total_assets + 1)
+
+        def redeem(shares, total_assets, total_supply):
+            return shares * total_assets // total_supply
+
+        # 1. One wei mints S+1 shares = 50.0000000000% of new supply.
+        m1 = mint(1, 0, S)
+        self.assertEqual(m1, S + 1)
+        self.assertEqual(Fraction(m1, S + m1), Fraction(S + 1, 2 * S + 1))
+        self.assertEqual(round(float(Fraction(m1, S + m1)) * 100, 10),
+                         50.0)
+        # 2. 200 wei mints 200/201 of the new supply = 99.5024876%.
+        m200 = mint(200, 0, S)
+        self.assertEqual(m200, 200 * (S + 1))
+        self.assertEqual(Fraction(m200, S + m200),
+                         Fraction(200 * (S + 1), 201 * S + 200))
+        self.assertEqual(round(float(Fraction(200, 201)) * 100, 7),
+                         99.5024876)
+        # 3. 1,000 wei multiplies totalSupply ~1,001x.
+        self.assertEqual(S + mint(1000, 0, S), 1_001_000_000_001_000)
+        self.assertEqual(round((S + mint(1000, 0, S)) / S, 6), 1001.0)
+        # #89114 same shape at smaller scale: 500,000 -> 500,501,000.
+        self.assertEqual(round(500_501_000 / 500_000, 3), 1001.002)
+        # 4. Dilution check: attacker 1 wei, victim 1,000,000 USDC.
+        atk = mint(1, 0, S)
+        vic = mint(1_000_000 * USDC, 1, S + atk)
+        self.assertEqual(vic, 1_000_000_000_001_000_000_000_000)
+        total_supply = S + atk + vic
+        total_assets = 1 + 1_000_000 * USDC
+        self.assertEqual(redeem(atk, total_assets, total_supply), 1)
+        self.assertEqual(redeem(vic, total_assets, total_supply),
+                         1_000_000 * USDC)
+        # 5. Real wedge, 1 wei: 1,000,000 USDC share-free inflow.
+        atk = mint(1, 0, S)
+        total_supply = S + atk
+        total_assets = 1 + 1_000_000 * USDC
+        self.assertEqual(redeem(atk, total_assets, total_supply),
+                         500_000_000_001)
+        self.assertEqual(redeem(S, total_assets, total_supply),
+                         500_000_000_000)
+        # 6. Real wedge, 200 wei: attacker takes 99.5024876% of inflow.
+        atk = mint(200, 0, S)
+        total_supply = S + atk
+        total_assets = 200 + 1_000_000 * USDC
+        self.assertEqual(redeem(atk, total_assets, total_supply),
+                         995_024_875_821)
+        self.assertEqual(round(995_024_875_821 / (1_000_000 * USDC) * 100, 7),
+                         99.5024876)
+        # 7. Offset 6 does not help: 1 wei still ~50% and captures ~50%.
+        atk6 = mint(1, 0, S, offset=6)
+        self.assertEqual(atk6, S + 10 ** 6)
+        self.assertEqual(round(float(Fraction(atk6, S + atk6)) * 100, 7),
+                         50.0000250)
+        total_supply6 = S + atk6
+        total_assets6 = 1 + 1_000_000 * USDC
+        self.assertEqual(redeem(atk6, total_assets6, total_supply6),
+                         500_000_000_500)
+        # 8. Fix counterfactual: truly empty vault, 1 wei mints 1 share.
+        self.assertEqual(mint(1, 0, 0), 1)
+
+    def test_firelight_post_slash_zero_assets_guide_page(self):
+        # Pins the guide page: the guide add() must exist in build.py
+        # with the headline numbers, and the /guides/ index must link
+        # to it. The numbers are re-derived in
+        # test_firelight_post_slash_zero_assets_model_numbers; this
+        # pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-firelight-post-slash-zero-assets/"',
+                      build)
+        for num in ("1,000,000,000,001", "99.5024876", "500,000.000001",
+                    "995,024.875821", "50.0000250", "500,000.000500",
+                    "1,001,000,000,001,000", "500,501,000", "#88330",
+                    "1,000,000,000,001,000,000,000,000"):
+            self.assertIn(num, build)
+        self.assertIn('<a href="/guides/erc4626-firelight-post-slash-zero-assets/">',
                       build)
 
     def test_burnshares_sandwich_model_numbers(self):
