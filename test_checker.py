@@ -1752,6 +1752,27 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("TechArticle", checker)
         self.assertIn('<meta property="og:type" content="website">', checker)
 
+    def test_audit_page_uses_its_own_og_image(self):
+        # The /audit/ page sells the paid service (50 USDC micro-audit),
+        # so its social card must show the audit image, not the free
+        # checker card; every other page keeps /og.png.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = build.page("Vault micro-audit", "desc", "kw", "<p>x</p>",
+                           "/audit/")
+        self.assertIn('<meta property="og:image" content="https://check.n1netw3n.live/audit-og.png">', audit)
+        self.assertIn('<meta name="twitter:image" content="https://check.n1netw3n.live/audit-og.png">', audit)
+        self.assertNotIn("/og.png", audit)
+        home = build.page("Home", "desc", "kw", "<p>x</p>", "/")
+        self.assertIn('<meta property="og:image" content="https://check.n1netw3n.live/og.png">', home)
+        self.assertIn('<meta name="twitter:image" content="https://check.n1netw3n.live/og.png">', home)
+        self.assertNotIn("audit-og.png", home)
+        checker = build.page("Checker", "desc", "kw", "<p>x</p>", "/checker/")
+        self.assertIn("/og.png", checker)
+        self.assertNotIn("audit-og.png", checker)
+
     def test_nested_vault_fee_guide_numbers(self):
         # Nested-vault fee guide (site/nested-vault-fee-model.py):
         # a vault holding another vault's shares pays a 2%
