@@ -14239,6 +14239,42 @@ class TestChecker(unittest.TestCase):
             build.count('/guides/erc4626-donation-underlying-depeg/'),
             2)  # add() + guides-index <li>
 
+    def test_result_banner_names_the_failure(self):
+        # Visual verdict #54 (2026-11-17): the "Result: SOME FAILED"
+        # heading was a weak pastel strip — same size as a normal h2,
+        # no icon, no fail count, no failing check named — easy to skim
+        # past even though it is the page's most important signal. The
+        # banner is now a saturated red bar with white text, a cross
+        # mark, and the count plus the failing check names; the pass
+        # banner mirrors it with a tick and "6 of 6 checks passed".
+        # Both renderers (Python static + Worker JS) must agree: the
+        # JS side is verified by the /tmp result-banner harness (node),
+        # not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn('class="result-banner fail"', failed)
+        self.assertIn("&#10005; Result: SOME FAILED &mdash; "
+                      "1 of 6 failed: Donation inflation", failed)
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn('class="result-banner pass"', passed)
+        self.assertIn("&#10003; Result: ALL PASS &mdash; "
+                      "6 of 6 checks passed", passed)
+        # The fail banner is saturated red with white text, not the old
+        # pale pink strip.
+        src = (Path.home() / "workspace/taskmarket/site/build.py"
+               ).read_text()
+        self.assertIn('.result-banner.fail{background:#b91c1c;color:#fff',
+                      src)
+        self.assertNotIn('.result-banner.fail{background:#fdecea', src)
+
 
 if __name__ == "__main__":
     unittest.main()
