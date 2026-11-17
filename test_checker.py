@@ -3262,6 +3262,27 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(form.count("<label>"), 7)
         self.assertIn("<label>Preset ", form)
 
+    def test_checker_form_button_stretches_full_width(self):
+        # Visual verdict #76 corrects this run's own premise: the Run
+        # checks button was NOT full-width in the live render -- it
+        # measured ~155px wide, left-aligned, with a ~1035x55px empty
+        # grey band to its right. Cause: the button rule had
+        # grid-column:1 / -1 (the grid AREA spans both columns) but
+        # justify-self:start, which shrinks the button itself to its
+        # content width. The #75 test only asserted the grid-column
+        # rule existed, so it could not catch this. This test asserts
+        # the actual width behaviour: justify-self:stretch in the
+        # button rule, and no justify-self:start left in it.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        start = build.CSS.index("#checker-form button{")
+        rule = build.CSS[start:build.CSS.index("}", start)]
+        self.assertIn("grid-column:1 / -1", rule)
+        self.assertIn("justify-self:stretch", rule)
+        self.assertNotIn("justify-self:start", rule)
+
     def test_donation_nonmonotonic_explanation(self):
         # The donation loss is not monotonic in the donation size (1B
         # loses less than 1M) and the page must say why, not just show
