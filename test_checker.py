@@ -1882,6 +1882,26 @@ class TestChecker(unittest.TestCase):
         self.assertIn("getAttribute('data-full')", audit)
         self.assertIn(".pay-row .addr-toggle{", build.CSS)
 
+    def test_toggle_pay_addr_clears_copy_status(self):
+        # Verdict #56: after copying, "Payment address copied." stayed
+        # on screen when the address was toggled back to truncated — a
+        # stale confirmation next to a now-hidden full address. The
+        # toggle must clear the status line on every switch.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        start = audit.index("function togglePayAddr(btn)")
+        body = audit[start:audit.index("</script>", start)]
+        self.assertIn("getElementById('pay-copy-status')", body)
+        self.assertIn("m.textContent=''", body)
+        # The clear must run on every toggle, not only when collapsing
+        # back to the truncated form: it precedes the if/else that
+        # swaps the display.
+        self.assertLess(body.index("pay-copy-status"),
+                        body.index("if(el.textContent.trim()===full)"))
+
     def test_vault_state_hint_names_both_checks(self):
         # The old hint said only the donation check uses vault state;
         # the model docstring says the donation AND minimum-viable-deposit
