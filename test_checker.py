@@ -2597,10 +2597,18 @@ class TestChecker(unittest.TestCase):
         # left-right weight unbalanced. The fix drops the right
         # push: the note flows directly after the controls, capped
         # so it wraps to at most two lines, and drops below the
-        # controls on narrow widths by the row's flex-wrap. The
-        # address box itself must stay hugging its content
-        # (verdict #59) -- the note fills the row beside the
-        # controls, it does not re-stretch the address box.
+        # controls on narrow widths by the row's flex-wrap.
+        # Visual verdict #90 supersedes that acceptance: measured
+        # at 1919px the note beside the controls is squeezed to
+        # ~376px wide (two lines, max-width:26em) with only ~20px
+        # to the Copy button and ~265px of empty green still left
+        # of it -- cramped AND unbalanced at once. The note now
+        # takes its own full-width line below the controls
+        # (flex-basis 100%), so it reads as one attached warning
+        # line under the address it warns about. The address box
+        # itself must stay hugging its content (verdict #59) --
+        # the note fills the row below the controls, it does not
+        # re-stretch the address box.
         import re
         import sys
         from pathlib import Path
@@ -2620,7 +2628,8 @@ class TestChecker(unittest.TestCase):
         m = re.search(r"\.pay-row \.pay-note\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".pay-row .pay-note rule not found")
         self.assertNotIn("margin-left:auto", m.group(0))
-        self.assertIn("max-width:26em", m.group(0))
+        self.assertIn("flex:0 0 100%", m.group(0))
+        self.assertNotIn("max-width:26em", m.group(0))
         # The address box is still the hugging one from verdict #59.
         m2 = re.search(r"\.pay-row code\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m2)
