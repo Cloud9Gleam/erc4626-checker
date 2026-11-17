@@ -1819,6 +1819,42 @@ class TestChecker(unittest.TestCase):
                         audit.index('<h2>Scope</h2>'))
         self.assertIn("a.cta{display:inline-block", build.CSS)
 
+    def test_audit_track_record_groups_fold(self):
+        # /audit/ Track record was 40 items in 5 groups rendered as one
+        # continuous wall, several screens with no folding or summary
+        # (visual verdicts #51/#52). Each group is now a <details> with
+        # the group title as its summary: the page scans as five lines,
+        # and the strongest group stays open.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        self.assertEqual(track.count('<details class="track-group"'), 5)
+        self.assertEqual(track.count("<summary>"), 5)
+        # Strongest proof first and open by default: the ended contests
+        # whose full awarded sets were re-verified.
+        self.assertIn('<details class="track-group" open>\n'
+                      '<summary>Ended contests — full awarded set re-verified (3)</summary>',
+                      track)
+        # The 32-item First Flight wall is collapsed by default — and its
+        # heading count is honest: two reviews were added after the (30)
+        # heading was written, so it now says (32).
+        self.assertIn('<details class="track-group">\n'
+                      '<summary>CodeHawks First Flight — practice and study reviews (32)</summary>',
+                      track)
+        self.assertNotIn("(30)</summary>", track)
+        # No group lost its items: 3 + 32 + 3 + 1 + 1 = 40 research links
+        # inside the five details blocks, and no bare h3 survives in the
+        # Track record section.
+        self.assertEqual(track.count('<a href="/research/'), 40)
+        self.assertNotIn("<h3>", track)
+        # Summary reads like the h3 it replaces.
+        self.assertIn(".track-group summary{cursor:pointer;font-size:1.1em;"
+                      "font-weight:700;color:#111827}", build.CSS)
+        self.assertIn(".track-group .track-list{margin-top:.4em}", build.CSS)
+
     def test_checker_form_is_a_styled_panel(self):
         # The checker form must read as a grouped panel, not a flat list
         # of default inputs: panel background + border, label/input
@@ -13814,6 +13850,73 @@ class TestChecker(unittest.TestCase):
             1)
         self.assertEqual(
             build.count('/guides/erc4626-donation-rebase-collateral/'),
+            3)  # add() + guides-index <li> + cross-link in the
+        # donation-underlying-depeg guide (2026-11-17)
+        # Pins the donation x underlying-depeg model: a 1,000,000
+        # sUSDS / 1,000,000 share vault, unit price 1 sUSDS, peg
+        # $1.00 -> $0.90, a 100,000 sUSDS donation, a 1% holder
+        # with 10,000 shares. Importing the model re-runs its
+        # assertions; the checks below independently re-derive the
+        # headline numbers. The build.py guide
+        # /guides/erc4626-donation-underlying-depeg/ exists since
+        # 2026-11-17, so its add() count is asserted below.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-underlying-depeg-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_underlying_depeg_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        SUSDS = 10**18
+        balance = 1_000_000 * SUSDS
+        shares = 1_000_000
+        donation = 100_000 * SUSDS
+        holder = 10_000
+        peg = Fraction(1)
+        depeg = Fraction(9, 10)
+
+        def value_usd(bal, price):
+            return Fraction(bal, SUSDS) * price
+
+        # Case 1: donation after the depeg. The gift is worth
+        # $90,000, not $100,000; vault $990,000; the 1% holder
+        # gains exactly $900 (1% of the gift).
+        self.assertEqual(value_usd(balance, depeg), 900_000)
+        self.assertEqual(value_usd(donation, depeg), 90_000)
+        self.assertEqual(value_usd(balance + donation, depeg), 990_000)
+        self.assertEqual(Fraction(holder) * value_usd(balance, depeg)
+                         / shares, 9_000)
+        self.assertEqual(Fraction(holder)
+                         * value_usd(balance + donation, depeg)
+                         / shares, 9_900)
+        # Case 2: donation before the depeg reaches the identical
+        # endpoint -- $11,000 at $1.00, then $9,900 at $0.90.
+        self.assertEqual(value_usd(balance + donation, peg), 1_100_000)
+        self.assertEqual(Fraction(holder)
+                         * value_usd(balance + donation, peg)
+                         / shares, 11_000)
+        self.assertEqual(Fraction(holder)
+                         * value_usd(balance + donation, depeg)
+                         / shares, 9_900)
+        # Case 3: redeeming is exact -- 10,000 shares pay 11,000
+        # sUSDS ($9,900), and a 1-share redemption is exactly
+        # 1.1 sUSDS with no dust.
+        self.assertEqual((holder * (balance + donation)) // shares,
+                         11_000 * SUSDS)
+        self.assertEqual(value_usd(11_000 * SUSDS, depeg), 9_900)
+        self.assertEqual((1 * (balance + donation)) // shares,
+                         Fraction(11, 10) * SUSDS)
+        # No duplicate add() for this guide in build.py.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-underlying-depeg/"'),
+            1)
+        self.assertEqual(
+            build.count('/guides/erc4626-donation-underlying-depeg/'),
             2)  # add() + guides-index <li>
 
 
