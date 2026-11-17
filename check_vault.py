@@ -45,7 +45,8 @@ def _shares(text: str) -> int:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="ERC-4626 accounting checks")
     p.add_argument("--offset", type=int, default=0,
-                   help="decimals offset (virtual shares = 10**offset)")
+                   help="decimals offset (virtual shares = 10**offset, "
+                        "0-30 like the hosted checker)")
     p.add_argument("--min-deposit-usdc", default="0",
                    help="minimum deposit in USDC (default 0)")
     p.add_argument("--victim-deposit-usdc", default="100000",
@@ -58,7 +59,9 @@ def main(argv=None) -> int:
                         "count (default 0). Give both vault-state flags, or "
                         "leave both at 0; only the donation and "
                         "minimum-viable-deposit checks use them")
-    p.add_argument("--perf-fee-bps", type=int, default=0)
+    p.add_argument("--perf-fee-bps", type=int, default=0,
+                   help="performance fee in basis points "
+                        "(0-10000, like the hosted checker)")
     p.add_argument("--mgmt-fee-bps-per-year", type=int, default=0)
     args = p.parse_args(argv)
 
@@ -69,6 +72,38 @@ def main(argv=None) -> int:
         vault_supply = _shares(args.vault_shares)
     except ValueError as e:
         p.error(f"bad amount: {e}")
+    if not 0 <= args.offset <= 30:
+        # The hosted checker accepts offsets 0-30 (its hint says so,
+        # its parseParams clamps to 30): outside that range the two
+        # faces disagree — offset -1 crashed the model with a
+        # ValueError traceback (10**-1 is a float, _fmt_usdc needs an
+        # int; the crash exited 1, indistinguishable from SOME
+        # FAILED), and offset 31 silently ran a vault the site
+        # cannot express. Refuse up front (exit 2) instead of
+        # crashing or silently running a different vault than the
+        # one asked for.
+        p.error("offset must be 0-30, like the hosted checker")
+    if not 0 <= args.perf_fee_bps <= 10000:
+        # Same range as the hosted checker (its input caps the fee
+        # at 10000 bps, parseParams clamps to 0-10000): a 200% fee
+        # ran and PASSED fee conservation (fee + gain == yield still
+        # holds with a negative holder gain), and a negative fee
+        # paid the holder — both are vaults the site cannot express,
+        # and neither verdict is about a real fee.
+        p.error("perf fee must be 0-10000 bps, like the hosted checker")
+    if min_deposit < 0:
+        # A negative minimum deposit is silently ignored by the
+        # model (the donation check seeds max(min, 1 USDC)), so the
+        # run used to return the 0-minimum vault's verdict for a
+        # parameter nobody asked for. The hosted checker clamps it
+        # to 0; the CLI refuses it instead.
+        p.error("minimum deposit must not be negative")
+    if victim_deposit < 0:
+        # A negative victim deposit is not a scenario (the hosted
+        # checker clamps the victim to at least 1 base unit). A
+        # zero victim is still allowed: the donation check then
+        # fails honestly with "zero shares minted" and no loss.
+        p.error("victim deposit must not be negative")
     if vault_assets < 0 or vault_supply < 0:
         p.error("vault assets and shares must not be negative")
     if (vault_assets == 0) != (vault_supply == 0):
