@@ -3369,6 +3369,39 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("high_water", model.lower())
         self.assertNotIn("high-water", model.lower())
 
+    def test_checker_victim_deposit_hint_says_what_the_model_does(self):
+        # Visual verdict #79: the Victim deposit hint is still 1 line of
+        # text in a 3-line box -- a ~48px x ~580px blank grey area above
+        # the button, the largest short-hint hole left on the page (the
+        # Performance fee one was fixed the same way in verdict #78).
+        # The honest fix is longer copy, not more height. Model, first:
+        # checker.js checkDonation deposits the attacker, DONATES, then
+        # deposits the victim -- the victim mints at the inflated price,
+        # loss = deposit - redeem value; below the minimum, or minting
+        # zero shares, the deposit reverts and no loss is measured.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        # Regression guard: the form HTML is duplicated in a
+        # single-quoted JS string (worker-side renderer mirror), so an
+        # apostrophe in any hint breaks worker.js at node --check.
+        hint = ("The deposit made after the donation, at the inflated share price — "
+                "it mints fewer shares than it should. Its loss is the deposit minus "
+                "what those shares redeem for. Below the minimum, or minting zero "
+                "shares, it reverts and no loss is measured.")
+        self.assertNotIn("'", hint)
+        # Python template copy carries the literal em dash; the JS mirror
+        # carries the same text with a \u2014 escape, which JS renders
+        # as the same character. Both copies must be present.
+        self.assertIn(hint, src)
+        self.assertIn(hint.replace("—", "\\u2014"), src)
+        self.assertNotIn("The deposit the donation attacker targets.", src)
+        js = (Path.home() / "workspace/taskmarket/site/checker.js").read_text()
+        self.assertLess(js.index("w.donate(d)"), js.index("w.deposit(victimDeposit)"))
+        self.assertIn("const vicLoss = victimDeposit - vicOut;", js)
+
     def test_donation_nonmonotonic_explanation(self):
         # The donation loss is not monotonic in the donation size (1B
         # loses less than 1M) and the page must say why, not just show
