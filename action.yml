@@ -27,7 +27,7 @@ inputs:
     required: false
     default: '0'
   mgmt-fee-bps-per-year:
-    description: 'Management fee in basis points per year'
+    description: 'Management fee in basis points per year (accepted for compatibility; no check models it, so it does not affect the verdict)'
     required: false
     default: '0'
 runs:
