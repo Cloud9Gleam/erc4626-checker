@@ -16066,6 +16066,78 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/guides/erc4626-depositmulti-short-array/">',
                       build)
 
+    def test_burnshares_sandwich_model_numbers(self):
+        # Certora L-02 burnShares sandwich guide (site/burnshares-
+        # sandwich-model.py): a timelocked write-off is a public
+        # scheduled event, and exiting before it and re-entering
+        # after shifts the loss onto the holders who stayed.
+        # Re-derived here with plain integer arithmetic and
+        # fractions.Fraction, independent of the model file, so the
+        # guide's numbers cannot drift silently.
+        # Vault 1,000,000 USDC / 1,000,000 shares at $1.00; market
+        # position booked 200,000 USDC; holder owns 100,000 shares.
+        from fractions import Fraction
+        A, S, W, H = 1_000_000, 1_000_000, 200_000, 100_000
+        self.assertEqual(Fraction(A, S), 1)  # $1.00 before anything
+        # 1. Stay: burn books the write-off, price falls to $0.80.
+        A_stay = A - W
+        price_stay = Fraction(A_stay, S)
+        self.assertEqual(price_stay, Fraction(4, 5))
+        holder_stay = H * price_stay
+        self.assertEqual(holder_stay, 80_000)
+        loss_stay = H - holder_stay
+        self.assertEqual(loss_stay, 20_000)
+        rest_stay = A_stay - holder_stay
+        self.assertEqual(rest_stay, 720_000)
+        # 2. Sandwich: exit at $1.00, re-enter after the price falls.
+        exit_cash = H * A // S
+        self.assertEqual(exit_cash, 100_000)
+        A_mid, S_mid = A - exit_cash, S - H
+        self.assertEqual((A_mid, S_mid), (900_000, 900_000))
+        A_burn = A_mid - W
+        price_burn = Fraction(A_burn, S_mid)
+        self.assertEqual(price_burn, Fraction(7, 9))
+        self.assertEqual(round(float(price_burn), 6), 0.777778)
+        shares_back = Fraction(exit_cash * S_mid, A_burn)
+        self.assertEqual(shares_back, Fraction(900_000, 7))
+        self.assertEqual(round(float(shares_back), 6), 128571.428571)
+        A_end = A_burn + exit_cash
+        S_end = S_mid + shares_back
+        self.assertEqual(Fraction(A_end, S_end), Fraction(7, 9))
+        holder_end = Fraction(shares_back * A_end, S_end)
+        self.assertEqual(holder_end, 100_000)
+        benefit = holder_end - holder_stay
+        self.assertEqual(benefit, 20_000)
+        rest_end = A_end - holder_end
+        self.assertEqual(rest_end, 700_000)
+        shift = rest_stay - rest_end
+        self.assertEqual(shift, 20_000)
+        self.assertEqual(shift, benefit)
+        # 3. Late exit: redeem after execution at $0.80, same as staying.
+        late_cash = H * A_stay // S
+        self.assertEqual(late_cash, 80_000)
+        self.assertEqual(late_cash, holder_stay)
+        # 4. No-burn baseline: exit and re-enter at $1.00 nets zero.
+        self.assertEqual(H * A // S, H)
+        self.assertEqual(H * A // S * S // A, H)
+
+    def test_burnshares_sandwich_guide_page(self):
+        # Pins the guide page: the guide add() must exist in build.py
+        # with the headline numbers, and the /guides/ index must link
+        # to it. The numbers are re-derived in
+        # test_burnshares_sandwich_model_numbers; this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-burnshares-sandwich/"',
+                      build)
+        for num in ("128,571.428571", "0.777778", "100,000", "80,000",
+                    "20,000", "200,000", "700,000", "720,000",
+                    "L-02", "burnShares", "supplyShares"):
+            self.assertIn(num, build)
+        self.assertIn('<a href="/guides/erc4626-burnshares-sandwich/">',
+                      build)
+
 
 if __name__ == "__main__":
     unittest.main()
