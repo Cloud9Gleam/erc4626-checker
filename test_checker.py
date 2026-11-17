@@ -12343,6 +12343,34 @@ class TestChecker(unittest.TestCase):
             'add("/audit/", "Vault micro-audit — fixed scope, '
             '50 USDC, 72-hour report"', build_text)
 
+    def test_home_cards_bottom_links(self):
+        # Visual verdict #52 (2026-11-17 11:46, real browser):
+        # the homepage cards stretched to equal height, but the
+        # short ones (Free tool, Research) had ~100px of empty
+        # space at the bottom — the grid stretched the boxes and
+        # nothing filled them. Each card is now a flex column
+        # with a link pinned to the bottom by margin-top:auto,
+        # so the whitespace becomes a call to action instead of
+        # dead space. One footer link per card, each pointing at
+        # the card's own destination.
+        from pathlib import Path
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertEqual(build_text.count('class="card-link"'), 3)
+        self.assertIn('"display:flex;flex-direction:column}"',
+                      build_text)
+        self.assertIn('.card .card-link{margin-top:auto',
+                      build_text)
+        self.assertIn(
+            '<p class="card-link"><a href="/checker/">'
+            'Run the checker &rarr;</a></p>', build_text)
+        self.assertIn(
+            '<p class="card-link"><a href="/audit/">'
+            'See the audit service &rarr;</a></p>', build_text)
+        self.assertIn(
+            '<p class="card-link"><a href="/research/">'
+            'Browse the research &rarr;</a></p>', build_text)
+
     def test_site_internal_links_resolve(self):
         # Two dead internal links shipped on 2026-11-16 and were caught
         # by a built-site sweep, not by any test: the preview-rounding
