@@ -1997,8 +1997,12 @@ class TestChecker(unittest.TestCase):
         self.assertIn("background:#f9fafb;border:1px solid #e5e7eb", build.CSS)
         self.assertIn("#checker-form input,#checker-form select{width:100%;margin-top:.3em}",
                       build.CSS)
-        self.assertIn("#checker-form button{grid-column:1 / -1;justify-self:start;"
-                      "margin-top:.7em", build.CSS)
+        # Verdict #76 corrected this: the button is stretch, not start
+        # (start shrank it to ~155px with a ~1035px empty band; see
+        # test_checker_form_button_stretches_full_width). This panel
+        # assertion previously still said start -- stale since #76.
+        self.assertIn("#checker-form button{grid-column:1 / -1;justify-self:stretch;"
+                      "text-align:center;margin-top:.7em", build.CSS)
         self.assertIn("box-shadow:0 0 0 3px rgba(10,125,44,.15)", build.CSS)
         self.assertIn("label{display:block;margin:.7em 0;color:#111827}", build.CSS)
 
@@ -3282,6 +3286,23 @@ class TestChecker(unittest.TestCase):
         self.assertIn("grid-column:1 / -1", rule)
         self.assertIn("justify-self:stretch", rule)
         self.assertNotIn("justify-self:start", rule)
+
+    def test_checker_form_hints_share_one_height(self):
+        # Visual verdict #77: row 3 was asymmetric -- 'Vault shares
+        # now' hint wraps to 3 lines while 'Performance fee' is 1
+        # line, leaving a ~40-60px blank under the right field before
+        # the button. The fix is a 3-line min-height on the checker
+        # hints (3 x 1.65 unitless line-height = 4.95em in hint-local
+        # em, hint font-size .85em), so every hint occupies the same
+        # height and all six fields end at the same y in every row.
+        # The observed blank (40-60px) matches the 2-line gap
+        # (2 x 0.85em x 17px x 1.65 = ~47.7px). Scoped to
+        # #checker-form so the audit form's hints are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn("#checker-form .hint{min-height:4.95em}", build.CSS)
 
     def test_donation_nonmonotonic_explanation(self):
         # The donation loss is not monotonic in the donation size (1B
@@ -15109,6 +15130,41 @@ class TestChecker(unittest.TestCase):
             with self.assertRaises(SystemExit) as cm:
                 cli_main(["--offset", "0", "--vault-assets-usdc", "-5"])
         self.assertEqual(cm.exception.code, 2)
+
+    def test_cli_mgmt_fee_flag_is_disclosed_as_unmodeled(self):
+        # --mgmt-fee-bps-per-year is accepted (CLI, Action, README's
+        # CI example) but none of the six checks reads it: the value
+        # is stored on the Vault and never used, so a nonzero value
+        # used to imply the fee had been checked — the same run with
+        # 100 and with 0 printed byte-identical verdicts. The CLI now
+        # says so on stderr whenever the value is nonzero, while the
+        # verdict and the numbers stay identical to the same run with
+        # 0; with 0 there is no note. The Action input description
+        # and the README's honest limits carry the same disclosure.
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        from pathlib import Path
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from check_vault import main as cli_main
+        base = ["--offset", "6", "--min-deposit-usdc", "1",
+                "--perf-fee-bps", "1000"]
+        out100, err100 = io.StringIO(), io.StringIO()
+        with redirect_stdout(out100), redirect_stderr(err100):
+            rc100 = cli_main(base + ["--mgmt-fee-bps-per-year", "100"])
+        out0, err0 = io.StringIO(), io.StringIO()
+        with redirect_stdout(out0), redirect_stderr(err0):
+            rc0 = cli_main(base + ["--mgmt-fee-bps-per-year", "0"])
+        self.assertEqual((rc100, rc0), (0, 0))
+        self.assertEqual(out100.getvalue(), out0.getvalue())
+        self.assertIn("ALL PASS", out100.getvalue())
+        self.assertIn("no check models a management fee", err100.getvalue())
+        self.assertIn("--mgmt-fee-bps-per-year", err100.getvalue())
+        self.assertNotIn("management fee", err0.getvalue())
+        action = (Path(__file__).parent / "action.yml").read_text()
+        self.assertIn("no check models it", action)
+        readme = (Path(__file__).parent / "README.md").read_text()
+        self.assertIn("no check models a management fee", readme)
 
     def test_readme_documents_vault_state_flags(self):
         # The CLI gained --vault-assets-usdc / --vault-shares (and
