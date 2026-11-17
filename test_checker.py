@@ -2128,6 +2128,38 @@ class TestChecker(unittest.TestCase):
         self.assertLessEqual(max(bodies.values()) / min(bodies.values()), 1.4,
                              "card bodies unbalanced: %r" % bodies)
 
+    def test_harvest_timing_carries_cache_variant_defenses(self):
+        # Reflection #297: the stale-total-assets-cache model is a
+        # partial collision with harvest-timing #32 S1 (same stale-price
+        # transfer, 50,000 gain -> 4,545.454545 at half the scale), so
+        # its defense quantifications (model legs C/D/E) belong in the
+        # harvest-timing guide as a "cached totalAssets" variant section
+        # instead of living only in the standalone guide. The section
+        # must carry the exact model figures: 100,000 yield in the
+        # cache window mints 100,000 vs fair 90,909.090909 and gains
+        # 9,090.909091; live-balance pricing mints 90,909 (dust 1/11
+        # share) and redeems 99,999.908333, bounding extraction under
+        # 1 USDC; syncing the cache mints the same 90,909; a 10,000
+        # yield window gains 909.090909 (exactly 1/10); harvest-first
+        # mints 99,009 and zeroes the window.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        guide = pages["/guides/erc4626-harvest-timing/"]
+        self.assertIn("cached totalAssets", guide)
+        self.assertIn("90,909.090909", guide)
+        self.assertIn("109,090.909091", guide)
+        self.assertIn("9,090.909091", guide)
+        self.assertIn("99,999.908333", guide)
+        self.assertIn("909.090909", guide)
+        self.assertIn("99,009", guide)
+        self.assertIn("/guides/erc4626-stale-total-assets-cache/", guide)
+        # The original harvest-timing numbers survive the merge.
+        self.assertIn("4,545.454545", guide)
+        self.assertIn("2,222.222221", guide)
+
     def test_reward_token_guide_numbers(self):
         # Reward-token guide (site/reward-token-model.py): yield paid
         # out as a separate token never touches the share price.
