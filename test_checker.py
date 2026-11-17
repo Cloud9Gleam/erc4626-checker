@@ -2046,18 +2046,27 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".flow{display:flex;align-items:stretch", build.CSS)
         self.assertIn(".flow-step{flex:1;background:#fff", build.CSS)
         self.assertIn(".flow-arrow{align-self:center", build.CSS)
-        # The step arrows must be unmistakable on the dark hero: a solid
-        # white disc with the site-green arrow. The old rule used a mint
-        # arrow (#a7f3c9) on a 14%-white disc whose contrast against the
-        # hero gradient was 1.42:1 — the disc was invisible and the thin
-        # arrow floated in the gap between two white cards (verdict #55).
-        # White disc vs hero is 8.07:1, green arrow vs white disc 5.27:1.
-        self.assertIn(".flow-arrow{align-self:center;color:#0a7d2c;", build.CSS)
+        # The step arrows must be unmistakable on the dark hero — but
+        # they must read as connectors, not as objects. The 15:07 fix
+        # gave them a solid white disc (8.07:1 vs the hero, 5.27:1
+        # green on white), and verdict #59 still called them out: a
+        # 36px white disc squeezed into the 15-20px gap between two
+        # white cards looks like a floating pill, a fourth white blob
+        # competing with the three step cards. The disc is gone: a
+        # plain white arrow glyph straight on the dark hero gradient
+        # (white vs hero ~8:1), 1em wide, no background, no circle.
+        self.assertIn(".flow-arrow{align-self:center;color:#fff;", build.CSS)
         self.assertIn(
-            ".flow-arrow{align-self:center;color:#0a7d2c;font-weight:700;"
-            "font-size:1.25em;flex:0 0 auto;width:1.9em;height:1.9em;"
-            "line-height:1.9em;text-align:center;border-radius:50%;"
-            "background:#fff}", build.CSS)
+            ".flow-arrow{align-self:center;color:#fff;font-weight:700;"
+            "font-size:1.5em;flex:0 0 auto;width:1em;text-align:center}",
+            build.CSS)
+        # No disc left on the arrow rule itself: no background, no
+        # border-radius, no fixed height.
+        arrow_rule = build.CSS[build.CSS.index(".flow-arrow{"):]
+        arrow_rule = arrow_rule[:arrow_rule.index("}") + 1]
+        self.assertNotIn("background", arrow_rule)
+        self.assertNotIn("border-radius", arrow_rule)
+        self.assertNotIn("height", arrow_rule)
         self.assertNotIn("rgba(255,255,255,.14)", build.CSS)
         self.assertNotIn("#a7f3c9", build.CSS)
         self.assertIn("@media (max-width:640px){.flow{flex-direction:column}"
