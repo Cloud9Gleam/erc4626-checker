@@ -85,6 +85,15 @@ def main(argv=None) -> int:
                   min_deposit=min_deposit,
                   perf_fee_bps=args.perf_fee_bps,
                   mgmt_fee_bps_per_year=args.mgmt_fee_bps_per_year)
+    if args.mgmt_fee_bps_per_year != 0:
+        # Accepted for compatibility (the Action and the README's CI
+        # example pass it), but none of the six checks reads it: the
+        # value is stored on the Vault and never used. Say so on
+        # stderr instead of letting a nonzero value imply the fee was
+        # checked. The verdict and the numbers are unaffected.
+        print("note: --mgmt-fee-bps-per-year is accepted but no check "
+              "models a management fee; it does not affect the verdict",
+              file=sys.stderr)
     results = run_all(vault, victim_deposit=victim_deposit,
                       vault_assets=vault_assets, vault_supply=vault_supply)
     for r in results:
