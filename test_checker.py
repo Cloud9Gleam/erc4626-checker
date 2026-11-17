@@ -8046,6 +8046,96 @@ class TestChecker(unittest.TestCase):
             self.assertIn(f'add("/guides/{href}/"', build,
                           f"dead guide link /guides/{href}/")
 
+    def test_donation_attack_guide_numbers(self):
+        # Pins the numbers on
+        # /guides/erc4626-donation-attack/ to its model
+        # (donation-attack-model.py, backfilled 2026-11-17): attacker
+        # seeds 1 USDC, donates 1,000,000 USDC, victim deposits
+        # 100,000 USDC, both redeem, offset 0. Victim mints 99,999
+        # shares and redeems 99,999.090909 USDC (loss 0.909091);
+        # attacker nets -0.090909; the missing 1.000000 USDC stays
+        # in the vault as rounding dust. The guide's first version
+        # said each share was "worth about 1,000 USDC" — a units
+        # error the model caught: the price is about 1 USDC per
+        # share. A 1,000 USDC minimum deposit alone does not fix
+        # it: with a 1,000,000,000 USDC donation the victim still
+        # loses 0.900010 USDC.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-attack-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_attack_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # (1) Headline, re-derived without the model: seed 1 USDC
+        # -> 1,000,000 shares; donation -> A = 1,000,001,000,000.
+        vic_shares = (100_000 * USDC * (1_000_000 + 1)
+                      // (1_000_001 * USDC + 1))
+        self.assertEqual(vic_shares, 99_999)
+        # Attacker redeems first, victim second (order matters).
+        atk_out = (1_000_000 * (1_100_001 * USDC + 1)
+                   // (1_099_999 + 1))
+        self.assertEqual(atk_out, 1_000_000_909_091)
+        vic_out = (99_999 * (100_000_090_909 + 1) // (99_999 + 1))
+        self.assertEqual(vic_out, 99_999_090_909)
+        self.assertEqual(100_000 * USDC - vic_out, 909_091)
+        self.assertEqual(atk_out - (1 * USDC + 1_000_000 * USDC),
+                         -90_909)
+        self.assertEqual((100_000 * USDC - vic_out)
+                         + (1 * USDC + 1_000_000 * USDC - atk_out),
+                         1_000_000)
+        # (2) Price per share after seed + donation: about 1 USDC,
+        # not 1,000 USDC.
+        price = Fraction(1_000_001_000_001, 1_000_001)
+        self.assertEqual(price, model.run_attack()["price_per_share"])
+        self.assertLess(price, Fraction(1_000_001, 1))
+        self.assertGreater(price, Fraction(999_999, 1))
+        # (3) Minimum deposit alone: 1,000 USDC floor, D = 1e9.
+        big = model.run_attack(decimals_offset=0,
+                               min_deposit=1_000 * USDC,
+                               donation=1_000_000_000 * USDC)
+        self.assertEqual(big["vic_loss"], 900_010)
+        self.assertLessEqual(big["atk_net"], 0)
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-donation-attack/"')
+        section = build[start:build.index('""")', start) + 4]
+        for needle in ("99,999 shares", "99,999.09", "0.909",
+                       "1,000,000.91", "1,000,000", "100,000",
+                       "0.0009", "Offset 18 bounds it to zero",
+                       "each worth about 1 USDC"):
+            self.assertIn(needle, section)
+        self.assertNotIn("about 1,000 USDC", section)
+        # The same units error lived in the research page that tells
+        # the same story; it is fixed there too. (The dead-shares
+        # guide legitimately keeps "about 1,000 USDC" — there one
+        # share really does buy back ~1,000 USDC — so this check
+        # stays scoped to the research page.)
+        rstart = build.index('add("/research/erc4626-donation-inflation/"')
+        rsection = build[rstart:build.index('""")', rstart) + 4]
+        self.assertIn("each worth\nabout 1 USDC", rsection)
+        self.assertNotIn("about 1,000 USDC", rsection)
+        # Only one add() for this path in build.py.
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-attack/"'),
+            1)
+        # Every internal guide link inside this guide must resolve
+        # to a real page.
+        import re
+        full = build[start:build.index('"""', start) + 4]
+        for href in re.findall(r'href=\\?\"\\/guides\\/([^\\\"]+)\\/\\?\"',
+                               full):
+            self.assertIn(f'add("/guides/{href}/"', build,
+                          f"dead guide link /guides/{href}/")
+
     def test_fee_crystallisation_on_deposit_guide_numbers(self):
         # Pins the numbers on
         # /guides/erc4626-fee-crystallisation-on-deposit/ to its
