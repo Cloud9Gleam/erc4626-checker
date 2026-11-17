@@ -1004,6 +1004,48 @@ class TestChecker(unittest.TestCase):
         self.assertIn("min_deposit_usdc%3D1000000", big)
         self.assertIn("victim_deposit_usdc%3D1000000", big)
 
+    def test_api_section_code_blocks(self):
+        # Visual verdict #56 (2026-11-17): the "Use it as an API"
+        # section's second half read like a plain-text document — the
+        # curl URL and the email parameters were inline <code> chips
+        # scattered through paragraphs. Both are now real <pre> blocks
+        # with a copy button, and the email block must show exactly the
+        # parameters the mailto body carries (same values, same order),
+        # or a pasted email asks for a different vault than the one run.
+        import sys, re
+        from pathlib import Path
+        from urllib.parse import unquote
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        USDC = 1_000_000
+        body = build.checker_body()
+        self.assertIn(
+            '<pre><code id="api-curl">curl "https://check.n1netw3n.live/api/check?preset=noprot"</code></pre>',
+            body)
+        self.assertIn("Copy curl example", body)
+        self.assertEqual(body.count("function copyCodeBlock"), 1)
+        self.assertIn('id="api-curl-status"', body)
+        # The email block: one wrapper, one pre block, one copy button.
+        para = build.email_para(0, 0, 0, 100_000_000_000,
+                                1_000_000 * USDC, 1_000_000)
+        self.assertIn('<div class="email-para">', para)
+        self.assertIn("Copy email parameters", para)
+        self.assertIn('id="email-params-status"', para)
+        self.assertNotIn("<code>offset=", para)
+        m = re.search(r'<pre><code id="email-params">(.*?)</code></pre>',
+                      para, re.DOTALL)
+        self.assertIsNotNone(m)
+        shown = m.group(1).strip().split("\n")
+        self.assertEqual(shown, [
+            "offset=0", "min_deposit_usdc=0", "victim_deposit_usdc=100000",
+            "perf_fee_bps=0", "vault_assets_usdc=1000000",
+            "vault_shares=1000000"])
+        # The shown lines must be exactly the mailto body's parameters.
+        mb = re.search(r'body=([^"]*)">outreach@', para)
+        self.assertIsNotNone(mb)
+        mailed = unquote(mb.group(1)).strip().split("\n")
+        self.assertEqual(mailed, shown)
+
     def test_exit_fee_guide_numbers(self):
         # Exit-fee guide (site/exit-fee-model.py): a 5% fee on redemption.
         # Re-derived here with plain integer arithmetic, independent of
