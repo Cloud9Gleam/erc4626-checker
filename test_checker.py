@@ -3458,16 +3458,18 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("justify-self:start", rule)
 
     def test_checker_form_hints_share_one_height(self):
-        # Visual verdict #77: row 3 was asymmetric -- 'Vault shares
-        # now' hint wraps to 3 lines while 'Performance fee' is 1
-        # line, leaving a ~40-60px blank under the right field before
-        # the button. The fix is a 3-line min-height on the checker
-        # hints (3 x 1.65 unitless line-height = 4.95em in hint-local
-        # em, hint font-size .85em), so every hint occupies the same
-        # height and all six fields end at the same y in every row.
-        # The observed blank (40-60px) matches the 2-line gap
-        # (2 x 0.85em x 17px x 1.65 = ~47.7px). Scoped to
-        # #checker-form so the audit form's hints are untouched.
+        # Visual verdict #77, premise corrected 2026-11-18 by pixel
+        # measurement: the #77/#78 claim that 'Performance fee' renders
+        # as 1 line while 'Vault shares now' renders 3 lines was wrong
+        # -- all six hints render as 3 lines at desktop, and the gaps
+        # below them are 31-42px across all six (fee 31px, 4px LESS than
+        # Vault shares now). The 3-line min-height on the checker hints
+        # (3 x 1.65 unitless line-height = 4.95em in hint-local em, hint
+        # font-size .85em) is kept as a floor so a shorter hint can never
+        # leave a row short, not because any hint is 1 line. Scoped to
+        # #checker-form so the audit form's hints are untouched. The form
+        # visual loop is closed on this measurement: do not reopen it on
+        # a new "ugliest point" without a fresh pixel measurement.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -15591,6 +15593,37 @@ class TestChecker(unittest.TestCase):
         self.assertIn("0.000013", readme)
         self.assertIn("give both --vault-assets-usdc and --vault-shares, or neither", readme)
         self.assertIn("exit 2", readme)
+
+    def test_readme_donation_bound_states_both_bounds(self):
+        # The README once stated only the absolute donation bound
+        # (victim loss <= 1000 base units) while the model enforces
+        # two bounds and takes the tighter: absolute 1000 base units
+        # AND relative 0.1% of the victim deposit. The relative bound
+        # binds on small victims — offset 0, victim 0.1 USDC, the
+        # 1,000 USDC donation row loses 901 base units, which passes
+        # the absolute bound (901 <= 1000) but fails the relative one
+        # (901 > 100). A reader following the old sentence would call
+        # that row a pass. Both bounds must appear in the same item-2
+        # sentence, not just somewhere in the file.
+        from pathlib import Path
+        readme = (Path(__file__).parent / "README.md").read_text()
+        start = readme.index("2. **Donation")
+        end = readme.index("3. **Minimum", start)
+        donation = readme[start:end]
+        self.assertIn("1000 base units", donation)
+        self.assertIn("0.1%", donation)
+        self.assertIn("tighter of the two bounds", donation)
+        # The relative bound really binds: offset 0, victim 0.1 USDC
+        # (100,000 base units, relative bound 100), the 1,000 USDC
+        # donation row loses 901 base units.
+        victim = 100_000
+        rows = check_donation(Vault(decimals_offset=0, min_deposit=0),
+                              victim_deposit=victim)["detail"]
+        row_1k = rows[1]
+        self.assertEqual(row_1k["donation"], 1_000_000_000)
+        self.assertEqual(row_1k["victim_loss"], 901)
+        self.assertLessEqual(row_1k["victim_loss"], 1000)
+        self.assertGreater(row_1k["victim_loss"], victim // 1000)
 
     def test_action_exposes_vault_state_inputs(self):
         # The CLI gained --vault-assets-usdc / --vault-shares but
