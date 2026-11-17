@@ -1855,6 +1855,32 @@ class TestChecker(unittest.TestCase):
                       "font-weight:700;color:#111827}", build.CSS)
         self.assertIn(".track-group .track-list{margin-top:.4em}", build.CSS)
 
+    def test_audit_what_you_get_is_a_list(self):
+        # /audit/ "What you get" was one dense paragraph — the section
+        # that sells the deliverable buried its four facts in a single
+        # block of prose (visual verdict #53: the audit page reads as a
+        # single-column wall of text). It is now a four-item list: each
+        # fact scans on its own line, wording unchanged.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        section = audit[audit.index("<h2>What you get</h2>"):
+                        audit.index("<h2>What a report looks like</h2>")]
+        self.assertEqual(section.count("<li>"), 4)
+        self.assertNotIn("<p>", section)
+        self.assertIn("<li>A written report within <strong>72 hours</strong> "
+                      "of payment confirmation.</li>", section)
+        self.assertIn("<li>Every finding with severity and a reproducible "
+                      "proof-of-concept where one exists.</li>", section)
+        self.assertIn("<li>An honest clean negative for the slice if no "
+                      "finding is found.</li>", section)
+        self.assertIn("<li>No guaranteed findings: a clean negative is "
+                      "reported as a clean negative.</li>", section)
+        # The old single-paragraph form must not survive anywhere.
+        self.assertNotIn("of payment confirmation: every finding", audit)
+
     def test_checker_form_is_a_styled_panel(self):
         # The checker form must read as a grouped panel, not a flat list
         # of default inputs: panel background + border, label/input
