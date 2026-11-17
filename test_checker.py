@@ -3250,7 +3250,11 @@ class TestChecker(unittest.TestCase):
         # renders the same label.
         self.assertEqual(html.count("loss-too-small"), 2)
         self.assertIn("loss-too-small", build.checker_results_html_js())
-        self.assertIn("An empty slot means the row lost too little to draw a bar at this scale.", html)
+        self.assertIn("A slot labelled 'too small to draw' means the row lost too little to draw a bar at this scale.", html)
+        # verdict #88: the note must match the in-slot label on the
+        # Worker side too -- the old "empty slot" wording is gone there.
+        self.assertIn("A slot labelled 'too small to draw' means the row lost too little to draw a bar at this scale.",
+                      build.checker_results_html_js())
         self.assertIn("width:100.0%", html)
         self.assertIn("width:11.0%", html)
         self.assertIn("0.909091", html)
@@ -3275,7 +3279,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-track--empty"), 4)
         # All four rows are zero losses: all four slots carry the words.
         self.assertEqual(html.count("loss-too-small"), 4)
-        self.assertIn("An empty slot means the row lost too little to draw a bar at this scale.", html)
+        self.assertIn("A slot labelled 'too small to draw' means the row lost too little to draw a bar at this scale.", html)
         # Mixed table: one error row and one tiny row — the error slot
         # stays bare (there is no number to label; the table's Note
         # column explains the error), the tiny row carries the words.
@@ -3365,7 +3369,7 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("An empty slot means the row lost too little to draw a bar at this scale.",
+        self.assertIn("A slot labelled 'too small to draw' means the row lost too little to draw a bar at this scale.",
                       html)
         self.assertIn("0.909091", html)
 
