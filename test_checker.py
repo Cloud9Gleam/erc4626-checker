@@ -13763,8 +13763,9 @@ class TestChecker(unittest.TestCase):
         # USDC / 1,000,000 share vault, price $1.00, Alice holding
         # 100,000 shares (10%), CF 80%. Importing the model re-runs
         # its assertions; the checks below independently re-derive
-        # the headline numbers. No build.py guide exists yet for
-        # this combination, so no add() count is asserted here.
+        # the headline numbers. The build.py guide
+        # /guides/erc4626-donation-rebase-collateral/ exists since
+        # 2026-11-17, so its add() count is asserted below.
         import importlib.util
         from fractions import Fraction
         from pathlib import Path
@@ -13805,6 +13806,15 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(100_000 * USDC * Fraction(4, 5), 80_000 * USDC)
         self.assertEqual(Fraction(80_000 * USDC, 1)
                          / (100_000 * USDC * Fraction(4, 5)), 1)
+        # No duplicate add() for this guide in build.py.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-rebase-collateral/"'),
+            1)
+        self.assertEqual(
+            build.count('/guides/erc4626-donation-rebase-collateral/'),
+            2)  # add() + guides-index <li>
 
 
 if __name__ == "__main__":
