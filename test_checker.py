@@ -7932,6 +7932,94 @@ class TestChecker(unittest.TestCase):
             self.assertIn(f'add("/guides/{href}/"', build,
                           f"dead guide link /guides/{href}/")
 
+    def test_donation_preview_rounding_guide_numbers(self):
+        # Pins the numbers on
+        # /guides/erc4626-donation-preview-rounding/ to its model:
+        # an attacker deposits 1 base unit for 1 share, then
+        # donates. A 100,000 USDC victim deposit mints exactly
+        # 100,000,000,000 shares with no donation, and 0 shares
+        # after a 1,000,000 USDC donation. The cliff is exact:
+        # D = V-1 still mints 1 share, D = V mints 0. The attacker
+        # then redeems the 1 share for 1,100,000.00 USDC — profit
+        # exactly the 100,000.00 victim deposit. A 10,000 USDC
+        # donation still costs the victim 1,000.00 (9 shares worth
+        # 99,000.00). A 1,000 virtual-share offset cuts the big
+        # donation's loss to 90.826522 USDC (0.0908%).
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-preview-rounding-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_preview_rounding_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        V = 100_000 * USDC
+        D_BIG = 1_000_000 * USDC
+        D_SMALL = 10_000 * USDC
+
+        def mint(deposit, assets, supply):
+            return (deposit * supply) // assets
+
+        # (1) No donation: the floor costs nothing.
+        self.assertEqual(mint(V, 1, 1), V)
+        # (2) Big donation first: preview quotes 0, deposit mints 0.
+        self.assertEqual(mint(V, 1 + D_BIG, 1), 0)
+        # (3) The cliff is exact.
+        self.assertEqual(mint(V, 1 + (V - 1), 1), 1)
+        self.assertEqual(mint(V, 1 + V, 1), 0)
+        self.assertEqual(mint(V, 1 + (V + 1), 1), 0)
+        # (4) Attacker redeems the 1 share: profit is exactly V.
+        payout = (1 * (1 + D_BIG + V)) // 1
+        self.assertEqual(payout, 1_100_000 * USDC + 1)
+        self.assertEqual(payout - 1 - D_BIG, V)
+        # (5) Small donation: 9 shares worth 99,000.00, loss 1,000.00.
+        shares_small = mint(V, 1 + D_SMALL, 1)
+        self.assertEqual(shares_small, 9)
+        value_small = (shares_small * (1 + D_SMALL + V)) // (1 + 9)
+        self.assertEqual(value_small, 99_000 * USDC)
+        self.assertEqual(V - value_small, 1_000 * USDC)
+        # (6) Offset 1,000: 100 shares, loss 90.826522 USDC (<1%).
+        OFFSET = 1_000
+        shares_off = (V * (1 + OFFSET)) // (1 + D_BIG + OFFSET)
+        self.assertEqual(shares_off, 100)
+        value_off = ((shares_off * (1 + D_BIG + V))
+                     // (1 + OFFSET + shares_off))
+        self.assertEqual(V - value_off, 90_826_522)
+        self.assertLess(V - value_off, V // 100)
+        self.assertEqual(Fraction(V - value_off, V),
+                         Fraction(90_826_522, V))
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-donation-preview-rounding/"')
+        section = build[start:start + 12000]
+        for needle in ("100,000,000,000", "1,000,000", "100,000",
+                       "99,000.00", "1,000.00", "99,909.17", "90.83",
+                       "0.0908%", "1,100,000.00", "width:100.0%",
+                       "width:0.0%", "width:99.0%", "width:99.9%"):
+            self.assertIn(needle, section)
+        self.assertIn("the gift that pushes your deposit under the "
+                      "floor", section)
+        # Only one add() for this path in build.py.
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-preview-rounding/"'),
+            1)
+        # Every internal guide link inside this guide must resolve
+        # to a real page.
+        import re
+        full = build[start:build.index('""")', start) + 4]
+        for href in re.findall(r'href=\\?"\/guides\/([^\"]+)\/\\?"',
+                               full):
+            self.assertIn(f'add("/guides/{href}/"', build,
+                          f"dead guide link /guides/{href}/")
+
     def test_fee_crystallisation_on_deposit_guide_numbers(self):
         # Pins the numbers on
         # /guides/erc4626-fee-crystallisation-on-deposit/ to its
