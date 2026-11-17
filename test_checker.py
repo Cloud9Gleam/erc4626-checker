@@ -15124,5 +15124,23 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(model.tier_rate(999_999), F(5, 100))
 
 
+    def test_flash_mint_fee_tier_guide_page(self):
+        # The /guides/erc4626-flash-mint-fee-tier/ page (built this run
+        # from flash-mint-fee-tier-model.py): the guide add() must exist
+        # in build.py with the headline numbers, and the /guides/ index
+        # must link to it. The numbers themselves are pinned by
+        # test_flash_mint_fee_tier_guide_numbers; this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-flash-mint-fee-tier/"', build)
+        self.assertIn("the 900,000 shares that cost 4,000 in fees and "
+                      "steal 81,147.540984", build)
+        for num in ("85,147.540984", "81,147.540984", "180,147.540984",
+                    "78,440.366972", "198,000"):
+            self.assertIn(num, build)
+        self.assertIn('<a href="/guides/erc4626-flash-mint-fee-tier/">',
+                      build)
+
 if __name__ == "__main__":
     unittest.main()
