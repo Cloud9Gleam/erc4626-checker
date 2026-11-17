@@ -3235,6 +3235,33 @@ class TestChecker(unittest.TestCase):
                       html)
         self.assertIn("0.909091", html)
 
+    def test_checker_form_preset_spans_full_width(self):
+        # Visual verdict #75: the 7-label form in a 2-column grid left
+        # the bottom-right cell empty -- Performance fee alone in the
+        # last row, a ~535x185px blank grey patch above the Run checks
+        # button. The Preset label (first child, the scenario picker)
+        # now spans both columns, so the 6 parameter fields fill three
+        # even rows and the button keeps its full-width row: no empty
+        # grid cell remains. DOM order and the preset script are
+        # untouched; the single-column mobile layout is unaffected
+        # (the span is 1 / -1 in both).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn("#checker-form label:first-child{grid-column:1 / -1}",
+                      build.CSS)
+        self.assertIn("#checker-form button{grid-column:1 / -1;",
+                      build.CSS)
+        # Grid maths: the static form template carries 7 labels; with
+        # the first (Preset) spanning both columns the remaining 6 fill
+        # three even rows, so no grid cell is left empty.
+        src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        start = src.index('<form id="checker-form"')
+        form = src[start:src.index("</form>", start)]
+        self.assertEqual(form.count("<label>"), 7)
+        self.assertIn("<label>Preset ", form)
+
     def test_donation_nonmonotonic_explanation(self):
         # The donation loss is not monotonic in the donation size (1B
         # loses less than 1M) and the page must say why, not just show
