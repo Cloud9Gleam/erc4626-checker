@@ -44,7 +44,7 @@ six checks and fails the step when any check fails:
 
 A vault that already holds funds: seed the model with its live state
 through the same action (give both, or leave both out — half a state
-fails honestly):
+is refused up front (exit 2)):
 
 ```yaml
 - uses: Cloud9Gleam/erc4626-checker@main
@@ -82,7 +82,7 @@ Try it in the browser instead: https://check.n1netw3n.live/checker/
 
 ## Guides
 
-167 worked ERC-4626 accounting guides, each with exact-integer
+172 worked ERC-4626 accounting guides, each with exact-integer
 numbers — donation and first-depositor attacks, fee mechanics,
 rounding, preview drift, empty-vault reseeds:
 https://check.n1netw3n.live/guides/
