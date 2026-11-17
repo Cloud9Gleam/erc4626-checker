@@ -3374,22 +3374,24 @@ class TestChecker(unittest.TestCase):
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check. The
         # first draft used "manager's" and did exactly that.
-        hint = ("The cut the manager takes from the yield, in basis points — "
+        hint = ("The cut from the yield, in basis points — "
                 "1000 bps = 10% of the gain. 0 = no performance fee. "
                 "The model takes it on the gain itself, with no "
-                "high-water mark or hurdle.")
+                "high water mark or hurdle.")
         self.assertNotIn("'", hint)
         self.assertIn(hint, src)
         self.assertNotIn("Fee on yield, in basis points — 1000 bps = 10%.", src)
-        # The last sentence is pinned in both copies too: a
-        # parallel round once deployed "USDC to the manager" live
-        # while build.py still said "in fees", and the next
-        # build+deploy silently overwrote live. Both render paths
-        # must carry the same sentence (rule (z)).
-        last = ("At 1000 bps, 10,000 USDC of yield pays 1,000 USDC "
-                "to the manager.")
+        # The last sentence is pinned in both copies too: render
+        # verdict #83 verified "in fees" is exactly 3 lines with all
+        # hints aligned, while "USDC to the manager" renders 4 lines
+        # with an orphan "manager." on line 4 (verdict #82 FAIL). A
+        # parallel round reverted build.py to the old sentence to
+        # satisfy this test's old pin; the pin now records the
+        # render-verified sentence instead. Both render paths must
+        # carry the same sentence (rule (z)).
+        last = ("At 1000 bps, 10,000 USDC of yield pays 1,000 in fees.")
         self.assertEqual(src.count(last), 2)
-        self.assertNotIn("pays 1,000 in fees.", src)
+        self.assertNotIn("pays 1,000 USDC to the manager.", src)
         model = (Path.home() / "workspace/taskmarket/erc4626-checker"
                  / "erc4626_checker.py").read_text()
         self.assertIn("fee = yield_amount * self.perf_fee_bps // 10_000", model)
@@ -15357,6 +15359,63 @@ class TestChecker(unittest.TestCase):
                 cli_main(["--offset", "0", "--vault-assets-usdc", "-5"])
         self.assertEqual(cm.exception.code, 2)
 
+    def test_cli_out_of_range_scalars_are_refused_up_front(self):
+        # The hosted checker accepts offsets 0-30 and fees 0-10000
+        # bps (its hint says 0-30, its inputs cap the fee, its
+        # parseParams clamps both): outside those ranges the two
+        # faces disagreed — offset -1 crashed the model with a
+        # ValueError traceback (10**-1 is a float, _fmt_usdc needs
+        # an int; the crash exited 1, indistinguishable from SOME
+        # FAILED), offset 31 silently ran a vault the site cannot
+        # express, a 200% fee PASSED fee conservation with a
+        # negative holder gain, a negative fee paid the holder, a
+        # negative minimum was silently ignored (the donation check
+        # seeds max(min, 1 USDC), so the run returned the
+        # 0-minimum vault's verdict), and a negative victim failed
+        # every donation row as "below minimum deposit". The CLI
+        # now refuses all four up front (exit 2, usage error
+        # naming the range) before any check runs. Boundaries
+        # still run: offset 0/30, fee 0/10000, min 0, and a zero
+        # victim still runs (it fails honestly with "zero shares
+        # minted" — a degenerate scenario, not a nonsense input).
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        from pathlib import Path
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from check_vault import main as cli_main
+        for argv, needle in (
+                (["--offset", "-1"], "offset must be 0-30"),
+                (["--offset", "31"], "offset must be 0-30"),
+                (["--perf-fee-bps", "-5"],
+                 "perf fee must be 0-10000 bps"),
+                (["--perf-fee-bps", "20000"],
+                 "perf fee must be 0-10000 bps"),
+                (["--min-deposit-usdc", "-1"],
+                 "minimum deposit must not be negative"),
+                (["--victim-deposit-usdc", "-5"],
+                 "victim deposit must not be negative")):
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                with self.assertRaises(SystemExit) as cm:
+                    cli_main(argv)
+            self.assertEqual(cm.exception.code, 2)
+            self.assertIn(needle, err.getvalue())
+            self.assertNotIn("[PASS]", out.getvalue())
+            self.assertNotIn("[FAIL]", out.getvalue())
+        for argv, want_rc, want_out in (
+                (["--offset", "0"], 1, "SOME FAILED"),
+                (["--offset", "30"], 0, "ALL PASS"),
+                (["--offset", "6", "--perf-fee-bps", "10000"], 0,
+                 "ALL PASS"),
+                (["--offset", "0", "--victim-deposit-usdc", "0"], 1,
+                 "zero shares minted")):
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = cli_main(argv)
+            self.assertEqual(rc, want_rc)
+            self.assertIn(want_out, out.getvalue())
+
     def test_cli_mgmt_fee_flag_is_disclosed_as_unmodeled(self):
         # --mgmt-fee-bps-per-year is accepted (CLI, Action, README's
         # CI example) but none of the six checks reads it: the value
@@ -15852,6 +15911,66 @@ class TestChecker(unittest.TestCase):
                     "99,999.999999", "10,000.000000", "989,999.999999"):
             self.assertIn(num, build)
         self.assertIn('<a href="/guides/erc4626-donation-operator-allowance/">',
+                      build)
+
+    def test_morpho_supply_on_behalf_model_numbers(self):
+        # Morpho supply-on-behalf guide (site/morpho-supply-on-behalf-
+        # model.py): a donation that rides a lending-market position.
+        # Re-derived here with plain integer arithmetic, independent of
+        # the model file, so the guide's numbers cannot drift silently.
+        # Vault 1,000,000 assets / 1,000,000 shares, price exactly 1.00.
+        from fractions import Fraction
+        USDC = 1_000_000
+        A, S = 1_000_000 * USDC, 1_000_000 * USDC
+        # Attacker deposits 100,000 USDC for 100,000 shares at 1:1.
+        shares = 100_000 * USDC * S // A
+        self.assertEqual(shares, 100_000 * USDC)
+        A += 100_000 * USDC
+        S += shares
+        # 50,000 USDC buys 2,000,000 USR at the real $0.025 price.
+        usr = 50_000 * USDC * 1_000 // 25 // USDC
+        self.assertEqual(usr, 2_000_000)
+        # Face NAV: idle 1,100,000 + position at the fixed $1 oracle.
+        face = A + usr * USDC
+        self.assertEqual(face, 3_100_000 * USDC)
+        self.assertEqual(Fraction(face, S), Fraction(31, 11))
+        # Redeem at the inflated face price.
+        redeemed = shares * face // S
+        self.assertEqual(redeemed, 281_818 * USDC + 181_818)
+        net = redeemed - 100_000 * USDC - 50_000 * USDC
+        self.assertEqual(net, 131_818 * USDC + 181_818)
+        # True value after: idle left + position at its real price.
+        idle_after = A - redeemed
+        self.assertEqual(idle_after, 818_181 * USDC + 818_182)
+        true_assets = idle_after + usr * USDC * 25 // 1_000
+        self.assertEqual(true_assets, 868_181 * USDC + 818_182)
+        self.assertEqual(Fraction(true_assets, S - shares),
+                         Fraction(868_181_818_182, 1_000_000_000_000))
+        # Victim loss equals attacker net to the base unit.
+        self.assertEqual(1_000_000 * USDC - true_assets, net)
+        # Good-money donation through the same path loses money.
+        net3 = redeemed - 100_000 * USDC - 2_000_000 * USDC
+        self.assertEqual(net3, -1_818_181 * USDC - 818_182)
+        # Cap wedge: cap 0 leaves the vault at 1,000,000 idle, but the
+        # on-behalf position still adds its full face value.
+        self.assertEqual(1_000_000 * USDC + usr * USDC,
+                         3_000_000 * USDC)
+
+    def test_morpho_supply_on_behalf_guide_page(self):
+        # Pins the guide page: the guide add() must exist in build.py
+        # with the headline numbers, and the /guides/ index must link
+        # to it. The numbers are re-derived in
+        # test_morpho_supply_on_behalf_model_numbers; this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-morpho-supply-on-behalf/"',
+                      build)
+        for num in ("281,818.181818", "131,818.181818", "0.868181818182",
+                    "3,100,000", "12,300", "1,818,181.818182",
+                    "818,181.818182", "80,000,000"):
+            self.assertIn(num, build)
+        self.assertIn('<a href="/guides/erc4626-morpho-supply-on-behalf/">',
                       build)
 
 
