@@ -2187,6 +2187,33 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(pages["/"],
                          "Independent security research for ERC-4626 vaults")
 
+    def test_audit_pay_row_address_gets_full_width(self):
+        # Visual verdict #58: on /audit/ the address box shared one
+        # flex row with both controls (Show full address + Copy), the
+        # most crowded spot on the page. The address box now takes the
+        # full row (flex basis 100%) so the controls wrap onto their
+        # own line below it, and a long address wraps instead of being
+        # ellipsis-clipped -- a clipped payment address hides
+        # characters the payer must see. Markup (address + toggle +
+        # copy) and the truncated default display are unchanged.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        m = re.search(r"\.pay-row code\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, ".pay-row code rule not found")
+        self.assertIn("flex:1 1 100%", m.group(0))
+        self.assertIn("word-break:break-all", m.group(0))
+        self.assertNotIn("text-overflow:ellipsis", m.group(0))
+        self.assertIn(".pay-row{display:flex", build.CSS)
+        self.assertIn("flex-wrap:wrap", build.CSS)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
+                      audit)
+        self.assertIn("Show full address", audit)
+        self.assertIn("Copy payment address", audit)
+
     def test_harvest_timing_carries_cache_variant_defenses(self):
         # Reflection #297: the stale-total-assets-cache model is a
         # partial collision with harvest-timing #32 S1 (same stale-price
