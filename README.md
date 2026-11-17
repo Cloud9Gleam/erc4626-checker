@@ -100,6 +100,9 @@ fails the donation check, offset 6 + minimum passes it.
 
 - Model only: it checks the accounting rules, not a deployed contract's
   live state, permissions, oracle, or strategy code.
+- Management fee: `--mgmt-fee-bps-per-year` is accepted by the CLI and
+  the Action, but no check models a management fee — it does not affect
+  the verdict. The CLI says so on stderr whenever the value is nonzero.
 - No verified buyer. This is the free core of ranked idea #1
   (2026-11-03 low-cost ideas writeup). The paid option is a human
   review of a live vault — the vault micro-audit, up to 15 files,
