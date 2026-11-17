@@ -2094,6 +2094,21 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:640px){.flow{flex-direction:column}"
                       ".flow-arrow{transform:rotate(90deg)}}", build.CSS)
 
+    def test_hero_paragraphs_use_balanced_text_wrap(self):
+        # Visual verdict #62: the hero intro paragraph wrapped so the
+        # key comparison — "under 0.001 USDC." — sat alone on line 2,
+        # a ~151px fragment under a ~1126px first line at 1919px, which
+        # blunted the 0.909091-vs-0.001 contrast. The wording and the
+        # numbers stay exactly as the model computed them; the fix is
+        # balancing, the same technique the h1 already uses
+        # (text-wrap:balance), so the browser spreads the paragraph
+        # evenly across its lines instead of leaving an orphan.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".hero>p{text-wrap:balance}", build.CSS)
+
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
         # ("0.909091 USDC of a 100,000 USDC deposit") while steps 1-2
