@@ -1984,6 +1984,20 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".flow{display:flex;align-items:stretch", build.CSS)
         self.assertIn(".flow-step{flex:1;background:#fff", build.CSS)
         self.assertIn(".flow-arrow{align-self:center", build.CSS)
+        # The step arrows must be unmistakable on the dark hero: a solid
+        # white disc with the site-green arrow. The old rule used a mint
+        # arrow (#a7f3c9) on a 14%-white disc whose contrast against the
+        # hero gradient was 1.42:1 — the disc was invisible and the thin
+        # arrow floated in the gap between two white cards (verdict #55).
+        # White disc vs hero is 8.07:1, green arrow vs white disc 5.27:1.
+        self.assertIn(".flow-arrow{align-self:center;color:#0a7d2c;", build.CSS)
+        self.assertIn(
+            ".flow-arrow{align-self:center;color:#0a7d2c;font-weight:700;"
+            "font-size:1.25em;flex:0 0 auto;width:1.9em;height:1.9em;"
+            "line-height:1.9em;text-align:center;border-radius:50%;"
+            "background:#fff}", build.CSS)
+        self.assertNotIn("rgba(255,255,255,.14)", build.CSS)
+        self.assertNotIn("#a7f3c9", build.CSS)
         self.assertIn("@media (max-width:640px){.flow{flex-direction:column}"
                       ".flow-arrow{transform:rotate(90deg)}}", build.CSS)
 
