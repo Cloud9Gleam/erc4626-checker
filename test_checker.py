@@ -7844,6 +7844,94 @@ class TestChecker(unittest.TestCase):
                       'style="width:81.8%"', build)
         self.assertIn("12,100 USDC", build)
 
+    def test_donation_async_cancel_guide_numbers(self):
+        # Pins the numbers on /guides/erc4626-donation-async-cancel/
+        # to its model: a 10,000-share redemption request locks a
+        # 10,000 payout at $1.00, then a 10,000 USDC donation lands.
+        # Fulfil takes the locked 10,000 and the stayers keep the
+        # whole gift; cancel keeps shares worth 11,000 — exactly
+        # 1,000, the requester's 10% pro-rata share, no more. Two
+        # donations with a cancel and re-request in between still
+        # capture only 2,000, exactly 10% of the 20,000 donated.
+        # Importing the model re-runs its assertions; the checks
+        # below independently re-derive the headline numbers.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-async-cancel-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_async_cancel_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        A0 = 100_000 * USDC
+        S0 = 100_000
+        ALICE = 10_000
+        OTHERS = 90_000
+        DONATION = 10_000 * USDC
+        LOCK = 10_000 * USDC
+
+        # (1) Donation, then fulfil at the locked price: Alice gets
+        # the locked 10,000; stayers keep the whole gift.
+        a1 = A0 + DONATION
+        self.assertEqual(Fraction(a1, S0 * USDC), Fraction(11, 10))
+        remaining = a1 - LOCK
+        stayers_fulfil = Fraction(OTHERS * remaining, OTHERS)
+        self.assertEqual(stayers_fulfil, 100_000 * USDC)
+        self.assertEqual(stayers_fulfil - 90_000 * USDC, DONATION)
+        # (2) Donation, then cancel: exactly the pro-rata share.
+        alice_cancel = Fraction(ALICE * a1, S0)
+        self.assertEqual(alice_cancel, 11_000 * USDC)
+        self.assertEqual(alice_cancel - 10_000 * USDC, 1_000 * USDC)
+        stayers_cancel = Fraction(OTHERS * a1, S0)
+        self.assertEqual(stayers_cancel, 99_000 * USDC)
+        # (3) Ratchet, two donations: still exactly pro-rata.
+        a3 = a1 + DONATION
+        alice_ratchet = Fraction(ALICE * a3, S0)
+        self.assertEqual(alice_ratchet, 12_000 * USDC)
+        self.assertEqual(alice_ratchet - 10_000 * USDC, 2_000 * USDC)
+        self.assertEqual(Fraction(OTHERS * a3, S0), 108_000 * USDC)
+        # (4) Donation then a -10% loss: fulfil beats cancel by 100,
+        # not 1,000.
+        a4 = a1 * 9 // 10
+        self.assertEqual(Fraction(a4, S0 * USDC), Fraction(99, 100))
+        cancel_4 = Fraction(ALICE * a4, S0)
+        self.assertEqual(cancel_4, 9_900 * USDC)
+        self.assertEqual(LOCK - cancel_4, 100 * USDC)
+        nodon_4 = Fraction(ALICE * (A0 * 9 // 10), S0)
+        self.assertEqual(LOCK - nodon_4, 1_000 * USDC)
+        # (5) Fulfilment-price settlement: identical in both branches.
+        fulfil_5 = Fraction(ALICE * a1, S0)
+        self.assertEqual(fulfil_5, alice_cancel)
+
+        # The headline numbers must sit in THIS guide's own
+        # text in build.py.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-donation-async-cancel/"')
+        section = build[start:start + 12000]
+        for needle in ("11,000", "10,000", "100,000", "99,000",
+                       "12,000", "2,000", "108,000", "9,900",
+                       "1,000", "1.10", "0.99", "width:0.0%",
+                       "width:100.0%"):
+            self.assertIn(needle, section)
+        self.assertIn("the gift that lands while your redemption waits "
+                      "to cancel", section)
+        # Only one add() for this path in build.py.
+        self.assertEqual(
+            build.count('add("/guides/erc4626-donation-async-cancel/"'),
+            1)
+        # Every internal guide link inside this guide must resolve
+        # to a real page.
+        import re
+        full = build[start:build.index('""")', start) + 4]
+        for href in re.findall(r'href=\\?"/guides/([^"]+)/\\?"',
+                               full):
+            self.assertIn(f'add("/guides/{href}/"', build,
+                          f"dead guide link /guides/{href}/")
+
     def test_fee_crystallisation_on_deposit_guide_numbers(self):
         # Pins the numbers on
         # /guides/erc4626-fee-crystallisation-on-deposit/ to its
