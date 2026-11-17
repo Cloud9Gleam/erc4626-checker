@@ -2128,6 +2128,46 @@ class TestChecker(unittest.TestCase):
         self.assertLessEqual(max(bodies.values()) / min(bodies.values()), 1.4,
                              "card bodies unbalanced: %r" % bodies)
 
+    def test_hero_last_paragraph_has_no_bottom_margin(self):
+        # Visual verdict #57 remainder: ~30px of dead deep-green space
+        # sat below the hero CTA button — the hero's last <p> (the CTA
+        # paragraph) carried the global p{margin:.65em 0} bottom margin
+        # on top of the hero's own 1.5em bottom padding. Same pattern
+        # as .check-card p:last-child. The rule must target the CTA
+        # paragraph, so also assert the hero's last paragraph is the
+        # one holding the CTA link.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".hero>p:last-child{margin-bottom:0}", build.CSS)
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        # The hero holds nested divs (.flow > .flow-step), so a naive
+        # non-greedy </div> match stops at the first inner close. Cut
+        # the hero region at the intro paragraph that follows it.
+        start = home.index('<div class="hero">')
+        end = home.index("This site is one independent researcher", start)
+        paras = re.findall(r"<p>(.*?)</p>", home[start:end], re.S)
+        self.assertTrue(paras, "hero has no paragraphs")
+        self.assertIn('class="cta" href="/checker/"', paras[-1])
+
+    def test_hero_bottom_padding_is_trimmed(self):
+        # Visual verdict #57 remainder: ~30px of dead deep-green space
+        # below the hero CTA button. The CTA paragraph already has
+        # margin-bottom:0 (see the test above), so the slack was the
+        # hero's own 1.5em bottom padding (~24px plus line-box leading).
+        # Trim the bottom padding to .9em (~14px); top padding stays
+        # 1.5em and the sides 1.75em.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        m = re.search(r"\.hero\{[^}]*padding:([^;]+);", build.CSS)
+        self.assertIsNotNone(m, "hero padding rule not found")
+        self.assertEqual(m.group(1), "1.5em 1.75em .9em")
+
     def test_harvest_timing_carries_cache_variant_defenses(self):
         # Reflection #297: the stale-total-assets-cache model is a
         # partial collision with harvest-timing #32 S1 (same stale-price
