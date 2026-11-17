@@ -2503,18 +2503,22 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Show full address", audit)
         self.assertIn("Copy payment address", audit)
 
-    def test_audit_pay_row_right_side_note(self):
-        # Visual verdict #67: with the address box hugging its
-        # content, the pay-row's right side was ~650px of empty light
-        # green -- the row's content occupied only ~40% of the
-        # pay-box width, left-heavy. The fix fills the right side
-        # with a payment-safety note the payer actually needs (the
-        # payment is irreversible), not decoration: pushed right by
-        # margin-left:auto, capped so it wraps to at most two lines,
-        # and dropped below the controls on narrow widths by the
-        # row's flex-wrap. The address box itself must stay hugging
-        # its content (verdict #59) -- the note fills the row, it
-        # does not re-stretch the address box.
+    def test_audit_pay_row_note_attached(self):
+        # Visual verdict #67 put a payment-safety note in the
+        # pay-row's right side, pushed to the far edge by
+        # margin-left:auto to fill ~650px of empty light green.
+        # Visual verdict #89 supersedes: measured at 1919px the
+        # controls ended at x878 while the note started at x1163 --
+        # ~285px of empty green between the Copy button and the
+        # warning about that very address, so the note read as a
+        # separate floating block, isolated at the right end with
+        # left-right weight unbalanced. The fix drops the right
+        # push: the note flows directly after the controls, capped
+        # so it wraps to at most two lines, and drops below the
+        # controls on narrow widths by the row's flex-wrap. The
+        # address box itself must stay hugging its content
+        # (verdict #59) -- the note fills the row beside the
+        # controls, it does not re-stretch the address box.
         import re
         import sys
         from pathlib import Path
@@ -2525,7 +2529,7 @@ class TestChecker(unittest.TestCase):
                 "to the wrong address cannot be recovered.")
         self.assertIn(note, audit)
         # The note sits inside the pay-row, after the copy button, so
-        # it occupies the row's right end rather than a new line.
+        # it reads as attached to the address controls.
         row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
         self.assertIsNotNone(row, "pay-row not found")
         self.assertIn(note, row.group(0))
@@ -2533,7 +2537,7 @@ class TestChecker(unittest.TestCase):
                         row.group(0).index(note))
         m = re.search(r"\.pay-row \.pay-note\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".pay-row .pay-note rule not found")
-        self.assertIn("margin-left:auto", m.group(0))
+        self.assertNotIn("margin-left:auto", m.group(0))
         self.assertIn("max-width:26em", m.group(0))
         # The address box is still the hugging one from verdict #59.
         m2 = re.search(r"\.pay-row code\{[^}]*\}", build.CSS)
