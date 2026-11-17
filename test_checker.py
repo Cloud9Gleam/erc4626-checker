@@ -2371,15 +2371,18 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(pages["/"],
                          "Independent security research for ERC-4626 vaults")
 
-    def test_audit_pay_row_address_gets_full_width(self):
-        # Visual verdict #58: on /audit/ the address box shared one
-        # flex row with both controls (Show full address + Copy), the
-        # most crowded spot on the page. The address box now takes the
-        # full row (flex basis 100%) so the controls wrap onto their
-        # own line below it, and a long address wraps instead of being
-        # ellipsis-clipped -- a clipped payment address hides
-        # characters the payer must see. Markup (address + toggle +
-        # copy) and the truncated default display are unchanged.
+    def test_audit_pay_row_address_hugs_content(self):
+        # Visual verdict #59 supersedes #58: with the shortened
+        # display (0xD07C…dC64, ~15 chars) the full-width address box
+        # was ~90% blank. The box now hugs its content (flex 0 1
+        # auto, capped at the row width) and the two controls share
+        # the row beside it -- uncrowded because the address is short.
+        # When toggled to the full 42-char address the box grows to
+        # fit it and the controls wrap below on narrow widths; the
+        # address still wraps instead of being ellipsis-clipped -- a
+        # clipped payment address hides characters the payer must see.
+        # Markup (address + toggle + copy) and the truncated default
+        # display are unchanged.
         import re
         import sys
         from pathlib import Path
@@ -2387,7 +2390,9 @@ class TestChecker(unittest.TestCase):
         import build
         m = re.search(r"\.pay-row code\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".pay-row code rule not found")
-        self.assertIn("flex:1 1 100%", m.group(0))
+        self.assertIn("flex:0 1 auto", m.group(0))
+        self.assertIn("max-width:100%", m.group(0))
+        self.assertNotIn("flex:1 1 100%", m.group(0))
         self.assertIn("word-break:break-all", m.group(0))
         self.assertNotIn("text-overflow:ellipsis", m.group(0))
         self.assertIn(".pay-row{display:flex", build.CSS)
