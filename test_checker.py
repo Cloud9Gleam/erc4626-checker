@@ -13747,6 +13747,53 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(
             build.count('add("/guides/erc4626-donation-deposit-hook-reentrancy/"'),
             1)
+    def test_donation_rebase_collateral_guide_numbers(self):
+        # Pins the donation x rebase-collateral model: a 1,000,000
+        # USDC / 1,000,000 share vault, price $1.00, Alice holding
+        # 100,000 shares (10%), CF 80%. Importing the model re-runs
+        # its assertions; the checks below independently re-derive
+        # the headline numbers. No build.py guide exists yet for
+        # this combination, so no add() count is asserted here.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-rebase-collateral-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_rebase_collateral_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # Case 1: 1,000,000 USDC donation on a 1 bu seed doubles
+        # the price to 2000000000001/1000000000001; oracle follows,
+        # so Alice's max borrow is 159,999,999,999 bu
+        # ($159,999.999999) at ~80% LTV.
+        p2 = Fraction(2_000_000_000_001, 1_000_000_000_001)
+        self.assertEqual(Fraction(1_000_000 * USDC + 1 + 1_000_000 * USDC,
+                                  1_000_000 * USDC + 1), p2)
+        cap = (100_000 * USDC * p2 * Fraction(4, 5))
+        self.assertEqual(cap.numerator // cap.denominator,
+                         159_999_999_999)
+        # Case 2: the other 90% redeem at the inflated price and
+        # take $1,799,999.999999 out -- but the price fraction is
+        # unchanged, so Alice's collateral and LTV do not move.
+        out_others = 900_000 * USDC * p2
+        self.assertEqual(out_others.numerator // out_others.denominator,
+                         1_799_999_999_999)
+        a3 = Fraction(2_000_000_000_001, 1) - out_others
+        self.assertEqual(a3 / (1_000_000 * USDC + 1 - 900_000 * USDC),
+                         p2)
+        # Case 3: the attacker's 1 seed share redeems for 2 base
+        # units ($0.000002) on a $1,000,001.000001 outlay.
+        self.assertEqual(1 * p2, Fraction(2_000_000_000_001,
+                                          1_000_000_000_001))
+        self.assertEqual((1 + 1_000_000 * USDC) - 2, 999_999_999_999)
+        # Case 4: contrast -- a -20% rebase at the stale $1.00
+        # oracle puts the same $80,000 loan at exactly 100% LTV.
+        self.assertEqual(100_000 * USDC * Fraction(4, 5), 80_000 * USDC)
+        self.assertEqual(Fraction(80_000 * USDC, 1)
+                         / (100_000 * USDC * Fraction(4, 5)), 1)
 
 
 if __name__ == "__main__":
