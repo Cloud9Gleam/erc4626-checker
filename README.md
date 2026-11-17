@@ -54,7 +54,7 @@ Try it in the browser instead: https://check.n1netw3n.live/checker/
 
 ## Guides
 
-165 worked ERC-4626 accounting guides, each with exact-integer
+166 worked ERC-4626 accounting guides, each with exact-integer
 numbers — donation and first-depositor attacks, fee mechanics,
 rounding, preview drift, empty-vault reseeds:
 https://check.n1netw3n.live/guides/
