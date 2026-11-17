@@ -2029,7 +2029,7 @@ class TestChecker(unittest.TestCase):
         hero_start = home.index('<div class="hero">')
         hero_end = home.index('<p>This site is one independent researcher')
         hero = home[hero_start:hero_end]
-        cta = home.index('Run the free ERC-4626 checker')
+        cta = home.index('Run the free ERC&#8209;4626 checker')
         flow = home.index('<div class="flow"')
         self.assertLess(hero_start, cta)
         self.assertLess(cta, flow)
@@ -2113,6 +2113,27 @@ class TestChecker(unittest.TestCase):
                       ".flow-arrow{transform:rotate(90deg)}"
                       ".hero-stats{flex-direction:column;gap:.35em}"
                       ".hero-stats span{flex:none}}", build.CSS)
+
+    def test_hero_cta_and_proof_use_nonbreaking_hyphens(self):
+        # At 360px the hero CTA broke after the hyphen — "Run the
+        # free ERC- / 4626 checker" — and the proof sentence broke
+        # "offset- / 6" the same way (2026-11-18 02:07 headless
+        # render, /tmp/home-360.png). A plain hyphen is a legal
+        # break point; U+2011 NON-BREAKING HYPHEN is not, and it
+        # renders as the same glyph. Scoped to the hero: the rest
+        # of the site keeps plain hyphens.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index('<p>This site is one independent researcher')
+        hero = home[hero_start:hero_end]
+        self.assertIn('Run the free ERC&#8209;4626 checker', hero)
+        self.assertIn('standard offset&#8209;6 defense', hero)
+        self.assertNotIn('ERC-4626', hero)
+        self.assertNotIn('offset-6', hero)
 
     def test_hero_paragraphs_use_balanced_text_wrap(self):
         # Visual verdict #62: the hero intro paragraph wrapped so the
@@ -2258,7 +2279,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(stats, hero)
         stats_idx = hero.index(stats)
         # Inside the left column: after the CTA, before the panel.
-        self.assertLess(hero.index("Run the free ERC-4626 checker"),
+        self.assertLess(hero.index("Run the free ERC&#8209;4626 checker"),
                         stats_idx)
         self.assertLess(stats_idx, hero.index('<aside class="hero-checks">'))
         # Rule (p): the hero model count drifts with every new model,
