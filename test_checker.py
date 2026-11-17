@@ -2209,14 +2209,15 @@ class TestChecker(unittest.TestCase):
         # verifiable facts — 152 exact-integer models in the site
         # tree, 6 checks per run, 0 wallet/signup/fee. Numbers are
         # facts about the product, not marketing claims.
-        # Visual verdict #65: the three columns were content-sized,
-        # so the long first label left a big empty gap before the
-        # second stat and the row read loose-left/tight-right; the
-        # third fact ("0 wallet, signup, or fee") read ambiguously
-        # on its own. Fix: equal-width columns (flex:1 1 0) and
-        # "needed" on the third label; on <=640px the strip stacks
-        # vertically instead of squeezing three nowrap labels into
-        # ~100px columns.
+        # Visual verdict #66/#68: equal widths fixed the loose-left /
+        # tight-right row, but left alignment still left the middle
+        # label's short text ("checks per run") ~163px from the third
+        # number against ~71px between the first two — the third stat
+        # looked flung aside. Fix: center each stat inside its equal
+        # slot, so the gaps between adjacent texts are symmetric
+        # (~90px vs ~82px at 1919px) and the block numbers sit over
+        # their labels. The <=640px stacked layout keeps the same
+        # centering; no copy changes.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2227,7 +2228,8 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertIn(".hero-stats strong{display:block;font-size:1.5em;",
                       build.CSS)
-        self.assertIn(".hero-stats span{flex:1 1 0;white-space:nowrap}",
+        self.assertIn(".hero-stats span{flex:1 1 0;white-space:nowrap;"
+                      "text-align:center}",
                       build.CSS)
         self.assertIn(
             ".hero-stats{flex-direction:column;gap:.35em}",
