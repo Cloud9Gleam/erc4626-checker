@@ -1985,6 +1985,41 @@ class TestChecker(unittest.TestCase):
         # The old single-paragraph form must not survive anywhere.
         self.assertNotIn("of payment confirmation: every finding", audit)
 
+    def test_audit_checker_result_line_is_a_callout(self):
+        # /audit/ "Checker result:" prefill line (23:39) rendered as
+        # plain body text — the one sentence that says why the visitor
+        # is here looked like any other paragraph. It is now a tinted
+        # callout mirroring the checker's result banners: green for a
+        # passed vault, light red for a failed one. Copy unchanged;
+        # only the presentation changes, so the mailto/copy paths that
+        # reuse checkerResultLine are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".audit-result{border-radius:8px;padding:.8em 1em;"
+                      "margin:.8em 0}", build.CSS)
+        self.assertIn(".audit-result.pass{background:#e6f4ea;color:#0a7d2c;"
+                      "border:1px solid #bbe0c6}", build.CSS)
+        self.assertIn(".audit-result.fail{background:#fdecea;color:#b91c1c;"
+                      "border:1px solid #fca5a5}", build.CSS)
+        # Visual verdict #87 (2026-11-18 04:12-04:15, desktop): the
+        # "Run the same checks" link inside the callout kept the
+        # site-wide green link colour, so in the red failed box it
+        # clashed red-on-green and looked like an unstyled leftover;
+        # in the green passed box it was the same green as the text
+        # with no underline, so it barely read as a link at all.
+        # The link now inherits the box colour and is underlined in
+        # both states: dark red in fail, dark green in pass.
+        self.assertIn(".audit-result a{color:inherit;"
+                      "text-decoration:underline}", build.CSS)
+        src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        self.assertIn("el.className='audit-result '+(res==='failed'?"
+                      "'fail':'pass');", src)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertIn('<p id="audit-checker-result" style="display:none">'
+                      "</p>", audit)
+
     def test_checker_form_is_a_styled_panel(self):
         # The checker form must read as a grouped panel, not a flat list
         # of default inputs: panel background + border, label/input
@@ -3206,6 +3241,15 @@ class TestChecker(unittest.TestCase):
         # instead of a fill, and the number stands beside it.
         self.assertEqual(html.count("loss-fill pass"), 0)
         self.assertEqual(html.count("loss-track--empty"), 2)
+        # Verdict #87: the bare empty slot read as a missing bar on a
+        # first scan ("like the chart is broken") — the note below the
+        # chart explains it, but a first glance never reads the note.
+        # Each tiny-loss slot now carries its own words inside the
+        # frame: text, not a fill, so it cannot be read as magnitude,
+        # and a zero loss still draws no bar. The Worker-side template
+        # renders the same label.
+        self.assertEqual(html.count("loss-too-small"), 2)
+        self.assertIn("loss-too-small", build.checker_results_html_js())
         self.assertIn("An empty slot means the row lost too little to draw a bar at this scale.", html)
         self.assertIn("width:100.0%", html)
         self.assertIn("width:11.0%", html)
@@ -3229,7 +3273,23 @@ class TestChecker(unittest.TestCase):
         # missing rows.
         self.assertEqual(html.count("width:0.0%"), 0)
         self.assertEqual(html.count("loss-track--empty"), 4)
+        # All four rows are zero losses: all four slots carry the words.
+        self.assertEqual(html.count("loss-too-small"), 4)
         self.assertIn("An empty slot means the row lost too little to draw a bar at this scale.", html)
+        # Mixed table: one error row and one tiny row — the error slot
+        # stays bare (there is no number to label; the table's Note
+        # column explains the error), the tiny row carries the words.
+        mixed = [{"name": "donation_inflation", "pass": False, "detail": [
+            {"donation": 1_000_000_000, "victim_loss": 6,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000_000, "victim_loss": 909091,
+             "attacker_net": -90909},
+            {"donation": 1_000_000_000_000_000, "victim_loss": None,
+             "attacker_net": None, "error": "below minimum deposit"}]}]
+        html = build.results_html(mixed, vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("loss-chart", html)
+        self.assertEqual(html.count("loss-track--empty"), 2)
+        self.assertEqual(html.count("loss-too-small"), 1)
         # Giant minimum deposit: every row errors, no number to chart.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=10 ** 21,
