@@ -15016,23 +15016,36 @@ class TestChecker(unittest.TestCase):
         with self.assertRaises(ValueError):
             _shares("1.5")
 
-    def test_cli_half_filled_vault_state_fails_honestly(self):
-        # Assets without shares (or vice versa) is not a vault: the
-        # model refuses the donation check instead of inventing a
-        # verdict, and the CLI must surface that as SOME FAILED
-        # (exit 1), not a traceback.
+    def test_cli_half_filled_vault_state_is_refused_up_front(self):
+        # Assets without shares (or vice versa) is not a vault — but
+        # the two seeded checks used to disagree about it: the donation
+        # check refused ("incomplete vault state") while the
+        # minimum-viable-deposit check computed a verdict against the
+        # impossible state (assets-only read as a donated-to empty
+        # vault, shares-only as shares worth nothing — one input, two
+        # answers, and the shares-only run even PASSED). The CLI now
+        # refuses a half state up front (exit 2, usage error naming
+        # both flags) before any check runs, so a forgotten flag can
+        # never produce a mixed verdict.
         import io
-        from contextlib import redirect_stdout
+        from contextlib import redirect_stdout, redirect_stderr
         from pathlib import Path
         import sys
         sys.path.insert(0, str(Path(__file__).parent))
         from check_vault import main as cli_main
-        out = io.StringIO()
-        with redirect_stdout(out):
-            rc = cli_main(["--offset", "0",
-                           "--vault-assets-usdc", "50000000"])
-        self.assertEqual(rc, 1)
-        self.assertIn("incomplete vault state", out.getvalue())
+        for argv in (["--offset", "0", "--vault-assets-usdc", "50000000"],
+                     ["--offset", "0", "--vault-shares", "50000000000000"],
+                     ["--offset", "0", "--vault-assets-usdc", "0",
+                      "--vault-shares", "50000000000000"]):
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                with self.assertRaises(SystemExit) as cm:
+                    cli_main(argv)
+            self.assertEqual(cm.exception.code, 2)
+            self.assertIn("give both --vault-assets-usdc and --vault-shares",
+                          err.getvalue())
+            self.assertNotIn("[PASS]", out.getvalue())
+            self.assertNotIn("[FAIL]", out.getvalue())
 
     def test_cli_negative_vault_state_is_rejected(self):
         # A negative asset or share count is not a vault either; the
@@ -15056,7 +15069,7 @@ class TestChecker(unittest.TestCase):
         # seeded-vault scenario. The README must name all three flags,
         # state the give-both-or-neither rule, and show the verified
         # example numbers (new vault 0.909091 worst loss; seeded vault
-        # 0.000013; half a state fails honestly).
+        # 0.000013; half a state is refused up front, exit 2).
         from pathlib import Path
         readme = (Path(__file__).parent / "README.md").read_text()
         self.assertIn("--vault-assets-usdc", readme)
@@ -15066,7 +15079,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn("50000000000000", readme)
         self.assertIn("0.909091", readme)
         self.assertIn("0.000013", readme)
-        self.assertIn("incomplete vault state", readme)
+        self.assertIn("give both --vault-assets-usdc and --vault-shares, or neither", readme)
+        self.assertIn("exit 2", readme)
 
     def test_action_exposes_vault_state_inputs(self):
         # The CLI gained --vault-assets-usdc / --vault-shares but
