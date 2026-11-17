@@ -3112,14 +3112,17 @@ class TestChecker(unittest.TestCase):
         # visible: bars scaled to the worst row, red where the row breaches
         # the pass bound. The chart adds no new numbers; every figure is
         # the model's own, and the bar widths are pinned here. A row whose
-        # bar would be under 0.5% of the worst row gets a pale grey slot
-        # instead of a fill — the grey fill marks the slot as
+        # bar would be under 0.5% of the worst row gets an empty slot
+        # instead of a fill — the bordered empty track marks the slot as
         # intentionally present, not missing (verdict #51: a transparent
         # spacer read as broken; verdict #59: a 1px framed empty slot was
-        # nearly invisible) — and the scale stays linear to the worst
-        # row (no log scale, no minimum width). Bars are 1.7em tall with
-        # tight rows, so the chart reads as a chart rather than four
-        # hairlines in a mostly blank box (verdict #59).
+        # nearly invisible at 11px bar height). A pale grey fill was
+        # tried (verdict #59) and dropped: verdict #72 found the
+        # full-width grey bar read as a loss as large as the red worst
+        # row. The scale stays linear to the worst row (no log scale,
+        # no minimum width). Bars are 1.7em tall with tight rows, so
+        # the chart reads as a chart rather than four hairlines in a
+        # mostly blank box (verdict #59).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -3138,22 +3141,23 @@ class TestChecker(unittest.TestCase):
         # Every track in the bare chart — filled or empty — carries the
         # same hairline frame: no grey fill remainder (verdict #51's
         # half-empty-bar complaint), no invisible row (its missing-bar
-        # complaint). Near-zero rows show a pale grey slot, not a fill:
-        # the grey is the slot's own fill, distinct from the red/green
-        # fills that carry a magnitude.
+        # complaint). Near-zero rows show an empty slot, not a fill:
+        # the bordered track is visibly present at 25px height without
+        # implying any magnitude (verdict #72: a grey fill read as a
+        # full-length loss bar).
         self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
                       "border:1px solid #9ca3af;box-sizing:border-box}",
                       build.CSS)
-        self.assertIn(".loss-chart--bare .loss-track--empty{background:#e5e7eb}",
+        self.assertIn(".loss-chart--bare .loss-track--empty{background:transparent}",
                       build.CSS)
         self.assertIn("Bars are scaled to the worst row in this table", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
         # The two small rows (0 and 0.000006 USDC) would draw a 0.0%
-        # fill, so they get a pale grey slot — grey fill, no bar — instead
-        # of a fill, and the number stands beside it.
+        # fill, so they get an empty slot — bordered track, no bar —
+        # instead of a fill, and the number stands beside it.
         self.assertEqual(html.count("loss-fill pass"), 0)
         self.assertEqual(html.count("loss-track--empty"), 2)
-        self.assertIn("A grey slot means the row lost too little to draw a bar at this scale.", html)
+        self.assertIn("An empty slot means the row lost too little to draw a bar at this scale.", html)
         self.assertIn("width:100.0%", html)
         self.assertIn("width:11.0%", html)
         self.assertIn("0.909091", html)
@@ -3172,11 +3176,11 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)))
         self.assertIn("loss-chart", html)
         # Every loss is 0 — no bar is drawn anywhere, but each row still
-        # shows its pale grey slot, so the chart does not read as
+        # shows its empty slot, so the chart does not read as
         # missing rows.
         self.assertEqual(html.count("width:0.0%"), 0)
         self.assertEqual(html.count("loss-track--empty"), 4)
-        self.assertIn("A grey slot means the row lost too little to draw a bar at this scale.", html)
+        self.assertIn("An empty slot means the row lost too little to draw a bar at this scale.", html)
         # Giant minimum deposit: every row errors, no number to chart.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=10 ** 21,
@@ -3189,9 +3193,11 @@ class TestChecker(unittest.TestCase):
         # chart read as broken — four ~11px hairline bars in a ~140px
         # box, the two near-zero rows nearly invisible 1px frames. Bars
         # are now 1.7em tall (~25px at the .92em row size) with rows at
-        # .25em margins, and near-zero rows get a pale grey slot fill so
-        # the slot is visibly present. Widths, numbers, and the linear
-        # scale are unchanged (pinned by test_donation_loss_chart).
+        # .25em margins, and near-zero rows get an unfilled bordered slot
+        # so the slot is visibly present without implying a loss
+        # (verdict #72: the earlier grey fill read as a full-length
+        # loss bar). Widths, numbers, and the linear scale are unchanged
+        # (pinned by test_donation_loss_chart).
         import re
         import sys
         from pathlib import Path
@@ -3203,14 +3209,14 @@ class TestChecker(unittest.TestCase):
         m = re.search(r"\.loss-row\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".loss-row rule not found")
         self.assertIn("margin:.25em 0", m.group(0))
-        self.assertIn(".loss-chart--bare .loss-track--empty{background:#e5e7eb}",
+        self.assertIn(".loss-chart--bare .loss-track--empty{background:transparent}",
                       build.CSS)
         self.assertNotIn("An empty frame means the row lost too little",
                          build.CSS + str(build.PAGES))
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("A grey slot means the row lost too little to draw a bar at this scale.",
+        self.assertIn("An empty slot means the row lost too little to draw a bar at this scale.",
                       html)
         self.assertIn("0.909091", html)
 
