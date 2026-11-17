@@ -3402,6 +3402,58 @@ class TestChecker(unittest.TestCase):
         self.assertLess(js.index("w.donate(d)"), js.index("w.deposit(victimDeposit)"))
         self.assertIn("const vicLoss = victimDeposit - vicOut;", js)
 
+    def test_checker_offset_hint_says_what_the_model_does(self):
+        # Visual verdict #79: the Decimals offset hint was 2 lines of
+        # text in a 3-line box -- a ~1-line blank grey area in row 1.
+        # The honest fix is longer copy, not more height. Model, first:
+        # after a 1 USDC seed + 1,000,000 USDC donation, the price of
+        # one share is 1.000000 / 0.100000 / 0.010000 / 0.000001 USDC
+        # at offsets 0 / 1 / 2 / 6 -- exactly x10 per unit of offset.
+        # The checker clamps offset to 0-30 (offset=31 runs as 30).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        # Regression guard: the form HTML is duplicated in a
+        # single-quoted JS string (worker-side renderer mirror), so an
+        # apostrophe in any hint breaks worker.js at node --check.
+        hint = ("Virtual shares the vault pretends to hold. 6 is the OpenZeppelin standard; "
+                "0 means no protection. Each unit of offset divides the price of one share "
+                "by 10, shrinking the rounding loss the same way. The checker accepts 0–30.")
+        self.assertNotIn("'", hint)
+        # Both copies (Python template + JS mirror) must carry it.
+        self.assertEqual(src.count(hint), 2)
+        self.assertIn("Each unit of offset divides the price of one share by 10", src)
+
+    def test_checker_min_deposit_hint_says_what_the_model_does(self):
+        # Visual verdict #79: the Minimum deposit hint was 1 line of
+        # text in a 3-line box -- a ~2-line blank grey area in row 1,
+        # the largest short-hint hole left after the victim hint was
+        # lengthened. The honest fix is longer copy, not more height.
+        # Model, first: check_donation seeds the attacker with
+        # max(min_deposit, 1 USDC), so the floor is 1 USDC even when
+        # the minimum is 0; and when min_deposit exceeds the victim
+        # deposit, the victim deposit reverts (error row, victim_loss
+        # None) and no loss is measured -- see
+        # test_donation_error_row_reports_no_loss.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        # Regression guard: the form HTML is duplicated in a
+        # single-quoted JS string (worker-side renderer mirror), so an
+        # apostrophe in any hint breaks worker.js at node --check.
+        hint = ("The smallest deposit the vault accepts. The donation attacker seeds this "
+                "amount, at least 1 USDC even when the minimum is 0. Set it above the victim "
+                "deposit and that deposit reverts, so no loss is measured.")
+        self.assertNotIn("'", hint)
+        # Both copies (Python template + JS mirror) must carry it, and
+        # the old 1-line text (ending in a period after "amount") is gone.
+        self.assertEqual(src.count(hint), 2)
+        self.assertNotIn("The donation attacker seeds this amount.", src)
+
     def test_donation_nonmonotonic_explanation(self):
         # The donation loss is not monotonic in the donation size (1B
         # loses less than 1M) and the page must say why, not just show
