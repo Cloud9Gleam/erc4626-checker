@@ -14791,6 +14791,41 @@ class TestChecker(unittest.TestCase):
         self.assertIn("0.000013", readme)
         self.assertIn("incomplete vault state", readme)
 
+    def test_action_exposes_vault_state_inputs(self):
+        # The CLI gained --vault-assets-usdc / --vault-shares but
+        # action.yml never did: the GitHub Action always ran as a new
+        # vault, so a live seeded vault that passes the CLI (exit 0,
+        # worst loss 0.000013 USDC) failed in CI (exit 1, worst loss
+        # 0.909091 USDC) — the Action's verdict contradicted the CLI's
+        # for the same vault. The Action must declare both inputs and
+        # pass them through to check_vault.py, and the README's CI
+        # section must show the seeded-vault usage.
+        from pathlib import Path
+        import io
+        from contextlib import redirect_stdout
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        from check_vault import main as cli_main
+        action = (Path(__file__).parent / "action.yml").read_text()
+        self.assertIn("vault-assets-usdc:", action)
+        self.assertIn("vault-shares:", action)
+        self.assertIn('--vault-assets-usdc "${{ inputs.vault-assets-usdc }}"',
+                      action)
+        self.assertIn('--vault-shares "${{ inputs.vault-shares }}"', action)
+        readme = (Path(__file__).parent / "README.md").read_text()
+        self.assertIn("vault-assets-usdc: 50000000", readme)
+        self.assertIn("vault-shares: 50000000000000", readme)
+        # The exact argv the Action now builds for the seeded vault
+        # reaches the CLI verdict; the argv it used to build (no
+        # vault-state flags) gives the opposite verdict.
+        seeded = ["--offset", "0",
+                  "--vault-assets-usdc", "50000000",
+                  "--vault-shares", "50000000000000"]
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cli_main(seeded), 0)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cli_main(["--offset", "0"]), 1)
+
     def test_treasury_self_holding_guide_numbers(self):
         # Pins /guides/erc4626-treasury-self-holding/ to its model:
         # vault 1,000,000 USDC cash / 1,000,000 shares at $1.00;
