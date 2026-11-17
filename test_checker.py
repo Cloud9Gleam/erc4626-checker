@@ -2054,12 +2054,20 @@ class TestChecker(unittest.TestCase):
         # white cards looks like a floating pill, a fourth white blob
         # competing with the three step cards. The disc is gone: a
         # plain white arrow glyph straight on the dark hero gradient
-        # (white vs hero ~8:1), 1em wide, no background, no circle.
+        # (white vs hero ~8:1), no background, no circle. Verdict #60
+        # then called the bare glyph too small and thin at normal
+        # viewport size — nearly ignored at first glance, weak flow
+        # direction, cards too far apart. So the glyph is now 2.5em
+        # (was 1.5em), 1.2em wide, and the flow gap is .3em (was .5em):
+        # a connector you can see, still no disc.
         self.assertIn(".flow-arrow{align-self:center;color:#fff;", build.CSS)
         self.assertIn(
             ".flow-arrow{align-self:center;color:#fff;font-weight:700;"
-            "font-size:1.5em;flex:0 0 auto;width:1em;text-align:center}",
+            "font-size:2.5em;flex:0 0 auto;width:1.2em;text-align:center}",
             build.CSS)
+        self.assertIn(
+            ".flow{display:flex;align-items:stretch;gap:.3em;"
+            "margin:.9em 0 .2em}", build.CSS)
         # No disc left on the arrow rule itself: no background, no
         # border-radius, no fixed height.
         arrow_rule = build.CSS[build.CSS.index(".flow-arrow{"):]
