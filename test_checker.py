@@ -2212,7 +2212,7 @@ class TestChecker(unittest.TestCase):
         # checks panel's bottom edge, leaving a blank deep-green band
         # in the left column. The fix is content, not width: a stat
         # strip under the CTA, inside the left column, with three
-        # verifiable facts — 152 exact-integer models in the site
+        # verifiable facts — the current *-model.py count in the site
         # tree, 6 checks per run, 0 wallet/signup/fee. Numbers are
         # facts about the product, not marketing claims.
         # Visual verdict #66/#68: equal widths fixed the loose-left /
@@ -2272,6 +2272,24 @@ class TestChecker(unittest.TestCase):
                      "<strong>6</strong> checks per run",
                      "<strong>0</strong> wallet, signup, or fee needed"):
             self.assertIn(fact, hero)
+
+    def test_hero_model_count_is_derived_at_build_time(self):
+        # Rule (p): build.MODEL_COUNT must equal the live *-model.py
+        # glob — the hero number is computed by the build, not typed
+        # in by hand. If someone re-hardcodes the literal in build.py,
+        # the hero goes stale the moment a model file is added and
+        # this test fails on the next run.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        site = Path.home() / "workspace/taskmarket/site"
+        self.assertEqual(build.MODEL_COUNT,
+                         len(list(site.glob("*-model.py"))))
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        self.assertIn(
+            f"<strong>{build.MODEL_COUNT}</strong> exact-integer vault models",
+            home)
 
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
@@ -15685,14 +15703,21 @@ class TestChecker(unittest.TestCase):
         build = (Path.home() / "workspace/taskmarket/site/build.py"
                  ).read_text()
         self.assertIn('"/guides/erc4626-epoch-prorata-redemption/"', build)
-        # Rule (p): the hero model count drifts with every new model,
-        # so derive it fresh instead of hardcoding it (the old literal
-        # 155 went stale when the donation-operator-allowance model
-        # made it 156).
+        # Rule (p): the hero model count is derived at build time from
+        # the *-model.py glob (build.MODEL_COUNT), not hardcoded — so
+        # the literal never appears in build.py source; check the
+        # rendered homepage instead (pinned in full by
+        # test_hero_stats_strip_fills_left_column and
+        # test_hero_model_count_is_derived_at_build_time).
+        import sys
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build as site_build
         model_count = len(list((Path.home() / "workspace/taskmarket/site"
                                 ).glob("*-model.py")))
+        self.assertEqual(site_build.MODEL_COUNT, model_count)
+        home = dict((p, b) for p, t, d, k, b in site_build.PAGES)["/"]
         self.assertIn(f"<strong>{model_count}</strong> exact-integer vault models",
-                      build)
+                      home)
         for num in ("5,000.000000", "40,000.000000", "3,333,333,333",
                     "2,500.000000", "9,999,999,999", "10,000 USDC"):
             self.assertIn(num, build)
