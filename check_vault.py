@@ -71,6 +71,15 @@ def main(argv=None) -> int:
         p.error(f"bad amount: {e}")
     if vault_assets < 0 or vault_supply < 0:
         p.error("vault assets and shares must not be negative")
+    if (vault_assets == 0) != (vault_supply == 0):
+        # Half a state is not a vault: the donation check would refuse
+        # it ("incomplete vault state") while the minimum-viable-deposit
+        # check would still compute a verdict against it (assets-only
+        # reads as a donated-to empty vault, shares-only as shares
+        # worth nothing) — one input, two answers. Refuse up front so
+        # a forgotten flag can never produce a mixed verdict.
+        p.error("give both --vault-assets-usdc and --vault-shares, or "
+                "neither: a vault state needs assets and shares together")
 
     vault = Vault(decimals_offset=args.offset,
                   min_deposit=min_deposit,
