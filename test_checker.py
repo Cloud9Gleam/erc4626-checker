@@ -2045,7 +2045,7 @@ class TestChecker(unittest.TestCase):
         # on a phone viewport.
         self.assertIn(".flow{display:flex;align-items:stretch", build.CSS)
         self.assertIn(".flow-step{flex:1;background:#fff", build.CSS)
-        self.assertIn(".flow-arrow{align-self:center", build.CSS)
+        self.assertIn(".flow-arrow{position:relative;align-self:center", build.CSS)
         # The step arrows must be unmistakable on the dark hero — but
         # they must read as connectors, not as objects. The 15:07 fix
         # gave them a solid white disc (8.07:1 vs the hero, 5.27:1
@@ -2060,21 +2060,35 @@ class TestChecker(unittest.TestCase):
         # direction, cards too far apart. So the glyph is now 2.5em
         # (was 1.5em), 1.2em wide, and the flow gap is .3em (was .5em):
         # a connector you can see, still no disc.
-        self.assertIn(".flow-arrow{align-self:center;color:#fff;", build.CSS)
+        # Verdict #61 then measured the 2.5em glyph at ~23x10px with a
+        # ~2px stroke: font-size cannot fix a glyph's stroke weight,
+        # so the glyph is gone entirely. The arrow is now drawn in
+        # CSS: a fixed 48x24px box, a 32x6px white shaft (::before)
+        # and a 16px-wide, 24px-tall white triangle head (::after) —
+        # a thick arrow whose geometry is literal CSS, not font
+        # rendering. The spans carry no text at all.
         self.assertIn(
-            ".flow-arrow{align-self:center;color:#fff;font-weight:700;"
-            "font-size:2.5em;flex:0 0 auto;width:1.2em;text-align:center}",
+            ".flow-arrow{position:relative;align-self:center;"
+            "flex:0 0 auto;width:48px;height:24px}", build.CSS)
+        self.assertIn(
+            ".flow-arrow::before{content:\"\";position:absolute;left:0;"
+            "top:9px;width:32px;height:6px;background:#fff;"
+            "border-radius:3px}", build.CSS)
+        self.assertIn(
+            ".flow-arrow::after{content:\"\";position:absolute;right:0;"
+            "top:0;border-style:solid;border-width:12px 0 12px 16px;"
+            "border-color:transparent transparent transparent #fff}",
             build.CSS)
         self.assertIn(
             ".flow{display:flex;align-items:stretch;gap:.3em;"
             "margin:.9em 0 .2em}", build.CSS)
-        # No disc left on the arrow rule itself: no background, no
-        # border-radius, no fixed height.
+        # No glyph left in the arrow spans, and no disc either: the
+        # span itself has no background and no border-radius.
+        self.assertEqual(hero.count("&rarr;"), 0)
         arrow_rule = build.CSS[build.CSS.index(".flow-arrow{"):]
         arrow_rule = arrow_rule[:arrow_rule.index("}") + 1]
         self.assertNotIn("background", arrow_rule)
         self.assertNotIn("border-radius", arrow_rule)
-        self.assertNotIn("height", arrow_rule)
         self.assertNotIn("rgba(255,255,255,.14)", build.CSS)
         self.assertNotIn("#a7f3c9", build.CSS)
         self.assertIn("@media (max-width:640px){.flow{flex-direction:column}"
