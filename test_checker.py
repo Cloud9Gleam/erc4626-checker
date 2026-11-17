@@ -2487,7 +2487,7 @@ class TestChecker(unittest.TestCase):
         # half-empty-bar complaint), no invisible row (its missing-bar
         # complaint). Empty slots show the frame with no fill.
         self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
-                      "border:1px solid #d1d5db;box-sizing:border-box}",
+                      "border:1px solid #9ca3af;box-sizing:border-box}",
                       build.CSS)
         self.assertIn("Bars are scaled to the worst row in this table", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
@@ -2496,7 +2496,7 @@ class TestChecker(unittest.TestCase):
         # fill — instead of a bar, and the number stands beside it.
         self.assertEqual(html.count("loss-fill pass"), 0)
         self.assertEqual(html.count("loss-track--empty"), 2)
-        self.assertIn("A row with no bar lost too little to draw at this scale.", html)
+        self.assertIn("An empty frame means the row lost too little to draw a bar at this scale.", html)
         self.assertIn("width:100.0%", html)
         self.assertIn("width:11.0%", html)
         self.assertIn("0.909091", html)
@@ -2519,7 +2519,7 @@ class TestChecker(unittest.TestCase):
         # missing rows.
         self.assertEqual(html.count("width:0.0%"), 0)
         self.assertEqual(html.count("loss-track--empty"), 4)
-        self.assertIn("A row with no bar lost too little to draw at this scale.", html)
+        self.assertIn("An empty frame means the row lost too little to draw a bar at this scale.", html)
         # Giant minimum deposit: every row errors, no number to chart.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=10 ** 21,
