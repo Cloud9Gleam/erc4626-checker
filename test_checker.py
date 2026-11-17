@@ -2014,11 +2014,24 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
-        # The flow diagram is the hero's only diagram: it must sit
-        # between the hero opening and its CTA link.
+        # The flow diagram is the hero's only diagram. The hero's CTA
+        # now lives in the left column of .hero-top (visual verdict
+        # #64: the CTA below the flow left a ~150px blank band under
+        # the intro text), so the flow is the hero's closing element:
+        # it must sit after the CTA and before the paragraph that
+        # follows the hero.
         hero_start = home.index('<div class="hero">')
-        hero_end = home.index('Run the free ERC-4626 checker')
+        hero_end = home.index('<p>This site is one independent researcher')
         hero = home[hero_start:hero_end]
+        cta = home.index('Run the free ERC-4626 checker')
+        flow = home.index('<div class="flow"')
+        self.assertLess(hero_start, cta)
+        self.assertLess(cta, flow)
+        self.assertLess(flow, hero_end)
+        # The left column now carries the model caveat as well as the
+        # CTA, so it fills the panel's height instead of leaving a
+        # blank band under the intro text.
+        self.assertIn("It is a model, not a chain read", hero)
         self.assertIn('<div class="flow"', hero)
         self.assertEqual(hero.count('<div class="flow-step'), 3)
         # The victim step is the red one: numbered badges on all three,
@@ -2083,8 +2096,11 @@ class TestChecker(unittest.TestCase):
             ".flow{display:flex;align-items:stretch;gap:.3em;"
             "margin:.9em 0 .2em}", build.CSS)
         # No glyph left in the arrow spans, and no disc either: the
-        # span itself has no background and no border-radius.
-        self.assertEqual(hero.count("&rarr;"), 0)
+        # span itself has no background and no border-radius. (Scoped
+        # to the flow diagram: the hero CTA legitimately carries an
+        # &rarr; of its own since it moved into the left column.)
+        flow_html = hero[hero.index('<div class="flow"'):]
+        self.assertEqual(flow_html.count("&rarr;"), 0)
         arrow_rule = build.CSS[build.CSS.index(".flow-arrow{"):]
         arrow_rule = arrow_rule[:arrow_rule.index("}") + 1]
         self.assertNotIn("background", arrow_rule)
@@ -2153,6 +2169,39 @@ class TestChecker(unittest.TestCase):
         self.assertLess(top, hero.index("Is your vault"))
         self.assertLess(hero.index("Is your vault"),
                         hero.index('<aside class="hero-checks">'))
+
+    def test_hero_stats_strip_fills_left_column(self):
+        # Visual verdict #64: the intro text ended ~150px above the
+        # checks panel's bottom edge, leaving a blank deep-green band
+        # in the left column. The fix is content, not width: a stat
+        # strip under the CTA, inside the left column, with three
+        # verifiable facts — 152 exact-integer models in the site
+        # tree, 6 checks per run, 0 wallet/signup/fee. Numbers are
+        # facts about the product, not marketing claims.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        self.assertIn(
+            ".hero-stats{display:flex;gap:1.5em;margin-top:1em;",
+            build.CSS)
+        self.assertIn(".hero-stats strong{display:block;font-size:1.5em;",
+                      build.CSS)
+        start = home.index('<div class="hero">')
+        end = home.index("This site is one independent researcher", start)
+        hero = home[start:end]
+        stats = '<p class="hero-stats">'
+        self.assertIn(stats, hero)
+        stats_idx = hero.index(stats)
+        # Inside the left column: after the CTA, before the panel.
+        self.assertLess(hero.index("Run the free ERC-4626 checker"),
+                        stats_idx)
+        self.assertLess(stats_idx, hero.index('<aside class="hero-checks">'))
+        for fact in ("<strong>152</strong> exact-integer vault models",
+                     "<strong>6</strong> checks per run",
+                     "<strong>0</strong> wallet, signup, or fee"):
+            self.assertIn(fact, hero)
 
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
