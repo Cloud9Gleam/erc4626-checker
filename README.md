@@ -42,6 +42,18 @@ six checks and fails the step when any check fails:
     mgmt-fee-bps-per-year: 100
 ```
 
+A vault that already holds funds: seed the model with its live state
+through the same action (give both, or leave both out — half a state
+fails honestly):
+
+```yaml
+- uses: Cloud9Gleam/erc4626-checker@main
+  with:
+    decimals-offset: 0
+    vault-assets-usdc: 50000000
+    vault-shares: 50000000000000
+```
+
 Or run the CLI directly (no GitHub Actions needed):
 
 ```sh
