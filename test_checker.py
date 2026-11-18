@@ -2143,6 +2143,14 @@ class TestChecker(unittest.TestCase):
         # chunky white blocks on the dark hero, the most jarring
         # element on the page. The arrow is now a slim 2px chevron
         # in 60%-white (32x16 box, 31x2 shaft, 10x10 chevron head).
+        # Verdict #101 (2026-11-18) then called the 60% chevron
+        # thin and low-contrast: 90%-white and 3px strokes now.
+        # The loss step's pink wash was also read as inconsistent
+        # with the two white cards, so the loss card is white too;
+        # its loss signal is the red border, red badge and red
+        # title — measured first: all three cards were 110.5px
+        # tall with a true 16.6px bottom gap (padding only), so
+        # the "tall and empty" reading was a misread, not a slice.
         # The shaft must reach the chevron vertex: head box sits
         # right:4px (x=18..28, centre 23), rotate(45deg) puts the
         # vertex at x = 23 + 5*sqrt(2) = 30.07, so the 31px shaft
@@ -2157,19 +2165,26 @@ class TestChecker(unittest.TestCase):
             "flex:0 0 auto;width:32px;height:16px}", build.CSS)
         self.assertIn(
             ".flow-arrow::before{content:\"\";position:absolute;left:0;"
-            "top:7px;width:31px;height:2px;"
-            "background:rgba(255,255,255,.6)}", build.CSS)
+            "top:7px;width:31px;height:3px;"
+            "background:rgba(255,255,255,.9)}", build.CSS)
         self.assertIn(
             ".flow-arrow::after{content:\"\";position:absolute;right:4px;"
             "top:3px;width:10px;height:10px;"
-            "border-top:2px solid rgba(255,255,255,.6);"
-            "border-right:2px solid rgba(255,255,255,.6);"
+            "border-top:3px solid rgba(255,255,255,.9);"
+            "border-right:3px solid rgba(255,255,255,.9);"
             "transform:rotate(45deg)}", build.CSS)
+        self.assertNotIn("rgba(255,255,255,.6)", build.CSS[
+            build.CSS.index(".flow-arrow::before"):])
+        self.assertIn(".flow-step.loss{border-color:#f5c6c6}", build.CSS)
+        self.assertNotIn("#fdf2f2", build.CSS)
+        self.assertIn(".flow-step.loss .flow-num{background:#dc2626}",
+                      build.CSS)
+        self.assertIn(".flow-step.loss strong{color:#b91c1c}", build.CSS)
         self.assertNotIn("width:48px;height:24px", build.CSS)
         self.assertNotIn("border-width:12px 0 12px 16px", build.CSS)
         self.assertIn(
             ".flow{display:flex;align-items:stretch;gap:.3em;"
-            "margin:.9em 0 .2em}", build.CSS)
+            "margin:.9em 0 .9em}", build.CSS)
         # No glyph left in the arrow spans, and no disc either: the
         # span itself has no background and no border-radius. (Scoped
         # to the flow diagram: the hero CTA below the flow legitimately
@@ -17062,8 +17077,11 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #100 (2026-11-18): the homepage hero's flow
         # arrows were two chunky white blocks - a 6px bar plus a 24px
         # triangle - that read as clip-art against the dark-green hero.
-        # They are now a slim 2px chevron in 60%-white: a connector,
-        # not a block. Pins the new geometry and forbids the old one.
+        # They are now a slim chevron: a connector, not a block.
+        # Pins the new geometry and forbids the old one.
+        # Visual verdict #101 (2026-11-18) then called the 2px /
+        # 60%-white chevron thin and low-contrast: 3px strokes in
+        # 90%-white now.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -17074,14 +17092,14 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertIn(
             ".flow-arrow::before{content:\"\";position:absolute;left:0;"
-            "top:7px;width:31px;height:2px;"
-            "background:rgba(255,255,255,.6)}",
+            "top:7px;width:31px;height:3px;"
+            "background:rgba(255,255,255,.9)}",
             build.CSS)
         self.assertIn(
             ".flow-arrow::after{content:\"\";position:absolute;right:4px;"
             "top:3px;width:10px;height:10px;"
-            "border-top:2px solid rgba(255,255,255,.6);"
-            "border-right:2px solid rgba(255,255,255,.6);"
+            "border-top:3px solid rgba(255,255,255,.9);"
+            "border-right:3px solid rgba(255,255,255,.9);"
             "transform:rotate(45deg)}",
             build.CSS)
         self.assertNotIn("width:48px;height:24px", build.CSS)
