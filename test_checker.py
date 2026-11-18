@@ -3806,6 +3806,21 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(worker.count("<p class='params'>Parameters:"), 2)
         self.assertIn("{{PARAMS}}", worker)
 
+    def test_track_group_spacing_is_tight(self):
+        # Visual verdict #99 (2026-11-18): on /audit/ the four
+        # "Track record" <details> groups sat ~24px apart (1.4em top
+        # margin), reading as sparse — baseline spacing ~55px with
+        # ~28px of blank. Top margin is now .9em (~15px); the
+        # summary text, list content, and bottom margin are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".track-group{margin:.9em 0 .4em}", build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(".track-group{margin:.9em 0 .4em}", worker)
+
     def test_loss_chart_bars_are_thick_and_rows_tight(self):
         # Visual verdict #59: on /checker/?preset=noprot the Victim loss
         # chart read as broken — four ~11px hairline bars in a ~140px
