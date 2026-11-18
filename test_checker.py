@@ -2627,9 +2627,16 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".hero-checks{flex:0 0 320px;background:rgba(255,255,255,.09);",
             build.CSS)
+        # Visual verdict #110 item 3: the panel carried ~50px of dead
+        # space below its last line because .hero-top stretches both
+        # columns to the taller one. The panel opts out and hugs its
+        # content (align-self:flex-start); in the <=900px column layout
+        # the cross axis is horizontal, so it must stretch there to
+        # stay full-width instead of shrinking to content width.
+        self.assertIn("align-self:flex-start}", build.CSS)
         self.assertIn(
             "@media (max-width:900px){.hero-top{flex-direction:column}"
-            ".hero-checks{flex:none}}", build.CSS)
+            ".hero-checks{flex:none;align-self:stretch}}", build.CSS)
         start = home.index('<div class="hero">')
         end = home.index("This site is one independent researcher", start)
         hero = home[start:end]
