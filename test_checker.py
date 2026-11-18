@@ -3821,6 +3821,29 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".track-group{margin:.9em 0 .4em}", worker)
 
+    def test_audit_order_form_is_a_card(self):
+        # Visual verdict #100 (2026-11-18): on /audit/ the Start
+        # form's four inputs sat bare on the white page — no grouping
+        # card or border, the plainest block on the page, and this is
+        # the paid service's conversion point. The form is now a light
+        # card in the page's #f9fafb form language (same as
+        # #checker-form); fields, labels, buttons, and copy are
+        # untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "#audit-order{background:#f9fafb;border:1px solid #e5e7eb;"
+            "border-radius:12px;padding:1.1em 1.4em 1.3em}",
+            build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("#audit-order{background:#f9fafb;", worker)
+        # PAGES is embedded in worker.js with double quotes escaped,
+        # so the form tag reads <form id=\"audit-order\" there.
+        self.assertIn('<form id=\\"audit-order\\"', worker)
+
     def test_loss_chart_bars_are_thick_and_rows_tight(self):
         # Visual verdict #59: on /checker/?preset=noprot the Victim loss
         # chart read as broken — four ~11px hairline bars in a ~140px
