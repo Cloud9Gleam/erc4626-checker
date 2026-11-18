@@ -3444,6 +3444,63 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
 
+    def test_loss_chart_values_hug_bar_end(self):
+        # Visual verdict #96: on /checker/?preset=noprot the 0.099890
+        # value sat in a fixed right-hand column, ~630px from its short
+        # bar's end, reading as an orphaned column while the 0.909091
+        # value hugged the full bar. Values now live inside the track,
+        # positioned from the bar's own width: outside the fill for
+        # short bars, inside it (white) once the bar is long enough to
+        # hold the text (>=60%).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        # Full bar: value inside, white, right edge at the bar end.
+        self.assertIn("<span class='loss-value loss-value--inside' "
+                      "style='--pct:100.0%'>0.909091</span>", html)
+        # Short bar: value outside, dark, left edge just past the fill.
+        self.assertIn("<span class='loss-value' "
+                      "style='--pct:11.0%'>0.099890</span>", html)
+        # Both values are children of their track, not siblings after it
+        # (3 hits: the inside value's class names it twice).
+        self.assertEqual(html.count("loss-value"), 3)
+        self.assertNotIn("</span></span><span class='loss-value'>", html)
+        self.assertNotIn("</span></span><span class='loss-value ", html)
+        # The CSS pins the positioning: absolute, from the --pct var.
+        self.assertIn(".loss-chart--bare .loss-track{position:relative;"
+                      "overflow:visible}", build.CSS)
+        self.assertIn(".loss-chart--bare .loss-value{position:absolute;"
+                      "top:50%;left:calc(var(--pct,0%) + .55em);"
+                      "transform:translateY(-50%);white-space:nowrap}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-value--inside{"
+                      "left:calc(var(--pct,0%) - .55em);"
+                      "transform:translate(-100%,-50%);color:#fff}",
+                      build.CSS)
+        # Guide charts (plain .loss-chart, values as flex items) are
+        # untouched: the new rules are scoped to --bare only.
+        self.assertNotIn(".loss-chart .loss-value{position:absolute",
+                         build.CSS)
+        # The Worker-side template renders the same structure.
+        js = build.checker_results_html_js()
+        self.assertIn("loss-value--inside", js)
+        self.assertIn("--pct:", js)
+        self.assertIn("pct>=60", js)
+        # Short-bar case: seeded vault, losses [1, 1, 1, 13] — three
+        # 7.7% bars stay outside, only the 100% worst row flips inside.
+        A50 = 50_000_000_000_000
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                    vault_assets=A50, vault_supply=A50),
+            vic=100_000_000_000, off=0, mn=0, fee=0, vassets=A50, vshares=A50)
+        self.assertEqual(html.count("loss-value--inside"), 1)
+        self.assertEqual(html.count("--pct:7.7%"), 3)
+        self.assertIn("--pct:100.0%", html)
+
     def test_loss_chart_omits_tiny_rows_and_replaces_sparse_charts(self):
         # Visual verdict #94 (second pass, 09:15-09:20): the dashed
         # "too small to draw" placeholder rows were the whole site's
