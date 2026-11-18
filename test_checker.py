@@ -3519,6 +3519,41 @@ class TestChecker(unittest.TestCase):
         # The Worker-side template renders the same short chip.
         self.assertIn("loss-track--tiny", build.checker_results_html_js())
 
+    def test_check_detail_lines_are_boxed(self):
+        # Visual verdict #89: the non-donation detail lines were bare
+        # <p> paragraphs — the evidence a PASS card exists to show
+        # looked like body text, no background, no separation between
+        # rows. Each detail line is now its own light-grey box
+        # (check-detail), in both render paths; the donation card
+        # keeps its table + chart, which already has structure.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".check-card p.check-detail{background:#f9fafb;border:1px solid "
+            "#e5e7eb;border-radius:6px;padding:.45em .7em}", build.CSS)
+        for v, kwargs in (
+                (Vault(decimals_offset=6, min_deposit=1_000_000,
+                       perf_fee_bps=1000), {}),
+                (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                 {"off": 0, "mn": 0, "fee": 0})):
+            results = run_all(v)
+            n_lines = sum(
+                len([ln for ln in r["detail"] if isinstance(ln, str)])
+                for r in results if r["name"] != "donation_inflation")
+            self.assertGreater(n_lines, 0)
+            html = build.results_html(results, **kwargs)
+            self.assertEqual(html.count("<p class='check-detail'>"),
+                             n_lines)
+            # No bare <p> wraps a detail line any more: every string
+            # detail line sits inside its box.
+            self.assertNotIn("<p>yield ", html)
+            self.assertNotIn("<p>price per ", html)
+        # The Worker-side template renders the same boxes.
+        self.assertIn("<p class='check-detail'>",
+                      build.checker_results_html_js())
+
     def test_donation_table_puts_victim_loss_second(self):
         # Mobile render at 360px (2026-11-18): the donation table is
         # 411px wide inside a 284px scroll wrap, so the third column
