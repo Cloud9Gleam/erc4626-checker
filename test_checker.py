@@ -2922,11 +2922,13 @@ class TestChecker(unittest.TestCase):
     def test_home_cards_bodies_are_balanced(self):
         # Visual verdict #57 remainder: the Free tool card's body was
         # ~2 lines while Paid service and Research were ~4, so the
-        # equal-height grid (.card-link margin-top:auto) left a
-        # ~90-100px gap above the Free tool link vs ~40-50px on the
-        # other two. Fix: the Free tool body now names the six checks
-        # (same list as the /checker/ page description), so all three
-        # bodies are in the same length band and the auto gaps match.
+        # bottom links sat at different heights. Fix: the Free tool
+        # body now names the six checks (same list as the /checker/
+        # page description), so all three bodies are in the same
+        # length band. Still matters after verdict #112 item 2
+        # removed the margin-top:auto pinning: unpinned links follow
+        # their body text, so balanced bodies keep the three links
+        # at near-equal heights instead of drifting apart.
         import re
         import sys
         from pathlib import Path
@@ -15107,23 +15109,30 @@ class TestChecker(unittest.TestCase):
             '50 USDC, 72-hour report"', build_text)
 
     def test_home_cards_bottom_links(self):
-        # Visual verdict #52 (2026-11-17 11:46, real browser):
-        # the homepage cards stretched to equal height, but the
-        # short ones (Free tool, Research) had ~100px of empty
-        # space at the bottom — the grid stretched the boxes and
-        # nothing filled them. Each card is now a flex column
-        # with a link pinned to the bottom by margin-top:auto,
-        # so the whitespace becomes a call to action instead of
-        # dead space. One footer link per card, each pointing at
-        # the card's own destination.
+        # Visual verdict #112 item 2 (2026-11-19, real browser):
+        # the bottom link was pinned to the card bottom by
+        # margin-top:auto (verdict #52's fix, when bodies were
+        # unbalanced). Bodies are balanced now, but real-browser
+        # font metrics wrap them unevenly, so the auto margin
+        # reopened a ~40px gap above the link — the link read as
+        # nailed to the card bottom, disconnected from its text.
+        # The link now follows the body text (no auto margin,
+        # padding-top .3em); leftover space lands below the link,
+        # inside the card's bottom padding. One footer link per
+        # card, each pointing at the card's own destination.
+        import re
         from pathlib import Path
         build_text = (Path.home() / "workspace/taskmarket/site"
                       / "build.py").read_text()
         self.assertEqual(build_text.count('class="card-link"'), 3)
         self.assertIn('"display:flex;flex-direction:column}"',
                       build_text)
-        self.assertIn('.card .card-link{margin-top:auto',
+        self.assertIn('.card .card-link{margin-top:0;'
+                      'padding-top:.3em;margin-bottom:0;font-weight:700}',
                       build_text)
+        rule = re.search(r'\.card \.card-link\{[^}]*\}',
+                         build_text).group(0)
+        self.assertNotIn('margin-top:auto', rule)
         self.assertIn(
             '<p class="card-link"><a href="/checker/">'
             'Run the checker &rarr;</a></p>', build_text)
