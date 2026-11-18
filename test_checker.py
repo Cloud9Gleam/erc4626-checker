@@ -1891,11 +1891,14 @@ class TestChecker(unittest.TestCase):
                         audit.index('<h2>Scope</h2>'))
         self.assertIn("a.cta{display:inline-block", build.CSS)
 
-    def test_audit_pay_address_is_truncated_with_full_in_data_attr(self):
-        # Verdict #55: the 42-char address pasted raw was the ugliest
-        # element on /audit/. Default display is first-6 + ellipsis +
-        # last-4; the full address stays in data-full so the copy button
-        # (which reads data-full) can never copy the truncated form.
+    def test_audit_pay_address_shown_in_full_by_default(self):
+        # Visual verdict #110 (2026-11-19): the 42-char address was
+        # hidden behind "Show full address" while the same row warned
+        # "Double-check the address before sending" -- a payer could
+        # not eyeball the address the warning was about. Default
+        # display is now the full address; the toggle only collapses
+        # it to the shortened form, and the copy button (which reads
+        # data-full) is unaffected either way.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -1903,10 +1906,16 @@ class TestChecker(unittest.TestCase):
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
                       audit)
-        self.assertIn(build.PAY_ADDR_SHORT, audit)
+        # The full address IS the span's visible text on load.
+        self.assertIn('>' + build.PAY_ADDR + '</span>', audit)
+        # The shortened form is not displayed anywhere on load; the
+        # toggle builds it at runtime (slice), so only the constant
+        # documents it.
+        self.assertNotIn(build.PAY_ADDR_SHORT, audit)
         self.assertEqual(build.PAY_ADDR_SHORT, "0xD07C\u2026dC64")
-        # The full address must NOT appear as the span's visible text.
-        self.assertNotIn('id="pay-addr">' + build.PAY_ADDR + '<', audit)
+        self.assertIn("Show shortened", audit)
+        # The toggle still offers the full form as the collapsed-state
+        # label, so the round trip works.
         self.assertIn("Show full address", audit)
         self.assertIn("function togglePayAddr(btn)", audit)
         self.assertIn("getAttribute('data-full')", audit)
@@ -2992,12 +3001,14 @@ class TestChecker(unittest.TestCase):
         # was ~90% blank. The box now hugs its content (flex 0 1
         # auto, capped at the row width) and the two controls share
         # the row beside it -- uncrowded because the address is short.
-        # When toggled to the full 42-char address the box grows to
-        # fit it and the controls wrap below on narrow widths; the
-        # address still wraps instead of being ellipsis-clipped -- a
-        # clipped payment address hides characters the payer must see.
-        # Markup (address + toggle + copy) and the truncated default
-        # display are unchanged.
+        # Visual verdict #110 supersedes the default: the full
+        # 42-char address is now shown on load and the toggle only
+        # collapses it. The hugging rule is unchanged -- the box
+        # grows to fit the full address and the controls wrap below
+        # on narrow widths; the address still wraps instead of being
+        # ellipsis-clipped -- a clipped payment address hides
+        # characters the payer must see.
+        # Markup (address + toggle + copy) is unchanged.
         import re
         import sys
         from pathlib import Path
@@ -3015,7 +3026,7 @@ class TestChecker(unittest.TestCase):
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
                       audit)
-        self.assertIn("Show full address", audit)
+        self.assertIn("Show shortened", audit)
         self.assertIn("Copy payment address", audit)
 
     def test_audit_pay_row_note_attached(self):
