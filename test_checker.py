@@ -3793,11 +3793,18 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         # Full bar: value inside, white, right edge at the bar end.
+        # Visual verdict #106 (noprot item 1): a breaching row also
+        # carries how many times its loss exceeds the pass bound, so
+        # the short red bar is not misread as a small loss — the worst
+        # row is 909091/1000 = 909x, the 1B row 99890/1000 = 99.9x.
         self.assertIn("<span class='loss-value loss-value--inside' "
-                      "style='--pct:100.0%'>0.909091</span>", html)
+                      "style='--pct:100.0%'>0.909091 &middot; 909&times;</span>", html)
         # Short bar: value outside, dark, left edge just past the fill.
         self.assertIn("<span class='loss-value' "
-                      "style='--pct:11.0%'>0.099890</span>", html)
+                      "style='--pct:11.0%'>0.099890 &middot; 99.9&times;</span>", html)
+        # The chart note defines what the multiple means.
+        self.assertIn("the ×N after a red value is how many times that "
+                      "loss exceeds the bound", html)
         # Both values are children of their track, not siblings after it
         # (3 hits: the inside value's class names it twice).
         self.assertEqual(html.count("loss-value"), 3)
@@ -3823,6 +3830,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn("loss-value--inside", js)
         self.assertIn("--pct:", js)
         self.assertIn("pct>=60", js)
+        # Worker-side multiple: same rule as the Python renderer.
+        self.assertIn("&middot;", js)
+        self.assertIn("&times;", js)
+        self.assertIn("boundB", js)
         # Short-bar case: seeded vault, losses [1, 1, 1, 13] — three
         # 7.7% bars stay outside, only the 100% worst row flips inside.
         A50 = 50_000_000_000_000
