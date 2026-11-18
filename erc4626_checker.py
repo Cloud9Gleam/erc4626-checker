@@ -274,9 +274,17 @@ def check_share_price_sanity(v: Vault) -> dict:
     w.deposit(100_000_000_000)
     price_after = w.convert_to_assets(1_000_000)
     ok = price_before >= 0 and price_after >= price_before - 1
+    # Same rule as preview consistency: when the price is unchanged
+    # across the second deposit, state the number once; the "X -> Y"
+    # form is kept when the two differ, because the difference is the
+    # evidence. (Equal deposits keep the assets/shares ratio exact, so
+    # the equal case is the normal one through run_all.)
+    price = (f"price per 1,000,000{NBSP}shares {_fmt_usdc(price_before)}{NBSP}USDC (unchanged)"
+             if price_before == price_after else
+             f"price per 1,000,000{NBSP}shares {_fmt_usdc(price_before)}{NBSP}USDC -> "
+             f"{_fmt_usdc(price_after)}{NBSP}USDC")
     return {"name": "share_price_sanity", "pass": ok,
-            "detail": [f"price per 1,000,000{NBSP}shares {_fmt_usdc(price_before)}{NBSP}USDC -> "
-                       f"{_fmt_usdc(price_after)}{NBSP}USDC"]}
+            "detail": [price]}
 
 
 def check_minimum_viable_deposit(v: Vault, vault_assets: int = 0,
