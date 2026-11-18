@@ -2048,8 +2048,14 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn('<details class="track-group" open>', track)
         # Strongest proof first: the ended contests whose full awarded
         # sets were re-verified — now as a closed group like the rest.
+        # Visual verdict #112 item 1: a folded row showed only its
+        # title, so each summary now carries a one-line preview of the
+        # strongest item(s) inside; the folded state still proves the
+        # method at a glance.
         self.assertIn('<details class="track-group">\n'
-                      '<summary>Full awarded set re-verified — ended contests (3)</summary>',
+                      '<summary>Full awarded set re-verified — ended contests (3)'
+                      '<span class="track-preview">Gamma 25 of 27 · BattleChain 9 of 9 · '
+                      'Zaros 66 of 70</span></summary>',
                       track)
         # The two ended-contest groups used to share the same leading
         # words ("Ended contests — ...") and differed only in the
@@ -2057,15 +2063,30 @@ class TestChecker(unittest.TestCase):
         # distinguishing scope now leads, so the summaries are
         # distinguishable at a glance.
         self.assertIn('<details class="track-group">\n'
-                      '<summary>Bounded slice — ended contests (3)</summary>',
+                      '<summary>Bounded slice — ended contests (3)'
+                      '<span class="track-preview">RAAC 3 Highs + 1 Medium in 657 lines · '
+                      'QuantAMM fee-logic Medium · Nexus 14 findings</span></summary>',
                       track)
         # The 33-item First Flight wall is collapsed by default — and its
         # heading count is honest: three reviews were added after the (30)
         # heading was written (Vyper Vested Claims, Curve Storage Proofs,
         # SNARKeling), so it now says (33).
         self.assertIn('<details class="track-group">\n'
-                      '<summary>CodeHawks First Flight — practice and study reviews (33)</summary>',
+                      '<summary>CodeHawks First Flight — practice and study reviews (33)'
+                      '<span class="track-preview">Thunder Loan flash-loan drain · Puppy Raffle '
+                      '9 findings · Vanguard router-bucket bypass</span></summary>',
                       track)
+        # The two one-item groups preview their single item, not a count.
+        self.assertIn('<summary>Reference (1)'
+                      '<span class="track-preview">77 recurring vulnerability patterns, '
+                      'each proven by a real finding</span></summary>', track)
+        self.assertIn('<summary>Live finding (1)'
+                      '<span class="track-preview">Auction clock never enforced — '
+                      'forge reproduction 3/3</span></summary>', track)
+        self.assertEqual(track.count('<span class="track-preview">'), 5)
+        # Preview reads as a subtitle: block, one size down, grey, not bold.
+        self.assertIn(".track-group summary .track-preview{display:block;font-size:.85em;"
+                      "font-weight:400;color:#6b7280;margin-top:.15em}", build.CSS)
         self.assertNotIn("(32)</summary>", track)
         # No group lost its items: 3 + 33 + 3 + 1 + 1 = 41 research links
         # inside the five details blocks, and no bare h3 survives in the
