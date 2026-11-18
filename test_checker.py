@@ -3908,6 +3908,12 @@ class TestChecker(unittest.TestCase):
         # bands (1-4 per card) were the site's ugliest element, so
         # the lines now share one unfilled block per card
         # (check-details) with the slate accent on the group.
+        # Visual verdict #106 item 2 (confirmed #107) supersedes the
+        # bare lines inside that block: the key figures sat inside
+        # sentences at a different x position on every line, so each
+        # card's detail lines now render as a two-column label/value
+        # table (check-table) inside the same block — labels left,
+        # figures right-aligned in their own column.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -3922,32 +3928,120 @@ class TestChecker(unittest.TestCase):
             ".check-card p.check-detail{background:#f3f4f6;", build.CSS)
         self.assertNotIn(
             ".check-card p.check-detail{background:#f9fafb;", build.CSS)
-        for v, kwargs in (
+        # Visual verdict #106 item 2: the table rules — label left
+        # and muted, value right-aligned, hairline between rows,
+        # stacked rows under 640px.
+        self.assertIn(".check-table{margin:0;font-size:1em}", build.CSS)
+        self.assertIn(
+            ".check-table td.check-label{text-align:left;color:#4b5563}",
+            build.CSS)
+        self.assertIn(".check-table td.check-value{text-align:right}",
+                      build.CSS)
+        self.assertIn(".check-table tr+tr td{border-top:1px solid #f3f4f6}",
+                      build.CSS)
+        self.assertIn("@media (max-width:640px){.check-table tr{display:block}",
+                      build.CSS)
+        # Row counts per preset: rounding 1 sentence row; MVD 4 rows
+        # on the default preset (floor-binds line) vs 3 on noprot;
+        # preview 3; fee 1 line becomes 3 rows; share price 1.
+        for v, kwargs, n_rows in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
-                       perf_fee_bps=1000), {}),
+                       perf_fee_bps=1000), {}, 12),
                 (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
-                 {"off": 0, "mn": 0, "fee": 0})):
+                 {"off": 0, "mn": 0, "fee": 0}, 11)):
             results = run_all(v)
-            n_lines = sum(
-                len([ln for ln in r["detail"] if isinstance(ln, str)])
-                for r in results if r["name"] != "donation_inflation")
-            self.assertGreater(n_lines, 0)
             html = build.results_html(results, **kwargs)
-            self.assertEqual(html.count("<p class='check-detail'>"),
-                             n_lines)
+            self.assertEqual(html.count("<p class='check-detail'>"), 0)
             # One detail block per non-donation card, not one per line.
             self.assertEqual(html.count("<div class='check-details'>"),
                              len([r for r in results
                                   if r["name"] != "donation_inflation"]))
+            self.assertEqual(html.count("<table class='check-table'>"),
+                             len([r for r in results
+                                  if r["name"] != "donation_inflation"]))
+            self.assertEqual(
+                html.count("<td class='check-label'>")
+                + html.count("<td class='check-sentence'"), n_rows)
             # No bare <p> wraps a detail line any more: every string
-            # detail line sits inside its block.
+            # detail line sits inside its block's table.
             self.assertNotIn("<p>yield ", html)
             self.assertNotIn("<p>price per ", html)
+            # Spot checks: the fee line split into three labelled rows,
+            # the longest preview figure in a value cell.
+            self.assertIn("<td class='check-label'>Yield</td>", html)
+            self.assertIn("<td class='check-label'>Fee</td>", html)
+            self.assertIn("<td class='check-label'>Holder gain</td>", html)
+            self.assertIn("deposit preview matches execution</td>", html)
         # The Worker-side template renders the same block.
         self.assertIn("<div class='check-details'>",
                       build.checker_results_html_js())
-        self.assertIn("<p class='check-detail'>",
+        self.assertIn("<table class='check-table'>",
                       build.checker_results_html_js())
+        self.assertIn("splitDetailLine",
+                      build.checker_results_html_js())
+        self.assertNotIn("<p class='check-detail'>",
+                         build.checker_results_html_js())
+
+    def test_split_detail_line(self):
+        # The render-time splitter behind the check-table: every model
+        # detail-line shape maps to (label, value) rows, or None for a
+        # line with no splittable figure. The model strings are the
+        # contract — the splitter must not invent or drop a figure.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        NB = "\u00a0"
+        self.assertEqual(
+            build.split_detail_line(
+                f"smallest deposit minting 1 share: 0.000001{NB}USDC"),
+            [("smallest deposit minting 1 share", f"0.000001{NB}USDC")])
+        self.assertEqual(
+            build.split_detail_line(
+                f"deposit preview matches execution: 10,000,000,000,000,000{NB}shares"),
+            [("deposit preview matches execution",
+              f"10,000,000,000,000,000{NB}shares")])
+        self.assertEqual(
+            build.split_detail_line(
+                f"1{NB}USDC mints 1,000,000,000,000{NB}shares"),
+            [("1" + NB + "USDC mints", f"1,000,000,000,000{NB}shares")])
+        self.assertEqual(
+            build.split_detail_line(
+                f"price per 1,000,000{NB}shares 0.000001{NB}USDC (unchanged)"),
+            [(f"price per 1,000,000{NB}shares", f"0.000001{NB}USDC (unchanged)")])
+        self.assertEqual(
+            build.split_detail_line(
+                f"price per 1,000,000{NB}shares 0.000001{NB}USDC -> 0.000002{NB}USDC"),
+            [(f"price per 1,000,000{NB}shares",
+              f"0.000001{NB}USDC -> 0.000002{NB}USDC")])
+        self.assertEqual(
+            build.split_detail_line(
+                f"yield 10,000.000000{NB}USDC, fee 1,000.000000{NB}USDC, "
+                f"holder gain 9,000.000000{NB}USDC"),
+            [("Yield", f"10,000.000000{NB}USDC"),
+             ("Fee", f"1,000.000000{NB}USDC"),
+             ("Holder gain", f"9,000.000000{NB}USDC")])
+        self.assertEqual(
+            build.split_detail_line(
+                f"deposit 10,000,000,000,000,000{NB}shares == "
+                f"10,000,000,000,000,001{NB}shares"),
+            [("deposit", f"10,000,000,000,000,000{NB}shares == "
+                         f"10,000,000,000,000,001{NB}shares")])
+        self.assertIsNone(
+            build.split_detail_line("floor/ceil directions hold"))
+        self.assertIsNone(
+            build.split_detail_line("deposit rounding off for 1000000"))
+        # The splitter is total over the live model: every string
+        # detail line of both presets splits or falls back to a
+        # sentence row — never an exception, never a dropped line.
+        for v in (Vault(decimals_offset=6, min_deposit=1_000_000,
+                        perf_fee_bps=1000),
+                  Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)):
+            for r in run_all(v):
+                for line in r["detail"]:
+                    if isinstance(line, str):
+                        build.split_detail_line(line)
+                        build.detail_table([line])
 
     def test_check_detail_numbers_are_bold(self):
         # Visual verdict #94 (second pass), the other half: the
@@ -3955,6 +4049,10 @@ class TestChecker(unittest.TestCase):
         # figures still share weight and colour — a 16-digit Preview
         # figure fills a whole line without standing out. Figures are
         # now <strong> in both render paths; labels stay regular.
+        # Visual verdict #106 item 2: the figures moved into a
+        # label/value table, so the invariant moves with them — every
+        # numeric token in a value cell is bold, no label cell carries
+        # a <strong> at all.
         import re
         import sys
         from pathlib import Path
@@ -3969,46 +4067,66 @@ class TestChecker(unittest.TestCase):
             "USDC</span>, fee <span class='nowrap'><strong>1,000.000000"
             "</strong> USDC</span>")
         # Bare counts bold too: the default preset's minimum-viable
-        # line ("no zero-share deposit: 1 base unit mints 1 share")
-        # carries no unit after its figures, so a nowrap-only CSS
-        # rule would miss it.
+        # value ("1 base unit mints 1 share") carries no unit after
+        # its figures, so a nowrap-only CSS rule would miss it.
         self.assertEqual(
-            build.bold_numbers(
-                "no zero-share deposit: 1 base unit mints 1 share"),
-            "no zero-share deposit: <strong>1</strong> base unit "
-            "mints <strong>1</strong> share")
-        # Both presets, Python path: every figure in every detail
-        # box is wrapped, and the count of <strong> matches the
-        # count of numeric tokens exactly (no figure left bare, no
-        # label wrapped by accident).
+            build.bold_numbers("1 base unit mints 1 share"),
+            "<strong>1</strong> base unit mints <strong>1</strong> share")
+        # Both presets, Python path: every figure in every value cell
+        # is wrapped, and the count of <strong> matches the count of
+        # numeric tokens exactly (no figure left bare); no label cell
+        # carries a <strong> (labels stay regular, including the
+        # "1,000,000" inside "price per 1,000,000 shares").
         for v, kwargs in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
                        perf_fee_bps=1000), {}),
                 (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
                  {"off": 0, "mn": 0, "fee": 0})):
             html = build.results_html(run_all(v), **kwargs)
-            boxes = re.findall(r"<p class='check-detail'>(.*?)</p>", html)
-            self.assertGreater(len(boxes), 0)
-            for inner in boxes:
+            values = re.findall(r"<td class='check-value'>(.*?)</td>", html)
+            self.assertGreater(len(values), 0)
+            for inner in values:
                 plain = re.sub(r"<[^>]+>", "", inner)
                 nums = re.findall(r"-?\d[\d,]*(?:\.\d+)?", plain)
-                # A box may carry no figure at all ("floor/ceil
+                self.assertEqual(inner.count("<strong>"), len(nums))
+                self.assertEqual(inner.count("</strong>"), len(nums))
+            labels = re.findall(r"<td class='check-label'>(.*?)</td>", html)
+            self.assertGreater(len(labels), 0)
+            for inner in labels:
+                self.assertNotIn("<strong>", inner)
+            sentences = re.findall(
+                r"<td class='check-sentence'[^>]*>(.*?)</td>", html)
+            for inner in sentences:
+                plain = re.sub(r"<[^>]+>", "", inner)
+                nums = re.findall(r"-?\d[\d,]*(?:\.\d+)?", plain)
+                # A sentence may carry no figure at all ("floor/ceil
                 # directions hold"); the count must still match.
                 self.assertEqual(inner.count("<strong>"), len(nums))
                 self.assertEqual(inner.count("</strong>"), len(nums))
             # Spot check the long figures read as bold number + plain
             # unit, and a label stays outside any <strong>.
             self.assertIn("<strong>10,000.000000</strong> USDC", html)
-            self.assertIn("yield <span class='nowrap'><strong>", html)
-            self.assertNotIn("<strong>yield", html)
-        # Worker-side template: same helper, same application.
+            self.assertIn(
+                "<td class='check-label'>Yield</td>"
+                "<td class='check-value'><span class='nowrap'>"
+                "<strong>10,000.000000</strong> USDC</span></td>", html)
+            self.assertNotIn("<strong>Yield", html)
+            self.assertNotIn("<strong>price per", html)
+        # Worker-side template: same helper, same application — bold
+        # on the value, plain on the label.
         js = build.checker_results_html_js()
         self.assertIn(
             "function boldNumbers(s){return s.replace("
             "/-?\\d[\\d,]*(?:\\.\\d+)?/g,\"<strong>$&</strong>\");}",
             js)
-        self.assertIn(
-            "boldNumbers(nbspUnits(esc(line)))", js)
+        self.assertIn("function splitDetailLine(s)", js)
+        self.assertIn("boldNumbers(nbspUnits(esc(row[1])))", js)
+        self.assertIn("nbspUnits(esc(row[0]))", js)
+        # The same call survives only for the sentence-row fallback
+        # (rounding's "floor/ceil directions hold"); the old per-line
+        # <p class='check-detail'> loop is gone (pinned in the
+        # block-structure test above).
+        self.assertIn("boldNumbers(nbspUnits(esc(line)))", js)
 
     def test_donation_table_puts_victim_loss_second(self):
         # Mobile render at 360px (2026-11-18): the donation table is
