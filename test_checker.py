@@ -2022,8 +2022,12 @@ class TestChecker(unittest.TestCase):
         # /audit/ Track record was 40 items in 5 groups rendered as one
         # continuous wall, several screens with no folding or summary
         # (visual verdicts #51/#52). Each group is now a <details> with
-        # the group title as its summary: the page scans as five lines,
-        # and the strongest group stays open.
+        # the group title as its summary: the page scans as five lines.
+        # All five groups are closed by default (visual verdict #109
+        # item 2): the first group used to stay open, adding ~250px on
+        # desktop / ~500px on mobile and pushing "What you do not get"
+        # to the 3rd (desktop) / 7th (mobile) viewport; its summary line
+        # still carries the strongest claim, one click away.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2032,9 +2036,10 @@ class TestChecker(unittest.TestCase):
         track = audit[audit.index("<h2>Track record</h2>"):]
         self.assertEqual(track.count('<details class="track-group"'), 5)
         self.assertEqual(track.count("<summary>"), 5)
-        # Strongest proof first and open by default: the ended contests
-        # whose full awarded sets were re-verified.
-        self.assertIn('<details class="track-group" open>\n'
+        self.assertNotIn('<details class="track-group" open>', track)
+        # Strongest proof first: the ended contests whose full awarded
+        # sets were re-verified — now as a closed group like the rest.
+        self.assertIn('<details class="track-group">\n'
                       '<summary>Full awarded set re-verified — ended contests (3)</summary>',
                       track)
         # The two ended-contest groups used to share the same leading
