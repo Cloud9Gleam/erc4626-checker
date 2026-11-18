@@ -3575,6 +3575,30 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("<th>Donation (USDC)</th><th>Attacker net (USDC)</th>"
                          "<th>Victim loss (USDC)</th>", js)
 
+    def test_donation_table_has_scroll_hint_on_small_screens(self):
+        # Visual verdict #97 (2026-11-18): at 360px the donation table
+        # is 411px wide inside a 269px scroll wrap, so the fourth
+        # column is cut off with no sign the table scrolls sideways.
+        # A hint line under the table, shown only below 460px (the
+        # table's 411px min-content plus the page padding needs ~446px,
+        # so above that width there is nothing to scroll), tells the
+        # visitor to swipe. Both render paths carry the same hint.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        hint = ("<p class='twrap-hint'>Scroll sideways to see all four "
+                "columns &rarr;</p>")
+        self.assertIn(hint, html)
+        js = build.checker_results_html_js()
+        self.assertIn(hint, js)
+        self.assertIn(".twrap-hint{display:none}", build.CSS)
+        self.assertIn("@media (max-width:460px){.twrap-hint{display:block;",
+                      build.CSS)
+
     def test_loss_chart_bars_are_thick_and_rows_tight(self):
         # Visual verdict #59: on /checker/?preset=noprot the Victim loss
         # chart read as broken — four ~11px hairline bars in a ~140px
