@@ -3947,6 +3947,35 @@ class TestChecker(unittest.TestCase):
             ".track-group .track-list li:last-child{border-bottom:0;",
             worker)
 
+    def test_audit_page_h2s_have_a_section_marker(self):
+        # Visual verdict #103 (2026-11-18): /audit/ read as flat plain
+        # text — all 7 section h2s byte-identical (measured 2026-11-18:
+        # 22.1px/700, same grey 1px bottom border, same margin). The
+        # Track record groups became cards in the previous slice; this
+        # slice gives the section headings themselves a marker: larger
+        # type, a 4px green left bar in the site's green, and no
+        # full-width grey rule — scoped to .audit-page so no other
+        # page's headings move. Content and wording are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".audit-page h2{font-size:1.45em;border-bottom:0;"
+            "border-left:4px solid #0a7d2c;"
+            "padding:.05em 0 .05em .55em;margin:1.8em 0 .6em}",
+            build.CSS)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertTrue(audit.startswith('<div class="audit-page">'))
+        self.assertTrue(audit.rstrip().endswith("</div>"))
+        self.assertEqual(audit.count("<h2>"), 7)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(".audit-page h2{font-size:1.45em;", worker)
+        # Pages ride in worker.js JSON-escaped, so the wrapper's
+        # quotes appear backslash-escaped there.
+        self.assertIn('<div class=\\"audit-page\\">', worker)
+
     def test_audit_order_form_is_a_card(self):
         # Visual verdict #100 (2026-11-18): on /audit/ the Start
         # form's four inputs sat bare on the white page — no grouping
