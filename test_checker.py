@@ -3688,6 +3688,27 @@ class TestChecker(unittest.TestCase):
         # must not pick up the fit-to-content width.
         self.assertIn('<pre><code id="api-curl">', html)
 
+    def test_pay_note_is_full_width_strip(self):
+        # Visual verdict #93 leftover (2026-11-18): on /audit/ the
+        # payment-safety note was a 646px text line in a ~1170px row,
+        # leaving ~525px of empty green to its right. Slightly larger
+        # text alone would still leave ~400px, so the note is now a
+        # full-width tinted strip: it spans the pay-box like the other
+        # full-width lines and the row reads as occupied end to end.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".pay-row .pay-note{font-size:.95em;color:#374151;"
+            "flex:0 0 100%;background:#dcfce7;border:1px solid #bbe0c6;"
+            "border-radius:8px;padding:.55em .8em;box-sizing:border-box}",
+            build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("background:#dcfce7", worker)
+        self.assertIn("Double-check the address before sending", worker)
+
     def test_loss_chart_bars_are_thick_and_rows_tight(self):
         # Visual verdict #59: on /checker/?preset=noprot the Victim loss
         # chart read as broken — four ~11px hairline bars in a ~140px
