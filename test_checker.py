@@ -2035,7 +2035,15 @@ class TestChecker(unittest.TestCase):
         # Strongest proof first and open by default: the ended contests
         # whose full awarded sets were re-verified.
         self.assertIn('<details class="track-group" open>\n'
-                      '<summary>Ended contests — full awarded set re-verified (3)</summary>',
+                      '<summary>Full awarded set re-verified — ended contests (3)</summary>',
+                      track)
+        # The two ended-contest groups used to share the same leading
+        # words ("Ended contests — ...") and differed only in the
+        # subtitle after the dash (visual verdicts #107/#108): the
+        # distinguishing scope now leads, so the summaries are
+        # distinguishable at a glance.
+        self.assertIn('<details class="track-group">\n'
+                      '<summary>Bounded slice — ended contests (3)</summary>',
                       track)
         # The 33-item First Flight wall is collapsed by default — and its
         # heading count is honest: three reviews were added after the (30)
