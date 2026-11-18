@@ -3656,6 +3656,38 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:460px){.twrap-hint{display:block;",
                       build.CSS)
 
+    def test_email_params_block_fits_content_width(self):
+        # Visual verdict #76/#96 (2026-11-18): the email-params block
+        # is six short lines in a full-width dark box — the text fills
+        # the top-left ~240px of a ~1200px box, the rest reads as empty
+        # dark space. Measured before the fix: pre 1201.5px wide,
+        # code 238.7px; last-line-to-bottom gap only 22px, so the
+        # emptiness is to the right, not below. The block now fits its
+        # content width; max-width keeps it full-width on narrow
+        # screens where the longest line already fills the card. The
+        # API curl block keeps full width — its one line is long
+        # enough to fill it, so the rule is scoped to .email-para.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".email-para pre{width:max-content;max-width:100%}",
+                      build.CSS)
+        self.assertNotIn(".email-para pre{width:100%", build.CSS)
+        # Both render paths carry the same .email-para block, so the
+        # one CSS rule covers the static page and the Worker re-render.
+        html = build.checker_body()
+        self.assertIn('<div class="email-para">', html)
+        self.assertIn('<pre><code id="email-params">', html)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("email-para", worker)
+        self.assertIn(".email-para pre{width:max-content;max-width:100%}",
+                      worker)
+        # The curl example is a plain <pre> outside .email-para and
+        # must not pick up the fit-to-content width.
+        self.assertIn('<pre><code id="api-curl">', html)
+
     def test_loss_chart_bars_are_thick_and_rows_tight(self):
         # Visual verdict #59: on /checker/?preset=noprot the Victim loss
         # chart read as broken — four ~11px hairline bars in a ~140px
