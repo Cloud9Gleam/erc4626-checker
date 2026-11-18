@@ -3717,24 +3717,28 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:460px){.twrap-hint{display:block;",
                       build.CSS)
 
-    def test_email_params_block_fits_content_width(self):
-        # Visual verdict #76/#96 (2026-11-18): the email-params block
-        # is six short lines in a full-width dark box — the text fills
-        # the top-left ~240px of a ~1200px box, the rest reads as empty
-        # dark space. Measured before the fix: pre 1201.5px wide,
-        # code 238.7px; last-line-to-bottom gap only 22px, so the
-        # emptiness is to the right, not below. The block now fits its
-        # content width; max-width keeps it full-width on narrow
-        # screens where the longest line already fills the card. The
-        # API curl block keeps full width — its one line is long
-        # enough to fill it, so the rule is scoped to .email-para.
+    def test_email_params_block_is_light_full_width_box(self):
+        # Visual verdict #98 (2026-11-18) supersedes #76/#96: the
+        # content-width fix made the block a ~270px narrow dark slab
+        # (21% of the card) under a full-width dark curl example — it
+        # reads as an unfinished half-block. Both dark shapes are
+        # wrong (full-width dark leaves ~960px empty dark space to the
+        # right; narrow dark looks broken), so the block is no longer
+        # a dark code block: full-width light box in the page's #f9fafb
+        # form language, thin border. The API curl block keeps the
+        # dark full-width code style — its one long line fills it, so
+        # the rule is scoped to .email-para.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn(".email-para pre{width:max-content;max-width:100%}",
-                      build.CSS)
-        self.assertNotIn(".email-para pre{width:100%", build.CSS)
+        self.assertIn(
+            ".email-para pre{background:#f9fafb;color:#111827;"
+            "border:1px solid #e5e7eb}",
+            build.CSS)
+        self.assertNotIn(".email-para pre{width:max-content", build.CSS)
+        # The global dark pre style still exists for the curl block.
+        self.assertIn("pre{background:#111827;color:#e5e7eb", build.CSS)
         # Both render paths carry the same .email-para block, so the
         # one CSS rule covers the static page and the Worker re-render.
         html = build.checker_body()
@@ -3743,10 +3747,12 @@ class TestChecker(unittest.TestCase):
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn("email-para", worker)
-        self.assertIn(".email-para pre{width:max-content;max-width:100%}",
+        self.assertIn(".email-para pre{background:#f9fafb;color:#111827;"
+                      "border:1px solid #e5e7eb}",
                       worker)
+        self.assertNotIn("width:max-content", worker)
         # The curl example is a plain <pre> outside .email-para and
-        # must not pick up the fit-to-content width.
+        # keeps the dark full-width code style.
         self.assertIn('<pre><code id="api-curl">', html)
 
     def test_pay_note_is_full_width_strip(self):
