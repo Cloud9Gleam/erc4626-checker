@@ -2577,6 +2577,42 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(pages["/"],
                          "Independent security research for ERC-4626 vaults")
 
+    def test_homepage_h1_lives_inside_the_hero(self):
+        # Visual verdict #89 secondary observation: the plain h1 above
+        # the hero ("Independent security research for ERC-4626
+        # vaults") read weaker than the hero's own lead question, so
+        # the headline hierarchy was inverted — the page's most
+        # prominent text was not its h1. The question is now the h1,
+        # inside the hero, and page() renders no outer h1 for the
+        # homepage. The <title> keeps the positioning title, and every
+        # other page keeps its title h1.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home_body = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        home = build.page("Independent security research for ERC-4626 vaults",
+                          "d", "k", home_body, "/", h1=False)
+        self.assertEqual(home.count("<h1>"), 1)
+        self.assertIn("<h1>Is your vault's accounting safe?</h1>", home)
+        self.assertNotIn("<h1>Independent security research", home)
+        self.assertIn(
+            "<title>Independent security research for ERC-4626 vaults"
+            " — Hatch Worker</title>", home)
+        hero = home[home.index('<div class="hero">'):
+                    home.index("This site is one independent researcher")]
+        self.assertIn("<h1>Is your vault's accounting safe?</h1>", hero)
+        # The hero h1 is white on the dark hero, same size as other
+        # pages' h1s on desktop, same size as the mobile h1 at <=640px.
+        self.assertIn(".hero h1{color:#fff;font-size:1.9em;"
+                      "line-height:1.25;margin:0 0 .4em}", build.CSS)
+        self.assertIn(".hero h1{font-size:1.55em}", build.CSS)
+        # Other pages are untouched: their title is still the h1.
+        other = build.page("ERC-4626 checker — donation-inflation model",
+                           "d", "k", "<p>x</p>", "/checker/")
+        self.assertIn(
+            "<h1>ERC-4626 checker — donation-inflation model</h1>", other)
+
     def test_audit_pay_row_address_hugs_content(self):
         # Visual verdict #59 supersedes #58: with the shortened
         # display (0xD07C…dC64, ~15 chars) the full-width address box
