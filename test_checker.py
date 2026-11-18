@@ -3601,6 +3601,67 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<p class='check-detail'>",
                       build.checker_results_html_js())
 
+    def test_check_detail_numbers_are_bold(self):
+        # Visual verdict #94 (second pass), the other half: the
+        # detail-box fill went #f9fafb -> #f3f4f6, but labels and
+        # figures still share weight and colour — a 16-digit Preview
+        # figure fills a whole line without standing out. Figures are
+        # now <strong> in both render paths; labels stay regular.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Unit helper, composed after nbsp_units: the figure bolds,
+        # the unit and the label do not.
+        self.assertEqual(
+            build.bold_numbers(build.nbsp_units(
+                "yield 10,000.000000\u00a0USDC, fee 1,000.000000\u00a0USDC")),
+            "yield <span class='nowrap'><strong>10,000.000000</strong> "
+            "USDC</span>, fee <span class='nowrap'><strong>1,000.000000"
+            "</strong> USDC</span>")
+        # Bare counts bold too: the default preset's minimum-viable
+        # line ("no zero-share deposit: 1 base unit mints 1 share")
+        # carries no unit after its figures, so a nowrap-only CSS
+        # rule would miss it.
+        self.assertEqual(
+            build.bold_numbers(
+                "no zero-share deposit: 1 base unit mints 1 share"),
+            "no zero-share deposit: <strong>1</strong> base unit "
+            "mints <strong>1</strong> share")
+        # Both presets, Python path: every figure in every detail
+        # box is wrapped, and the count of <strong> matches the
+        # count of numeric tokens exactly (no figure left bare, no
+        # label wrapped by accident).
+        for v, kwargs in (
+                (Vault(decimals_offset=6, min_deposit=1_000_000,
+                       perf_fee_bps=1000), {}),
+                (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                 {"off": 0, "mn": 0, "fee": 0})):
+            html = build.results_html(run_all(v), **kwargs)
+            boxes = re.findall(r"<p class='check-detail'>(.*?)</p>", html)
+            self.assertGreater(len(boxes), 0)
+            for inner in boxes:
+                plain = re.sub(r"<[^>]+>", "", inner)
+                nums = re.findall(r"-?\d[\d,]*(?:\.\d+)?", plain)
+                # A box may carry no figure at all ("floor/ceil
+                # directions hold"); the count must still match.
+                self.assertEqual(inner.count("<strong>"), len(nums))
+                self.assertEqual(inner.count("</strong>"), len(nums))
+            # Spot check the long figures read as bold number + plain
+            # unit, and a label stays outside any <strong>.
+            self.assertIn("<strong>10,000.000000</strong> USDC", html)
+            self.assertIn("yield <span class='nowrap'><strong>", html)
+            self.assertNotIn("<strong>yield", html)
+        # Worker-side template: same helper, same application.
+        js = build.checker_results_html_js()
+        self.assertIn(
+            "function boldNumbers(s){return s.replace("
+            "/-?\\d[\\d,]*(?:\\.\\d+)?/g,\"<strong>$&</strong>\");}",
+            js)
+        self.assertIn(
+            "boldNumbers(nbspUnits(esc(line)))", js)
+
     def test_donation_table_puts_victim_loss_second(self):
         # Mobile render at 360px (2026-11-18): the donation table is
         # 411px wide inside a 284px scroll wrap, so the third column
@@ -15994,6 +16055,27 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(row_1k["victim_loss"], 901)
         self.assertLessEqual(row_1k["victim_loss"], 1000)
         self.assertGreater(row_1k["victim_loss"], victim // 1000)
+
+    def test_readme_guide_count_matches_site(self):
+        # The README once said "175 worked ERC-4626 accounting
+        # guides" while the site already had 179 guide pages (178
+        # accounting guides + the how-to-use tutorial, which is a
+        # usage walkthrough, not a worked attack). The count goes
+        # stale every time a guide lands and nobody updates the
+        # README, so pin it: the number in the README must equal
+        # the accounting-guide pages in the site build.
+        import re
+        import sys
+        from pathlib import Path
+        readme = (Path(__file__).parent / "README.md").read_text()
+        m = re.search(r"(\d+) worked ERC-4626 accounting guides", readme)
+        self.assertIsNotNone(m, "README guide-count sentence missing")
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        guides = [p for p, t, d, k, b in build.PAGES
+                  if p.startswith("/guides/") and p != "/guides/"
+                  and p != "/guides/how-to-use-the-erc4626-checker/"]
+        self.assertEqual(int(m.group(1)), len(guides))
 
     def test_action_exposes_vault_state_inputs(self):
         # The CLI gained --vault-assets-usdc / --vault-shares but
