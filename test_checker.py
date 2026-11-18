@@ -3370,10 +3370,14 @@ class TestChecker(unittest.TestCase):
         # trail a light-grey remainder — the track's presence was
         # inconsistent, reading as a half-empty bar. Bars now sit
         # inside the same hairline frame every row carries
-        # (verdict #51); width alone carries the scale.
+        # (verdict #51); width alone carries the scale. Verdict #95
+        # residual: that 1px #6b7280 frame made the ~89% unfilled
+        # remainder of a short bar read as an empty placeholder box,
+        # so the frame is gone too — the fill alone shows, against
+        # the white card, with the note stating the scale.
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
-                      "border:1px solid #6b7280;box-sizing:border-box}",
+                      "border:0}",
                       build.CSS)
         self.assertIn("Bars are scaled to the worst row in this table", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
@@ -3504,13 +3508,21 @@ class TestChecker(unittest.TestCase):
         # rows. Each detail line is now its own light-grey box
         # (check-detail), in both render paths; the donation card
         # keeps its table + chart, which already has structure.
+        # Visual verdict #94 (second pass): #f9fafb was only 6/255
+        # off the white card, so the box read as a hairline frame —
+        # the fill is now #f3f4f6 (12/255 off white, the grey the
+        # site already uses for table headers and loss tracks). No
+        # confusion: the donation card is the only place with a loss
+        # track or table header, and it has no check-detail lines.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            ".check-card p.check-detail{background:#f9fafb;border:1px solid "
+            ".check-card p.check-detail{background:#f3f4f6;border:1px solid "
             "#e5e7eb;border-radius:6px;padding:.45em .7em}", build.CSS)
+        self.assertNotIn(
+            ".check-card p.check-detail{background:#f9fafb;", build.CSS)
         for v, kwargs in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
                        perf_fee_bps=1000), {}),
@@ -3591,7 +3603,7 @@ class TestChecker(unittest.TestCase):
         self.assertIsNotNone(m, ".loss-row rule not found")
         self.assertIn("margin:.25em 0", m.group(0))
         self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
-                      "border:1px solid #6b7280;box-sizing:border-box}",
+                      "border:0}",
                       build.CSS)
         self.assertNotIn(".loss-chart--bare .loss-track--empty{background:transparent;"
                          "border-color:",
