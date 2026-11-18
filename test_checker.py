@@ -2358,6 +2358,55 @@ class TestChecker(unittest.TestCase):
         body = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn('<div class="hero">', body)
 
+    def test_homepage_intro_has_subheading(self):
+        # Visual verdict #105 item 3: below the hero sat a ~5-line
+        # full-width paragraph with no subheading separating it from
+        # the hero above and the three cards below — the page read as
+        # one dense block. The intro section now opens with an h2,
+        # and the paragraph is split in two at the sentence break;
+        # the wording is unchanged, only the structure.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        body = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        intro = '<h2>What this site is</h2>\n<p>This site is one independent researcher'
+        self.assertIn(intro, body)
+        # Order: hero, then the subheading, then the two intro
+        # paragraphs, then the cards.
+        self.assertLess(body.index('<div class="hero">'),
+                        body.index('<h2>What this site is</h2>'))
+        self.assertLess(body.index('<h2>What this site is</h2>'),
+                        body.index('<p>This site is one independent researcher'))
+        self.assertLess(body.index('Nothing here is a paid promotion'),
+                        body.index('<div class="cards">'))
+        # The split keeps every sentence: first paragraph ends at
+        # "came back clean.", the second opens with the clean-negative
+        # sentence.
+        first = body.index('<p>This site is one independent researcher')
+        self.assertIn('the slices that came back clean.</p>',
+                      body[first:first + 400])
+        second = body.index('<p>A clean negative is reported', first)
+        self.assertIn('Nothing here is a paid promotion and nothing here '
+                      'connects a wallet.</p>',
+                      body[second:second + 200])
+        # The h2 is main's first child, so the global h2 top margin
+        # (1.6em) must not stack on main's padding under the hero.
+        self.assertIn("main>h2:first-child{margin-top:0}", build.CSS)
+        # The render hoist must not swallow the h2 into the hero band:
+        # the rendered page has the bleed band first, then the h2
+        # inside <main>.
+        pages = build.render_all()
+        home = pages["/"]
+        self.assertEqual(home.count('<div class="hero-bleed">'), 1)
+        bleed = home.index('<div class="hero-bleed">')
+        main = home.index("<main>")
+        h2 = home.index('<h2>What this site is</h2>')
+        self.assertLess(bleed, main)
+        self.assertLess(main, h2)
+        self.assertNotIn('<h2>What this site is</h2>',
+                         home[bleed:main])
+
     def test_copy_link_button_fills_banner_on_mobile(self):
         # Verdict #100 minor observation: whitespace around the
         # "Copy link to these results" button. Desktop falsified
