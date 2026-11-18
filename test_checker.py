@@ -2207,6 +2207,12 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Victim loses", hero)
         self.assertIn("1,000,000 USDC", hero)
         self.assertIn("0.909091 USDC", hero)
+        # Visual verdict #106: the second sentence was a fragment —
+        # "With the standard offset-6 defense, under 0.001 USDC."
+        # has no verb. The loss is the subject now; the number is
+        # unchanged (the 0.001 USDC pass bound from the model).
+        self.assertIn("the loss is under", hero)
+        self.assertNotIn("defense, under", hero)
         self.assertIn("100,000 USDC", hero)
         # The loss figure is the model's own worst case, re-derived
         # here: unprotected vault, 100,000 USDC victim deposit, worst
