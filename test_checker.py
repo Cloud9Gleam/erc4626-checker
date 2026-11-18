@@ -3753,14 +3753,22 @@ class TestChecker(unittest.TestCase):
         # form language, thin border. The API curl block keeps the
         # dark full-width code style — its one long line fills it, so
         # the rule is scoped to .email-para.
+        # Follow-up from visual verdict #100 (2026-11-18, minor
+        # observation): #f9fafb on the white main card is ~1.02:1
+        # contrast, so the box was invisible and the block read as
+        # plain text with no code-box background. The fill is now
+        # the site's established detail gray #f3f4f6 (same as
+        # .check-detail) with the deeper #d1d5db border — still
+        # light, still full-width, but visibly a box.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            ".email-para pre{background:#f9fafb;color:#111827;"
-            "border:1px solid #e5e7eb}",
+            ".email-para pre{background:#f3f4f6;color:#111827;"
+            "border:1px solid #d1d5db}",
             build.CSS)
+        self.assertNotIn(".email-para pre{background:#f9fafb", build.CSS)
         self.assertNotIn(".email-para pre{width:max-content", build.CSS)
         # The global dark pre style still exists for the curl block.
         self.assertIn("pre{background:#111827;color:#e5e7eb", build.CSS)
@@ -3772,9 +3780,10 @@ class TestChecker(unittest.TestCase):
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn("email-para", worker)
-        self.assertIn(".email-para pre{background:#f9fafb;color:#111827;"
-                      "border:1px solid #e5e7eb}",
+        self.assertIn(".email-para pre{background:#f3f4f6;color:#111827;"
+                      "border:1px solid #d1d5db}",
                       worker)
+        self.assertNotIn(".email-para pre{background:#f9fafb", worker)
         self.assertNotIn("width:max-content", worker)
         # The curl example is a plain <pre> outside .email-para and
         # keeps the dark full-width code style.
@@ -3820,8 +3829,18 @@ class TestChecker(unittest.TestCase):
         html = build.checker_body()
         self.assertIn("<p class='params'>Parameters:", html)
         self.assertIn("offset=6, min deposit=1,000,000 base units (1 USDC)", html)
+        # Visual verdict #100 (2026-11-18): the bar read as one dense
+        # paragraph — the three sentences ran together and wrapped to
+        # two lines at desktop width. Each of the three parameter
+        # groups now gets its own line (<br> between groups); the
+        # numbers and the wording are untouched.
+        self.assertIn("fee=1000 bps.<br>\nVictim deposit", html)
+        self.assertIn("1,000,000,000 USDC.<br>\nVault state", html)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(".params{background:#f9fafb;", worker)
+        self.assertIn("bps.<br>Victim deposit", worker)
+        self.assertIn("USDC.<br>Vault state", worker)
         self.assertIn(".params{background:#f9fafb;", worker)
         # paramsHTML is one of the two places the paragraph is built
         # in the Worker — the other is the baked static copy inside
