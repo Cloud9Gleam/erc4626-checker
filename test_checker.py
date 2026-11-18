@@ -16573,6 +16573,66 @@ class TestChecker(unittest.TestCase):
             self.assertIn(num, build)
         self.assertIn('<a href="/guides/erc4626-burnshares-sandwich/">',
                       build)
+    def test_multi_token_par_swap_model_numbers(self):
+        # Pins the multi-token par-swap model (named 2026-11-18 from the
+        # Buttonwood USDX audit read): a MultiTokenVault mints 1 share
+        # per 1 token unit deposited, whichever supported token arrives,
+        # and lets the redeemer choose which token to take out -- no
+        # swap, no quote, no oracle. The moment the market values two
+        # supported tokens differently, cheap-in / good-out drains the
+        # vault toward the cheapest token and the loss lands on holders.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "multi-token-par-swap-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "multi_token_par_swap_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        UNIT = model.UNIT
+
+        # Setup: 100,000 USDC / 100,000 shares, $1.00/share; USDT at $0.98.
+        self.assertEqual(model.usdc, 100_000 * UNIT)
+        self.assertEqual(model.usdt, 0)
+        self.assertEqual(model.shares_total, 100_000)
+        self.assertEqual(model.price_usdt, Fraction(98, 100))
+        self.assertEqual(model.value_usd(), 100_000)
+        self.assertEqual(model.share_price_usd(), 1)
+        # The swap: deposit 100,000 USDT (cost $98,000), mint 100,000
+        # shares 1:1, redeem for 100,000 USDC worth $100,000.
+        self.assertEqual(model.attack_cost_usd, 98_000)
+        self.assertEqual(model.attack_shares, 100_000)
+        self.assertEqual(model.attack_proceeds_usd, 100_000)
+        self.assertEqual(model.attack_profit, 2_000)
+        # Vault left with only depegged USDT: $98,000 backing 100,000
+        # shares ($0.98/share); holders lose $2,000 (2%).
+        self.assertEqual(model.usdc_after, 0)
+        self.assertEqual(model.usdt_after, 100_000 * UNIT)
+        self.assertEqual(model.shares_after, 100_000)
+        self.assertEqual(model.value_after, 98_000)
+        self.assertEqual(model.share_after, Fraction(98, 100))
+        self.assertEqual(model.holder_loss, 2_000)
+        # The loss scales with the gap: profit per token is (1 - p).
+        self.assertEqual(
+            Fraction(100_000) * (Fraction(1) - Fraction(99, 100)), 1_000)
+        self.assertEqual(
+            Fraction(100_000) * (Fraction(1) - Fraction(90, 100)), 10_000)
+        # Reverse direction loses $2,000 to the swapper.
+        self.assertEqual(model.reverse_loss, 2_000)
+        # Steady state, no depeg event (Consol): 10,000 USDX ($1.00) in,
+        # 10,000 FAP ($1.50) out -- profit $5,000; share $1.25 -> $1.00.
+        self.assertEqual(model.consol_value, 25_000)
+        self.assertEqual(model.consol_share, Fraction(5, 4))
+        self.assertEqual(model.consol_proceeds, 15_000)
+        self.assertEqual(model.consol_profit, 5_000)
+        self.assertEqual(model.consol_value_after, 20_000)
+        self.assertEqual(model.consol_share_after, 1)
+        # Partial swap of 25,000 tokens: profit $500, vault $99,500,
+        # share $0.995.
+        self.assertEqual(model.partial_profit, 500)
+        self.assertEqual(model.partial_value, Fraction(99_500))
+        self.assertEqual(model.partial_share, Fraction(199, 200))
 
 
 if __name__ == "__main__":
