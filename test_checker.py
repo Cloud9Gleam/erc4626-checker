@@ -2304,6 +2304,60 @@ class TestChecker(unittest.TestCase):
                       ".hero-stats{flex-direction:column;gap:.35em}"
                       ".hero-stats span{flex:none}}", build.CSS)
 
+    def test_homepage_hero_is_full_bleed(self):
+        # Visual verdict #105 item 2: at 1919px the homepage hero was
+        # a rounded card inside the 1280px column — ~320px of bare
+        # margin on each side, and the dark green band stopped short
+        # of the viewport edges. The hero is now hoisted out of the
+        # body at render time and served in a full-width band (same
+        # pattern as the header nav): the band carries the gradient
+        # edge to edge, the inner .hero is centred at the site width.
+        # The hero itself is untouched — same h1, CTA, stats, flow.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = build.render_all()
+        home = pages["/"]
+        self.assertEqual(home.count('<div class="hero-bleed">'), 1)
+        bleed = home.index('<div class="hero-bleed">')
+        hero = home.index('<div class="hero">', bleed)
+        wrap = home.index('<div class="wrap">')
+        main = home.index("<main>")
+        # Order: nav, bleed (with the hero inside), then the column.
+        self.assertLess(bleed, hero)
+        self.assertLess(hero, wrap)
+        self.assertLess(bleed, main)
+        # The hero sits before <main> opens, so the band is not framed
+        # by the white card's border, radius, or padding.
+        self.assertLess(hero, main)
+        hero_block = home[hero:home.index(
+            '<p>This site is one independent researcher', hero)]
+        self.assertIn("<h1>Is your vault's accounting safe?</h1>",
+                      hero_block)
+        self.assertIn('class="cta"', hero_block)
+        self.assertIn('<div class="flow"', hero_block)
+        self.assertIn('class="hero-stats"', hero_block)
+        # The band carries the gradient; the inner hero is transparent
+        # (its own gradient would restart at the 1280px box and seam),
+        # centred, square-cornered, shadowless.
+        self.assertIn(
+            ".hero-bleed{background:linear-gradient(135deg,#0c3b2e,#0a5c38)}",
+            build.CSS)
+        self.assertIn(
+            ".hero-bleed .hero{background:transparent;max-width:1280px;"
+            "margin:0 auto;border-radius:0;box-shadow:none;"
+            "padding:1.5em 1.25em .9em}", build.CSS)
+        # Only the homepage has a hero band: the shared CSS is inlined
+        # on every page, so assert on the markup, not the class name.
+        self.assertNotIn('<div class="hero-bleed">', pages["/checker/"])
+        self.assertNotIn('<div class="hero-bleed">', pages["/audit/"])
+        self.assertNotIn('<div class="hero-bleed">', pages["/guides/"])
+        # The hoist is content-preserving: the body still holds the
+        # hero (body-based hero tests keep slicing it from there).
+        body = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        self.assertIn('<div class="hero">', body)
+
     def test_copy_link_button_fills_banner_on_mobile(self):
         # Verdict #100 minor observation: whitespace around the
         # "Copy link to these results" button. Desktop falsified
