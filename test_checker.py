@@ -2317,12 +2317,12 @@ class TestChecker(unittest.TestCase):
         # hero top is now two columns — the intro paragraphs on the
         # left, a panel listing the checker's six exact-integer checks
         # on the right. The six names are the checker's own (same list
-        # the checker page and the home card use); the panel link has
-        # no arrow glyph — the flow-diagram test forbids &rarr; anywhere
-        # in the hero before the CTA. Visual verdict #89: the link was
-        # bare bold text next to the filled white CTA on the left, so
-        # it did not read as an action; it is now a secondary outline
-        # button (class cta2), still with no arrow glyph.
+        # the checker page and the home card use). Visual verdict #89
+        # gave the panel its own secondary outline button (class
+        # cta2); visual verdict #103 item 3 removed it — the hero
+        # carried two button-style CTAs to the same destination, so
+        # the panel is now list + note only and the filled white CTA
+        # on the left is the hero's single action.
         # Visual verdict #90 secondary observation: the left column
         # also carries justify-content:space-between, so the column's
         # slack spreads evenly instead of pooling into one dead band
@@ -2354,7 +2354,6 @@ class TestChecker(unittest.TestCase):
                       "Preview consistency", "Fee conservation",
                       "Share-price sanity", "Minimum viable deposit"):
             self.assertIn("<li>" + check + "</li>", hero)
-        self.assertIn('<a class="cta2" href="/checker/">Run the checker</a>', hero)
         # The intro paragraphs live inside the text column, ahead of
         # the panel in document order.
         top = hero.index('<div class="hero-top">')
@@ -2362,39 +2361,29 @@ class TestChecker(unittest.TestCase):
         self.assertLess(hero.index("Is your vault"),
                         hero.index('<aside class="hero-checks">'))
 
-    def test_hero_checks_panel_link_is_a_secondary_button(self):
-        # Visual verdict #89: the right panel's "Run the checker" link
-        # was bare bold white text — same destination as the filled
-        # white CTA on the left, but with none of its affordance, so
-        # the panel's action did not read as an action. It is now a
-        # secondary outline button: transparent, white border, same
-        # white bold text — visibly a button, visibly secondary to the
-        # filled primary CTA. No arrow glyph (the flow-diagram test
-        # forbids &rarr; in the hero before the CTA).
+    def test_hero_has_one_cta_no_duplicate_in_checks_panel(self):
+        # Visual verdict #103 item 3: the hero carried two
+        # button-style CTAs to /checker/ — the filled white .cta on
+        # the left and an outline .cta2 inside the right checks
+        # panel. The panel's button is removed; the hero's single
+        # action is the filled white CTA. The panel keeps its list
+        # and note, and no cta2 rule or link survives anywhere.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
-        self.assertIn(
-            ".hero-checks a.cta2{display:inline-block;"
-            "border:1px solid rgba(255,255,255,.65);",
-            build.CSS)
-        self.assertIn(
-            ".hero-checks a.cta2:hover{background:rgba(255,255,255,.12);"
-            "text-decoration:none}", build.CSS)
-        # The primary CTA stays filled white — the two buttons differ
-        # in kind, not just in position.
+        self.assertNotIn("cta2", build.CSS)
+        self.assertNotIn("cta2", home)
         self.assertIn(
             ".hero a.cta{display:inline-block;background:#fff;",
             build.CSS)
         start = home.index('<div class="hero">')
         end = home.index("This site is one independent researcher", start)
         hero = home[start:end]
-        self.assertIn(
-            '<a class="cta2" href="/checker/">Run the checker</a>', hero)
+        self.assertEqual(hero.count('class="cta"'), 1)
         aside = hero[hero.index('<aside class="hero-checks">'):]
-        self.assertIn('class="cta2"', aside)
+        self.assertNotIn("<a ", aside)
 
     def test_hero_stats_sits_flush_at_column_bottom(self):
         # Visual verdict #90 (desktop 1919x998): the right panel's
@@ -2457,8 +2446,10 @@ class TestChecker(unittest.TestCase):
         note = ('<p class="hero-checks-note">Exact integers only — '
                 'no floats, no rounding, no live chain read.</p>')
         self.assertIn(note, aside)
-        # The note sits after the panel link, at the panel's foot.
-        self.assertLess(aside.index("Run the checker"),
+        # The note sits after the checks list, at the panel's foot
+        # (verdict #103 item 3 removed the panel's duplicate CTA link,
+        # so the list's last item is the note's predecessor).
+        self.assertLess(aside.index("Minimum viable deposit"),
                         aside.index("hero-checks-note"))
 
     def test_hero_stats_strip_fills_left_column(self):
