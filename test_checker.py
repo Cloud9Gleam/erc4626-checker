@@ -15890,6 +15890,46 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn('&#10003;', src)
         self.assertNotIn('&#10005;', src)
 
+    def test_copy_link_button_rides_inside_banner(self):
+        # Visual verdict #100 leftover (2026-11-18): "Copy link to
+        # these results" sat in its own <p> between the banner and
+        # the first card -- a stranded row; measured live at 1919px:
+        # banner->card gap 95.3px, the row alone 48.7px + 22.1px
+        # margins. The button now rides inside the banner h2
+        # (floated right on desktop, block below the text on
+        # <=640px), so the stranded row and its gap are gone; the
+        # copy script still ships once, right after the banner.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn('class="result-banner pass"', passed)
+        self.assertIn('copy-link-btn', passed)
+        # Button (and its status span) sit inside the banner h2,
+        # before the closing tag; no stranded <p> row remains.
+        self.assertLess(passed.index('copy-link-btn'),
+                        passed.index('</h2>'))
+        self.assertNotIn('<p><button', passed)
+        self.assertEqual(passed.count('function copyResultsLink'), 1)
+        self.assertEqual(passed.count('Copy link to these results'), 1)
+        # Both renderers carry the button: Python markup + JS mirror.
+        # 'Copy link to these results' appears 2x in build.py: the
+        # COPY_LINK_HTML comment and the JS mirror (the Python markup
+        # splits the phrase across two string literals, so it does
+        # not match as one substring there).
+        src = (Path.home() / "workspace/taskmarket/site/build.py"
+               ).read_text()
+        self.assertEqual(src.count('Copy link to these results'), 2)
+        # 'copy-link-btn' appears 4x: CSS rule + mobile rule + Python
+        # markup + JS mirror.
+        self.assertEqual(src.count('copy-link-btn'), 4)
+        self.assertIn('.result-banner .copy-link-btn{float:right', src)
+        self.assertIn('@media (max-width:640px){.result-banner '
+                      '.copy-link-btn{float:none;display:block', src)
 
     def test_guide_link_is_named_and_at_card_bottom(self):
         # Visual verdict #54 item c (2026-11-17): "Read the guide
