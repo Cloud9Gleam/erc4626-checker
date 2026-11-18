@@ -3599,11 +3599,11 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("loss-too-small", js)
         self.assertNotIn("too small to draw", js)
 
-    def test_check_detail_lines_are_boxed(self):
+    def test_check_detail_lines_share_one_block_per_card(self):
         # Visual verdict #89: the non-donation detail lines were bare
         # <p> paragraphs — the evidence a PASS card exists to show
         # looked like body text, no background, no separation between
-        # rows. Each detail line is now its own light-grey box
+        # rows. Each detail line became its own light-grey box
         # (check-detail), in both render paths; the donation card
         # keeps its table + chart, which already has structure.
         # Visual verdict #94 (second pass): #f9fafb was only 6/255
@@ -3612,21 +3612,22 @@ class TestChecker(unittest.TestCase):
         # site already uses for table headers and loss tracks). No
         # confusion: the donation card is the only place with a loss
         # track or table header, and it has no check-detail lines.
+        # Visual verdict #102 supersedes the per-line box: 11 grey
+        # bands (1-4 per card) were the site's ugliest element, so
+        # the lines now share one unfilled block per card
+        # (check-details) with the slate accent on the group.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        # Visual verdict #100 (second pass): flat grey box gained
-        # hierarchy — slate left accent bar, deeper border, 1px
-        # shadow; fill stays #f3f4f6 per verdict #94.
+        # Visual verdict #102: one unfilled block per card, slate
+        # left accent on the group, no fill/border/shadow on the
+        # lines. The old per-line box rule must not survive.
         self.assertIn(
-            ".check-card p.check-detail{background:#f3f4f6;border:1px solid "
-            "#d1d5db;border-left:3px solid #6b7280;border-radius:6px;"
-            "padding:.45em .7em .45em .85em;box-shadow:0 1px 2px "
-            "rgba(17,24,39,.06)}", build.CSS)
+            ".check-card .check-details{border-left:3px solid #6b7280;"
+            "padding:.1em 0 .1em .85em;margin:.5em 0}", build.CSS)
         self.assertNotIn(
-            ".check-card p.check-detail{background:#f3f4f6;border:1px solid "
-            "#e5e7eb;border-radius:6px;padding:.45em .7em}", build.CSS)
+            ".check-card p.check-detail{background:#f3f4f6;", build.CSS)
         self.assertNotIn(
             ".check-card p.check-detail{background:#f9fafb;", build.CSS)
         for v, kwargs in (
@@ -3642,11 +3643,17 @@ class TestChecker(unittest.TestCase):
             html = build.results_html(results, **kwargs)
             self.assertEqual(html.count("<p class='check-detail'>"),
                              n_lines)
+            # One detail block per non-donation card, not one per line.
+            self.assertEqual(html.count("<div class='check-details'>"),
+                             len([r for r in results
+                                  if r["name"] != "donation_inflation"]))
             # No bare <p> wraps a detail line any more: every string
-            # detail line sits inside its box.
+            # detail line sits inside its block.
             self.assertNotIn("<p>yield ", html)
             self.assertNotIn("<p>price per ", html)
-        # The Worker-side template renders the same boxes.
+        # The Worker-side template renders the same block.
+        self.assertIn("<div class='check-details'>",
+                      build.checker_results_html_js())
         self.assertIn("<p class='check-detail'>",
                       build.checker_results_html_js())
 
@@ -3839,8 +3846,12 @@ class TestChecker(unittest.TestCase):
         # between the Run checks button and the result banner was a
         # bare full-width line of small grey dense text — it read as
         # a raw data dump next to the cards around it. It is now a
-        # light box in the page's #f9fafb form language; the text is
-        # untouched, so every number stays exactly as verified.
+        # light box in the page's #f9fafb form language.
+        # Visual verdict #100 (2026-11-18) follow-up: the bar was
+        # still dense — the min deposit was stated twice (base units
+        # AND USDC) and each line carried filler ("in the donation
+        # check", "assets"). Same numbers, shorter labels: each
+        # figure now appears exactly once, separated by middots.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -3852,19 +3863,26 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         html = build.checker_body()
         self.assertIn("<p class='params'>Parameters:", html)
-        self.assertIn("offset=6, min deposit=1,000,000 base units (1 USDC)", html)
+        self.assertIn("offset 6 · min deposit 1 USDC · fee 1000 bps.", html)
+        self.assertNotIn("base units (1 USDC)", html)
+        self.assertNotIn("in the donation check", html)
         # Visual verdict #100 (2026-11-18): the bar read as one dense
         # paragraph — the three sentences ran together and wrapped to
         # two lines at desktop width. Each of the three parameter
         # groups now gets its own line (<br> between groups); the
         # numbers and the wording are untouched.
-        self.assertIn("fee=1000 bps.<br>\nVictim deposit", html)
+        self.assertIn("fee 1000 bps.<br>\nVictim deposit", html)
         self.assertIn("1,000,000,000 USDC.<br>\nVault state", html)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".params{background:#f9fafb;", worker)
         self.assertIn("bps.<br>Victim deposit", worker)
         self.assertIn("USDC.<br>Vault state", worker)
+        # JS twin of the Python template must carry the same short
+        # wording (verdict #100 follow-up): no duplicated base-units
+        # figure, no "in the donation check" filler.
+        self.assertIn("min deposit \" + (p.mn / 1000000)", worker)
+        self.assertNotIn("in the donation check", worker)
         self.assertIn(".params{background:#f9fafb;", worker)
         # paramsHTML is one of the two places the paragraph is built
         # in the Worker — the other is the baked static copy inside
