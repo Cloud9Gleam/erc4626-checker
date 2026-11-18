@@ -1978,8 +1978,14 @@ class TestChecker(unittest.TestCase):
         checker = dict((p, b) for p, t, d, k, b in build.PAGES)["/checker/"]
         self.assertIn("The donation and minimum-viable-deposit checks use this.",
                       checker)
-        self.assertIn("Seeds the donation and minimum-viable-deposit checks;",
+        # The API note ends with a period now: its "; 0 = a new vault"
+        # tail was dropped (visual verdict #105 item 5) so the note fits
+        # one line at desktop -- the paragraph below the table and the
+        # form hint already say 0 means a new vault.
+        self.assertIn("Seeds the donation and minimum-viable-deposit checks.",
                       checker)
+        self.assertNotIn("minimum-viable-deposit checks; 0 = a new vault",
+                         checker)
         self.assertNotIn("Only the donation check uses", checker)
         self.assertNotIn("Seeds only the donation check", checker)
         self.assertIn("The donation and minimum-viable-deposit checks use this.",
@@ -4406,7 +4412,7 @@ class TestChecker(unittest.TestCase):
         # below them are 31-42px across all six (fee 31px, 4px LESS than
         # Vault shares now). The 3-line min-height on the checker hints
         # (3 x 1.65 unitless line-height = 4.95em in hint-local em, hint
-        # font-size .85em) is kept as a floor so a shorter hint can never
+        # font-size .88em) is kept as a floor so a shorter hint can never
         # leave a row short, not because any hint is 1 line. Scoped to
         # #checker-form so the audit form's hints are untouched. The form
         # visual loop is closed on this measurement: do not reopen it on
@@ -4416,6 +4422,37 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn("#checker-form .hint{min-height:4.95em}", build.CSS)
+
+    def test_checker_hints_and_api_values_readable(self):
+        # Visual verdict #105 items 4-5 (2026-11-18): the checker form
+        # hints were .85em #6b7280 -- small, low-contrast grey -- and
+        # the API table's preset Values cell wrapped to two lines at
+        # desktop while the vault_assets_usdc note broke after "and".
+        # Hints are now .88em #4b5563 (the same darker grey as
+        # .check-desc, ~6.9:1 on the form's #f9fafb); .88em is the
+        # largest size that keeps all six hints at 3 lines at desktop
+        # (pixel-measured 2026-11-18: .9em tips the Victim deposit hint
+        # to 4 lines and breaks the even rows). The Values column is
+        # nowrap -- the table already scrolls inside .twrap on mobile --
+        # and the vault_assets_usdc note is shortened to one line at
+        # desktop ("Vault assets, in USDC. Seeds the donation and
+        # minimum-viable-deposit checks."): its "; 0 = a new vault" tail
+        # is dropped, which the paragraph below the table and the form
+        # hint already say, and the lead is trimmed so the note no
+        # longer strands "checks." alone on a second line.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".hint{display:block;font-size:.88em;color:#4b5563",
+                      build.CSS)
+        self.assertIn(".api-params td:nth-child(2){white-space:nowrap}",
+                      build.CSS)
+        checker = dict((p, b) for p, t, d, k, b in build.PAGES)["/checker/"]
+        self.assertIn("alphaprimer, noprot, minfeeonly, offset18", checker)
+        self.assertIn("Vault assets, in USDC. Seeds the "
+                      "donation and minimum-viable-deposit checks.",
+                      checker)
 
     def test_checker_perf_fee_hint_says_what_the_model_does(self):
         # Visual verdict #78: the min-height fix made the boxes equal,
