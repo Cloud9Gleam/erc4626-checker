@@ -2211,6 +2211,32 @@ class TestChecker(unittest.TestCase):
                       ".hero-stats{flex-direction:column;gap:.35em}"
                       ".hero-stats span{flex:none}}", build.CSS)
 
+    def test_copy_link_button_fills_banner_on_mobile(self):
+        # Verdict #100 minor observation: whitespace around the
+        # "Copy link to these results" button. Desktop falsified
+        # it (headless 1919px: button 44px tall in a 79.6px banner,
+        # gaps 21.8/13.9px are the banner's own .75em padding, shared
+        # with the text; the middle gap is float:right layout, not
+        # button whitespace). Mobile confirmed a real dead band:
+        # 360px render, button 211.6px wide in a 309.8px banner,
+        # ~51px empty green to its right beyond the padding, while
+        # the banner is 163.5px tall. Fix: below 640px the button
+        # is a full-width block (box-sizing:border-box so the
+        # .55em 1.15em padding cannot overflow it), same stretch
+        # precedent as verdict #76's form button. Desktop float
+        # rule untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "@media (max-width:640px){.result-banner .copy-link-btn"
+            "{float:none;display:block;width:100%;box-sizing:border-box;"
+            "margin:.6em 0 0;text-align:center}}", build.CSS)
+        self.assertIn(
+            ".result-banner .copy-link-btn{float:right;font-size:.62em;"
+            "font-weight:600;margin:.15em 0 0 .8em}", build.CSS)
+
     def test_hero_cta_and_proof_use_nonbreaking_hyphens(self):
         # At 360px the hero CTA broke after the hyphen — "Run the
         # free ERC- / 4626 checker" — and the proof sentence broke
