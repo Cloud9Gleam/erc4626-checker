@@ -3824,6 +3824,57 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:460px){.twrap-hint{display:block;",
                       build.CSS)
 
+    def test_donation_note_column_uses_checkmark_not_repeated_words(self):
+        # Visual verdict #103 item 4 (2026-11-18): the donation table's
+        # Note column repeated the words "Within pass bound" on every
+        # clean row — three times on the default preset, twice on
+        # noprot — while the breach rows already said their verdict in
+        # words. A clean row now carries one green checkmark (title
+        # attribute keeps the words for hover), the breach wording is
+        # unchanged, and the legend lives once in the Pass bound
+        # paragraph below the table. Both render paths.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        # The words survive only in the checkmark's title attribute
+        # (hover text), never as a visible cell.
+        self.assertNotIn(">Within pass bound</td>", html)
+        self.assertEqual(html.count("title='Within pass bound'"), 2)
+        # noprot: two breaching rows keep the words, two clean rows get
+        # the checkmark.
+        self.assertEqual(html.count("Breaches pass bound"), 2)
+        self.assertEqual(
+            html.count("<td class='ok' title='Within pass bound'>\u2713</td>"), 2)
+        self.assertIn("\u2713 means within the pass bound; values in red "
+                      "breach it.", html)
+        # Default preset: all four rows clean, four checkmarks, no
+        # breach wording at all.
+        html_default = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertNotIn("Breaches pass bound", html_default)
+        self.assertNotIn(">Within pass bound</td>", html_default)
+        self.assertEqual(
+            html_default.count(
+                "<td class='ok' title='Within pass bound'>\u2713</td>"), 4)
+        self.assertEqual(html_default.count("title='Within pass bound'"), 4)
+        # The Worker-side template renders the same marks: the words
+        # appear once, in the checkmark's title attribute.
+        js = build.checker_results_html_js()
+        self.assertEqual(js.count("Within pass bound"), 1)
+        self.assertNotIn('"Within pass bound"', js)
+        self.assertIn("Breaches pass bound", js)
+        self.assertIn("\\u2713", js)
+        self.assertIn("class='ok' title='Within pass bound'", js)
+        self.assertIn("\\u2713 means within the pass bound; values in "
+                      "red breach it.", js)
+        self.assertIn(".ok{color:#0a7d2c;font-weight:700}", build.CSS)
+
     def test_email_params_block_is_light_full_width_box(self):
         # Visual verdict #98 (2026-11-18) supersedes #76/#96: the
         # content-width fix made the block a ~270px narrow dark slab
