@@ -34,13 +34,17 @@ class TestChecker(unittest.TestCase):
         # 16-digit number twice.
         self.assertIn("preview matches execution", prev)
         self.assertNotIn("==", prev)
+        # Verdict #101 item 3 continued (share-price line): an
+        # unchanged share price is stated once. (Fee line keeps its
+        # per-figure unit: unit-once would break the bold-number +
+        # unit invariant test_check_detail_numbers_are_bold enforces.)
         fee = results["fee_conservation"]["detail"][0]
         self.assertEqual(
             fee, "yield 10,000.000000\u00a0USDC, fee 1,000.000000\u00a0USDC, "
                  "holder gain 9,000.000000\u00a0USDC")
         price = results["share_price_sanity"]["detail"][0]
         self.assertEqual(
-            price, "price per 1,000,000\u00a0shares 0.000001\u00a0USDC -> 0.000001\u00a0USDC")
+            price, "price per 1,000,000\u00a0shares 0.000001\u00a0USDC (unchanged)")
         for r in results.values():
             for line in r["detail"]:
                 if isinstance(line, str):
