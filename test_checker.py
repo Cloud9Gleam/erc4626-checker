@@ -3592,7 +3592,15 @@ class TestChecker(unittest.TestCase):
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
+        # Visual verdict #100 (second pass): flat grey box gained
+        # hierarchy — slate left accent bar, deeper border, 1px
+        # shadow; fill stays #f3f4f6 per verdict #94.
         self.assertIn(
+            ".check-card p.check-detail{background:#f3f4f6;border:1px solid "
+            "#d1d5db;border-left:3px solid #6b7280;border-radius:6px;"
+            "padding:.45em .7em .45em .85em;box-shadow:0 1px 2px "
+            "rgba(17,24,39,.06)}", build.CSS)
+        self.assertNotIn(
             ".check-card p.check-detail{background:#f3f4f6;border:1px solid "
             "#e5e7eb;border-radius:6px;padding:.45em .7em}", build.CSS)
         self.assertNotIn(
