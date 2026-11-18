@@ -2023,6 +2023,29 @@ class TestChecker(unittest.TestCase):
                       "font-weight:700;color:#111827}", build.CSS)
         self.assertIn(".track-group .track-list{margin-top:.4em;margin-bottom:0}", build.CSS)
 
+    def test_audit_long_track_list_uses_cards(self):
+        # Verdict #104 item 2: the 33-item First Flight group, once
+        # expanded, was a wall of text with only hairline separators.
+        # Its list is now a stack of white mini-cards with a green left
+        # accent, so each review reads as one block. Content unchanged:
+        # still 33 items, still 41 research links in the section.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        self.assertEqual(track.count('track-list--long'), 1)
+        self.assertIn('<ul class="track-list track-list--long">', track)
+        ff = track[track.index("CodeHawks First Flight"):]
+        ff = ff[:ff.index("</ul>")]
+        self.assertEqual(ff.count("<li>"), 33)
+        self.assertIn(".track-list--long li{background:#fff;border:1px solid #e5e7eb;"
+                      "border-left:3px solid #0a7d2c;", build.CSS)
+        self.assertIn(".track-group .track-list--long li:last-child{border:1px solid #e5e7eb;"
+                      "border-left:3px solid #0a7d2c;", build.CSS)
+        self.assertEqual(track.count('<a href="/research/'), 41)
+
     def test_audit_what_you_get_is_a_list(self):
         # /audit/ "What you get" was one dense paragraph — the section
         # that sells the deliverable buried its four facts in a single
