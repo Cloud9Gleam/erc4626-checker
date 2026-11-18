@@ -1987,7 +1987,7 @@ class TestChecker(unittest.TestCase):
         # Summary reads like the h3 it replaces.
         self.assertIn(".track-group summary{cursor:pointer;font-size:1.1em;"
                       "font-weight:700;color:#111827}", build.CSS)
-        self.assertIn(".track-group .track-list{margin-top:.4em}", build.CSS)
+        self.assertIn(".track-group .track-list{margin-top:.4em;margin-bottom:0}", build.CSS)
 
     def test_audit_what_you_get_is_a_list(self):
         # /audit/ "What you get" was one dense paragraph — the section
@@ -3918,20 +3918,34 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(worker.count("<p class='params'>Parameters:"), 2)
         self.assertIn("{{PARAMS}}", worker)
 
-    def test_track_group_spacing_is_tight(self):
-        # Visual verdict #99 (2026-11-18): on /audit/ the four
-        # "Track record" <details> groups sat ~24px apart (1.4em top
-        # margin), reading as sparse — baseline spacing ~55px with
-        # ~28px of blank. Top margin is now .9em (~15px); the
-        # summary text, list content, and bottom margin are untouched.
+    def test_track_groups_are_cards(self):
+        # Visual verdict #103 (2026-11-18): /audit/ read as flat plain
+        # text — all 7 h2s identical, and the five Track record
+        # <details> groups were transparent, borderless, unpadded
+        # (measured 2026-11-18: bg rgba(0,0,0,0), border 0px none,
+        # padding 0). Each group is now a light card in the page's
+        # #f9fafb form language (same as #audit-order / #checker-form);
+        # the .9em/.4em spacing from verdict #99 is kept, and the last
+        # list item loses its bottom border/margin so no rule sits
+        # against the card's bottom edge. Summary text and list
+        # content are untouched.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn(".track-group{margin:.9em 0 .4em}", build.CSS)
+        self.assertIn(
+            ".track-group{background:#f9fafb;border:1px solid #e5e7eb;"
+            "border-radius:12px;padding:.9em 1.1em;margin:.9em 0 .4em}",
+            build.CSS)
+        self.assertIn(
+            ".track-group .track-list li:last-child{border-bottom:0;"
+            "margin-bottom:0;padding-bottom:0}", build.CSS)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
-        self.assertIn(".track-group{margin:.9em 0 .4em}", worker)
+        self.assertIn(".track-group{background:#f9fafb;", worker)
+        self.assertIn(
+            ".track-group .track-list li:last-child{border-bottom:0;",
+            worker)
 
     def test_audit_order_form_is_a_card(self):
         # Visual verdict #100 (2026-11-18): on /audit/ the Start
