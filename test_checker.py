@@ -3776,6 +3776,36 @@ class TestChecker(unittest.TestCase):
         self.assertIn("background:#dcfce7", worker)
         self.assertIn("Double-check the address before sending", worker)
 
+    def test_params_paragraph_is_a_card(self):
+        # Visual verdict #99 (2026-11-18): the Parameters paragraph
+        # between the Run checks button and the result banner was a
+        # bare full-width line of small grey dense text — it read as
+        # a raw data dump next to the cards around it. It is now a
+        # light box in the page's #f9fafb form language; the text is
+        # untouched, so every number stays exactly as verified.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".params{background:#f9fafb;border:1px solid #e5e7eb;"
+            "border-radius:8px;padding:.6em .9em;font-size:.95em;"
+            "color:#374151}",
+            build.CSS)
+        html = build.checker_body()
+        self.assertIn("<p class='params'>Parameters:", html)
+        self.assertIn("offset=6, min deposit=1,000,000 base units (1 USDC)", html)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(".params{background:#f9fafb;", worker)
+        # paramsHTML is one of the two places the paragraph is built
+        # in the Worker — the other is the baked static copy inside
+        # PAGES. A third occurrence would mean the template regex
+        # failed to replace the static copy, and the dynamic page
+        # would show stale baked-in defaults.
+        self.assertEqual(worker.count("<p class='params'>Parameters:"), 2)
+        self.assertIn("{{PARAMS}}", worker)
+
     def test_loss_chart_bars_are_thick_and_rows_tight(self):
         # Visual verdict #59: on /checker/?preset=noprot the Victim loss
         # chart read as broken — four ~11px hairline bars in a ~140px
