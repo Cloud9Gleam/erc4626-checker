@@ -2391,6 +2391,28 @@ class TestChecker(unittest.TestCase):
                       ".hero-stats{flex-direction:column;gap:.35em}"
                       ".hero-stats span{flex:none}}", build.CSS)
 
+    def test_hero_cta_first_on_mobile(self):
+        # Visual verdict #108: at 320x568 the hero CTA sat below the
+        # fold (bottom 582.5 > 568) because the intro and proof
+        # paragraphs come first in the left column. On phones the CTA
+        # moves directly under the h1 — CSS order only, so the DOM
+        # order (CTA before the flow diagram, asserted above) and the
+        # desktop layout are unchanged.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        self.assertIn('<p class="hero-cta">', home)
+        # The order rules live in the <=640px block: anchor on the
+        # checker-form rule, the last rule of that block before them.
+        anchor = build.CSS.index("#checker-form{grid-template-columns:1fr}")
+        for rule in (".hero-top>div>p{order:2}",
+                     ".hero-top>div>p.hero-cta{order:1}",
+                     ".hero-top>div>.hero-stats{order:3}"):
+            self.assertIn(rule, build.CSS)
+            self.assertLess(anchor, build.CSS.index(rule))
+
     def test_homepage_hero_is_full_bleed(self):
         # Visual verdict #105 item 2: at 1919px the homepage hero was
         # a rounded card inside the 1280px column — ~320px of bare
@@ -2877,11 +2899,16 @@ class TestChecker(unittest.TestCase):
         # The hero holds nested divs (.flow > .flow-step), so a naive
         # non-greedy </div> match stops at the first inner close. Cut
         # the hero region at the intro paragraph that follows it.
+        # The CTA paragraph carries the hero-cta class (the mobile
+        # order hook, verdict #108), so match <p> with attributes too.
         start = home.index('<div class="hero">')
         end = home.index("This site is one independent researcher", start)
-        paras = re.findall(r"<p>(.*?)</p>", home[start:end], re.S)
+        paras = re.findall(r"<p([^>]*)>(.*?)</p>", home[start:end], re.S)
         self.assertTrue(paras, "hero has no paragraphs")
-        self.assertIn('class="cta" href="/checker/"', paras[-1])
+        cta = [attrs for attrs, body in paras
+               if 'class="cta" href="/checker/"' in body]
+        self.assertEqual(len(cta), 1, "exactly one CTA paragraph")
+        self.assertIn('class="hero-cta"', cta[0])
 
     def test_hero_bottom_padding_is_trimmed(self):
         # Visual verdict #57 remainder: ~30px of dead deep-green space
