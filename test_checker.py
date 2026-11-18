@@ -2138,18 +2138,29 @@ class TestChecker(unittest.TestCase):
         # and a 16px-wide, 24px-tall white triangle head (::after) —
         # a thick arrow whose geometry is literal CSS, not font
         # rendering. The spans carry no text at all.
+        # Verdict #100 (2026-11-18) reverses the #61 direction: the
+        # thick 48x24 CSS arrow itself became the clip-art - two
+        # chunky white blocks on the dark hero, the most jarring
+        # element on the page. The arrow is now a slim 2px chevron
+        # in 60%-white (32x16 box, 18x2 shaft, 10x10 chevron head):
+        # a connector, not a block. Same language as the text arrows
+        # elsewhere on the site. No disc, no glyph, no thick bar,
+        # no triangle.
         self.assertIn(
             ".flow-arrow{position:relative;align-self:center;"
-            "flex:0 0 auto;width:48px;height:24px}", build.CSS)
+            "flex:0 0 auto;width:32px;height:16px}", build.CSS)
         self.assertIn(
             ".flow-arrow::before{content:\"\";position:absolute;left:0;"
-            "top:9px;width:32px;height:6px;background:#fff;"
-            "border-radius:3px}", build.CSS)
+            "top:7px;width:18px;height:2px;"
+            "background:rgba(255,255,255,.6)}", build.CSS)
         self.assertIn(
-            ".flow-arrow::after{content:\"\";position:absolute;right:0;"
-            "top:0;border-style:solid;border-width:12px 0 12px 16px;"
-            "border-color:transparent transparent transparent #fff}",
-            build.CSS)
+            ".flow-arrow::after{content:\"\";position:absolute;right:2px;"
+            "top:3px;width:10px;height:10px;"
+            "border-top:2px solid rgba(255,255,255,.6);"
+            "border-right:2px solid rgba(255,255,255,.6);"
+            "transform:rotate(45deg)}", build.CSS)
+        self.assertNotIn("width:48px;height:24px", build.CSS)
+        self.assertNotIn("border-width:12px 0 12px 16px", build.CSS)
         self.assertIn(
             ".flow{display:flex;align-items:stretch;gap:.3em;"
             "margin:.9em 0 .2em}", build.CSS)
@@ -16973,6 +16984,40 @@ class TestChecker(unittest.TestCase):
             self.assertIn(num, build)
         self.assertIn('<a href="/guides/erc4626-multi-token-par-swap/">',
                       build)
+
+    def test_hero_flow_arrow_is_a_slim_chevron(self):
+        # Visual verdict #100 (2026-11-18): the homepage hero's flow
+        # arrows were two chunky white blocks - a 6px bar plus a 24px
+        # triangle - that read as clip-art against the dark-green hero.
+        # They are now a slim 2px chevron in 60%-white: a connector,
+        # not a block. Pins the new geometry and forbids the old one.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".flow-arrow{position:relative;align-self:center;"
+            "flex:0 0 auto;width:32px;height:16px}",
+            build.CSS)
+        self.assertIn(
+            ".flow-arrow::before{content:\"\";position:absolute;left:0;"
+            "top:7px;width:18px;height:2px;"
+            "background:rgba(255,255,255,.6)}",
+            build.CSS)
+        self.assertIn(
+            ".flow-arrow::after{content:\"\";position:absolute;right:2px;"
+            "top:3px;width:10px;height:10px;"
+            "border-top:2px solid rgba(255,255,255,.6);"
+            "border-right:2px solid rgba(255,255,255,.6);"
+            "transform:rotate(45deg)}",
+            build.CSS)
+        self.assertNotIn("width:48px;height:24px", build.CSS)
+        self.assertNotIn("border-width:12px 0 12px 16px", build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(".flow-arrow{position:relative;align-self:center;"
+                      "flex:0 0 auto;width:32px;height:16px}", worker)
+
 
 
 if __name__ == "__main__":
