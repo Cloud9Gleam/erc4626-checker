@@ -16229,6 +16229,76 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".check-guide a{color:#6b7280", src)
         self.assertNotIn("Read the guide", src)
 
+    def test_short_cards_state_their_pass_rule(self):
+        # Visual verdict #104 item 1 (corrected): the short cards
+        # carry one detail line against the donation card's table +
+        # chart, so the page reads as one long card and four sparse
+        # ones. Equal heights would manufacture real blank space
+        # inside the cards (#103), so the short cards instead state
+        # their pass rule — the exact criterion and the scenario it
+        # was tested on, straight from the model. Donation already
+        # has its pass-bound paragraph and minimum-viable-deposit
+        # states its rule in its blurb, so those two carry no rule
+        # line. The rule texts below are verified against the model
+        # docstrings and the amounts the checks actually run:
+        # rounding amounts (1, 100, 10,000 USDC) and the 1-base-unit
+        # tolerance; preview 10,000 USDC deposit + 1,000,000-share
+        # mint/redeem; fee 10,000 USDC yield; share-price two
+        # 100,000 USDC deposits, 1-base-unit tolerance.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        expected = {
+            "Rounding directions":
+                "Every preview within 1 base unit of the exact ratio"
+                " — tested at deposits of 1, 100 and 10,000 USDC.",
+            "Preview consistency":
+                "Preview must equal execution exactly — tested on a "
+                "10,000 USDC deposit and a 1,000,000-share mint and redeem.",
+            "Fee conservation":
+                "Holder gain + fee must equal the 10,000 USDC yield "
+                "exactly, and the fee must equal the yield times the "
+                "fee rate.",
+            "Share-price sanity":
+                "Price per 1,000,000 shares must not fall by more than "
+                "1 base unit after a second 100,000 USDC deposit.",
+        }
+        for v, kwargs in (
+                (Vault(decimals_offset=6, min_deposit=1_000_000,
+                       perf_fee_bps=1000), {}),
+                (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                 {"off": 0, "mn": 0, "fee": 0})):
+            html = build.results_html(run_all(v), **kwargs)
+            self.assertEqual(html.count("<p class='check-rule'>"), 4)
+            cards = html.split("<section class='check-card'>")[1:]
+            by_title = {}
+            for card in cards:
+                card = card.split("</section>", 1)[0]
+                title = card.split("</span> ", 1)[1].split("</h3>", 1)[0]
+                by_title[title] = card
+            for title, rule in expected.items():
+                self.assertIn(
+                    f"<p class='check-rule'><strong>Pass rule:</strong> "
+                    f"{rule}</p>", by_title[title])
+                # The rule sits after the numbers and before the guide
+                # link, which stays the card's last paragraph.
+                self.assertLess(
+                    by_title[title].index("check-rule"),
+                    by_title[title].index("check-guide"))
+            for title in ("Donation inflation",
+                          "Minimum viable deposit"):
+                self.assertNotIn("check-rule", by_title[title])
+        self.assertIn(".check-rule{font-size:.92em;color:#4b5563",
+                      build.CSS)
+        # The Worker-side template renders the same lines: the rule
+        # is the fourth CHECK_META element, rendered after the
+        # details block and before the guide link.
+        js = build.checker_results_html_js()
+        self.assertIn("if(m[3]) h+=\"<p class='check-rule'>", js)
+        for rule in expected.values():
+            self.assertIn(rule, js)
+
     def test_cli_seeded_vault_passes_where_new_vault_fails(self):
         # The hosted checker lets a user seed the vault state (assets +
         # shares already in it); the repo CLI could not, so a live 50M
