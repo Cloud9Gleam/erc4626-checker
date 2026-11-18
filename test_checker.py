@@ -3345,17 +3345,18 @@ class TestChecker(unittest.TestCase):
         # visible: bars scaled to the worst row, red where the row breaches
         # the pass bound. The chart adds no new numbers; every figure is
         # the model's own, and the bar widths are pinned here. A row whose
-        # bar would be under 0.5% of the worst row gets an empty slot
-        # instead of a fill — the bordered empty track marks the slot as
-        # intentionally present, not missing (verdict #51: a transparent
-        # spacer read as broken; verdict #59: a 1px framed empty slot was
-        # nearly invisible at 11px bar height). A pale grey fill was
-        # tried (verdict #59) and dropped: verdict #72 found the
-        # full-width grey bar read as a loss as large as the red worst
-        # row. The scale stays linear to the worst row (no log scale,
-        # no minimum width). Bars are 1.7em tall with tight rows, so
-        # the chart reads as a chart rather than four hairlines in a
-        # mostly blank box (verdict #59).
+        # bar would be under 0.5% of the worst row is omitted from the
+        # chart entirely — the table above still lists it with its exact
+        # figure — and when fewer than two rows can draw a bar there is
+        # no chart at all, just one sentence carrying the same numbers
+        # (visual verdict #94: placeholder rows reading as a broken
+        # chart were the whole site's ugliest element; a grey fill, a
+        # log scale and a minimum width were already ruled out by
+        # verdicts #59/#72 and the scale rule, so not drawing is the
+        # remaining honest move). The scale stays linear to the worst
+        # row (no log scale, no minimum width). Bars are 1.7em tall
+        # with tight rows, so the chart reads as a chart rather than
+        # four hairlines in a mostly blank box (verdict #59).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -3366,61 +3367,32 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart", html)
         # The checker chart carries no grey fill: a partial bar used to
-        # trail a light-grey remainder while tiny rows had no track at
-        # all — the track's presence was inconsistent, reading as a
-        # half-empty bar. Bars now sit inside the same hairline frame
-        # every row carries (verdict #51); width alone carries the scale.
+        # trail a light-grey remainder — the track's presence was
+        # inconsistent, reading as a half-empty bar. Bars now sit
+        # inside the same hairline frame every row carries
+        # (verdict #51); width alone carries the scale.
         self.assertIn("loss-chart loss-chart--bare", html)
-        # Every track in the bare chart — filled or empty — carries a
-        # hairline frame: no grey fill remainder (verdict #51's
-        # half-empty-bar complaint), no invisible row (its missing-bar
-        # complaint). Near-zero rows show an empty slot, not a fill:
-        # the bordered track is visibly present at 25px height without
-        # implying any magnitude (verdict #72: a grey fill read as a
-        # full-length loss bar). Every bare track — filled or empty —
-        # shares the one darker #6b7280 frame: verdict #73 found the
-        # light frame read as a missing piece on a quick scan, and
-        # verdict #74 found the filled rows' old #9ca3af frame reading
-        # as a third, paler empty slot next to the dark empty slots.
-        # Verdict #89 breaks the uniformity for the empty slot only:
-        # the solid-framed empty slot read as an unfilled input box
-        # at desktop width — the site's inputs are white with a solid
-        # border, and the slot was a long bordered empty box. The
-        # empty slot now wears a dashed frame on the track's own grey
-        # fill (#f3f4f6, the filled rows' track background): dashed +
-        # grey cannot be a control (controls are white + solid) and
-        # cannot be a bar (no solid fill, and the "too small to draw"
-        # label says so). Filled rows keep the solid #6b7280 frame.
         self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
                       "border:1px solid #6b7280;box-sizing:border-box}",
                       build.CSS)
-        self.assertIn(".loss-chart--bare .loss-track--empty{background:#f3f4f6;"
-                      "border:1px dashed #6b7280}",
-                      build.CSS)
-        self.assertNotIn(".loss-chart--bare .loss-track--empty{background:transparent;"
-                         "border-color:",
-                         build.CSS)
         self.assertIn("Bars are scaled to the worst row in this table", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
-        # The two small rows (0 and 0.000006 USDC) would draw a 0.0%
-        # fill, so they get an empty slot — bordered track, no bar —
-        # instead of a fill, and the number stands beside it.
         self.assertEqual(html.count("loss-fill pass"), 0)
-        self.assertEqual(html.count("loss-track--empty"), 2)
-        # Verdict #87: the bare empty slot read as a missing bar on a
-        # first scan ("like the chart is broken") — the note below the
-        # chart explains it, but a first glance never reads the note.
-        # Each tiny-loss slot now carries its own words inside the
-        # frame: text, not a fill, so it cannot be read as magnitude,
-        # and a zero loss still draws no bar. The Worker-side template
-        # renders the same label.
-        self.assertEqual(html.count("loss-too-small"), 2)
-        self.assertIn("loss-too-small", build.checker_results_html_js())
-        self.assertIn("A slot labelled 'too small to draw' means the row lost too little to draw a bar at this scale.", html)
-        # verdict #88: the note must match the in-slot label on the
-        # Worker side too -- the old "empty slot" wording is gone there.
-        self.assertIn("A slot labelled 'too small to draw' means the row lost too little to draw a bar at this scale.",
-                      build.checker_results_html_js())
+        # The two small rows (0 and 0.000006 USDC) would draw a 0.0%
+        # fill, so they are omitted from the chart entirely — no bar,
+        # no placeholder slot (verdict #94: the placeholder rows were
+        # the site's ugliest element). The note names them, and the
+        # table above still lists both with exact figures.
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
+        self.assertEqual(html.count("loss-track--tiny"), 0)
+        self.assertNotIn("too small to draw", html)
+        self.assertIn("Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.", html)
+        # The Worker-side template renders the same omission note, and
+        # no placeholder label anywhere.
+        self.assertIn("Rows losing under 0.5% of the worst row (", build.checker_results_html_js())
+        self.assertNotIn("too small to draw", build.checker_results_html_js())
+        self.assertNotIn("loss-track--tiny", build.checker_results_html_js())
         self.assertIn("width:100.0%", html)
         self.assertIn("width:11.0%", html)
         self.assertIn("0.909091", html)
@@ -3433,22 +3405,22 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-fill fail"), 0)
         self.assertEqual(html.count("loss-fill pass"), 4)
         self.assertIn("width:7.7%", html)
-        # Offset 18: every loss is 0 — bars all zero width, chart still there.
+        # Offset 18: every loss is 0 — no row can draw a bar, so there
+        # is no chart at all, just the one sentence (verdict #94: four
+        # placeholder rows were the worst case of the broken-chart
+        # read). The sentence carries the exact figure.
         html = build.results_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
-        self.assertIn("loss-chart", html)
-        # Every loss is 0 — no bar is drawn anywhere, but each row still
-        # shows its empty slot, so the chart does not read as
-        # missing rows.
+        self.assertNotIn("loss-chart", html)
         self.assertEqual(html.count("width:0.0%"), 0)
-        self.assertEqual(html.count("loss-track--empty"), 4)
-        # All four rows are zero losses: all four slots carry the words.
-        self.assertEqual(html.count("loss-too-small"), 4)
-        self.assertIn("A slot labelled 'too small to draw' means the row lost too little to draw a bar at this scale.", html)
-        # Mixed table: one error row and one tiny row — the error slot
-        # stays bare (there is no number to label; the table's Note
-        # column explains the error), the tiny row carries the words.
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
+        self.assertIn("No donation loses anything: every victim loss is 0.000000 USDC.", html)
+        # Mixed table: one tiny row, one drawable row, one error row —
+        # a single drawable bar is not a chart, so the chart is
+        # replaced by the peak sentence; the error row is named in it
+        # and explained in the table's Note column.
         mixed = [{"name": "donation_inflation", "pass": False, "detail": [
             {"donation": 1_000_000_000, "victim_loss": 6,
              "attacker_net": -1},
@@ -3457,9 +3429,10 @@ class TestChecker(unittest.TestCase):
             {"donation": 1_000_000_000_000_000, "victim_loss": None,
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed, vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("loss-chart", html)
-        self.assertEqual(html.count("loss-track--empty"), 2)
-        self.assertEqual(html.count("loss-too-small"), 1)
+        self.assertNotIn("loss-chart", html)
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
+        self.assertIn("Victim loss peaks at 0.909091 USDC at a 1,000,000 USDC donation; every other donation with a loss figure loses at most 0.000006 USDC — too little to draw a bar at this scale. Rows with no loss figure are listed in the table above.", html)
         # Giant minimum deposit: every row errors, no number to chart.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=10 ** 21,
@@ -3467,57 +3440,62 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
 
-    def test_loss_chart_tiny_slots_are_short_placeholders(self):
-        # Visual verdict #90: the dashed "too small to draw" slot
-        # spanned the whole ~705px track at desktop width — exactly as
-        # wide as the worst row's full red bar — so a quick scan read
-        # three rows as roughly equal losses. The tiny-loss slot is now
-        # a short fixed-width placeholder chip (loss-track--tiny,
-        # 10em), dashed + grey + labelled, and short, so it cannot be
-        # read as magnitude. The chip keeps the --empty class (dashed
-        # grey look) and the words; a zero loss still draws no bar.
-        # Error rows keep the bare full-width empty slot: no number to
-        # label, no magnitude to misread.
+    def test_loss_chart_omits_tiny_rows_and_replaces_sparse_charts(self):
+        # Visual verdict #94 (second pass, 09:15-09:20): the dashed
+        # "too small to draw" placeholder rows were the whole site's
+        # ugliest element — a chart that is mostly empty boxes reads
+        # as broken, not as honest. The placeholder chip is retired:
+        # rows under 0.5% of the worst row are omitted from the chart
+        # (named in the note; exact figures stay in the table above),
+        # and when fewer than two rows can draw a bar there is no
+        # chart at all, just one sentence carrying the same numbers.
+        # The .loss-track--tiny / .loss-too-small rules stay in the
+        # shared stylesheet (dead but harmless — removing them would
+        # churn every page's CSS for no visible gain); no renderer
+        # emits the chip any more, in either render path.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn(".loss-track--tiny{flex:0 0 auto;width:10em}",
-                      build.CSS)
-        # noprot: the two small rows (0 and 0.000006 USDC) get the
-        # short chip; the two real bars are unchanged.
+        # noprot: the two small rows (0 and 0.000006 USDC) are omitted;
+        # the two real bars are unchanged.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertEqual(html.count("loss-track--tiny"), 2)
-        self.assertEqual(html.count("loss-track--empty"), 2)
-        self.assertEqual(html.count("loss-too-small"), 2)
+        self.assertEqual(html.count("loss-row"), 2)
+        self.assertEqual(html.count("loss-track--tiny"), 0)
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
         self.assertIn("width:100.0%", html)
         self.assertIn("width:11.0%", html)
-        # Offset 18: every loss is 0 — all four rows are chips, no bar.
+        # Default preset (offset 6): losses 0 / 0 / 1 / 900 base units —
+        # a single drawable bar is not a chart, so the peak sentence
+        # replaces it; the smaller donations are capped by their
+        # ceiling figure.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertNotIn("loss-chart", html)
+        self.assertIn("Victim loss peaks at 0.000900 USDC at a 1,000,000,000 USDC donation; every other donation loses at most 0.000001 USDC — too little to draw a bar at this scale.", html)
+        # Offset 18: every loss is 0 — no chart, just the all-zero
+        # sentence.
         html = build.results_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
-        self.assertEqual(html.count("loss-track--tiny"), 4)
-        self.assertEqual(html.count("loss-track--empty"), 4)
-        self.assertEqual(html.count("loss-too-small"), 4)
-        # Mixed table: one tiny row gets the chip, the error row keeps
-        # the bare full-width empty slot (no tiny class, no words).
-        mixed = [{"name": "donation_inflation", "pass": False, "detail": [
-            {"donation": 1_000_000_000, "victim_loss": 6,
-             "attacker_net": -1},
-            {"donation": 1_000_000_000_000, "victim_loss": 909091,
-             "attacker_net": -90909},
-            {"donation": 1_000_000_000_000_000, "victim_loss": None,
-             "attacker_net": None, "error": "below minimum deposit"}]}]
-        html = build.results_html(mixed, vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertEqual(html.count("loss-track--tiny"), 1)
-        self.assertEqual(html.count("loss-track--empty"), 2)
-        self.assertEqual(html.count("loss-too-small"), 1)
-        self.assertIn("loss-track loss-track--empty'></span>",
-                      html)
-        # The Worker-side template renders the same short chip.
-        self.assertIn("loss-track--tiny", build.checker_results_html_js())
+        self.assertNotIn("loss-chart", html)
+        self.assertEqual(html.count("loss-track--tiny"), 0)
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
+        self.assertIn("No donation loses anything: every victim loss is 0.000000 USDC.", html)
+        # The Worker-side template renders the same omission note and
+        # peak sentence, and no placeholder chip.
+        js = build.checker_results_html_js()
+        self.assertIn("Rows losing under 0.5% of the worst row (", js)
+        self.assertIn("Victim loss peaks at ", js)
+        self.assertIn("No donation loses anything: every victim loss is ", js)
+        self.assertNotIn("loss-track--tiny", js)
+        self.assertNotIn("loss-too-small", js)
+        self.assertNotIn("too small to draw", js)
 
     def test_check_detail_lines_are_boxed(self):
         # Visual verdict #89: the non-donation detail lines were bare
@@ -3590,16 +3568,17 @@ class TestChecker(unittest.TestCase):
         # chart read as broken — four ~11px hairline bars in a ~140px
         # box, the two near-zero rows nearly invisible 1px frames. Bars
         # are now 1.7em tall (~25px at the .92em row size) with rows at
-        # .25em margins, and near-zero rows get an unfilled bordered slot
-        # so the slot is visibly present without implying a loss
-        # (verdict #72: the earlier grey fill read as a full-length
-        # loss bar; verdict #73: the light #9ca3af frame read as a
-        # missing piece on a quick scan, so the empty slot's frame went
-        # darker; verdict #74: the filled rows kept the old light frame,
-        # reading as a third, paler empty slot — so every bare track
-        # now shares the one #6b7280 frame and the empty-slot override
-        # is gone). Widths, numbers, and the linear scale
-        # are unchanged (pinned by test_donation_loss_chart).
+        # .25em margins, and near-zero rows are omitted from the chart
+        # (verdict #94: placeholder slots read as a broken chart),
+        # named in the note instead (verdict #72: the earlier grey fill
+        # read as a full-length loss bar; verdict #73: the light
+        # #9ca3af frame read as a missing piece on a quick scan, so the
+        # empty slot's frame went darker; verdict #74: the filled rows
+        # kept the old light frame, reading as a third, paler empty
+        # slot — so every bare track now shares the one #6b7280 frame
+        # and the empty-slot override is gone). Widths, numbers, and
+        # the linear scale are unchanged (pinned by
+        # test_donation_loss_chart).
         import re
         import sys
         from pathlib import Path
@@ -3622,7 +3601,7 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("A slot labelled 'too small to draw' means the row lost too little to draw a bar at this scale.",
+        self.assertIn("Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.",
                       html)
         self.assertIn("0.909091", html)
 
@@ -13207,22 +13186,29 @@ class TestChecker(unittest.TestCase):
         # The bar chart is scaled to the worst row, and the 1B row's bar
         # is shorter than the 1M row's — without the anchor value in the
         # caption a reader misreads "bigger donation = safer". The note
-        # must name the worst row's loss in USDC.
+        # must name the worst row's loss in USDC. Where the chart is
+        # replaced by the peak sentence (verdict #94: fewer than two
+        # drawable bars), the sentence must name the same value.
         import importlib.util
         from pathlib import Path
         spec = importlib.util.spec_from_file_location(
             "site_build", Path.home() / "workspace/taskmarket/site/build.py")
         build = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(build)
-        for off, mn, fee, worst in ((0, 0, 0, "0.909091"),
-                                    (6, 1_000_000, 1000, "0.000900")):
-            v = Vault(decimals_offset=off, min_deposit=mn, perf_fee_bps=fee)
-            html = build.results_html(run_all(v), off=off, mn=mn, fee=fee)
-            self.assertIn(
-                "Bars are scaled to the worst row in this table "
-                f"({worst} USDC)", html)
-            self.assertNotIn(
-                "Bars are scaled to the worst row in this table;", html)
+        # noprot: the chart is drawn, the note names the worst row.
+        v = Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)
+        html = build.results_html(run_all(v), off=0, mn=0, fee=0)
+        self.assertIn(
+            "Bars are scaled to the worst row in this table "
+            "(0.909091 USDC)", html)
+        self.assertNotIn(
+            "Bars are scaled to the worst row in this table;", html)
+        # Offset 6: a single drawable bar is not a chart — the peak
+        # sentence names the same worst-row value.
+        v = Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)
+        html = build.results_html(run_all(v), off=6, mn=1_000_000, fee=1000)
+        self.assertIn("Victim loss peaks at 0.000900 USDC", html)
+        self.assertNotIn("Bars are scaled to the worst row in this table", html)
     def test_donation_loss_recognition_guide_numbers(self):
         # Pins /guides/erc4626-donation-loss-recognition/ to its
         # model: a donation into a vault carrying an unrecognised
