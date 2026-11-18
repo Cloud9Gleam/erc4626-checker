@@ -4245,6 +4245,61 @@ class TestChecker(unittest.TestCase):
                       "red breach it.", js)
         self.assertIn(".ok{color:#0a7d2c;font-weight:700}", build.CSS)
 
+    def test_donation_attacker_net_loss_is_muted(self):
+        # Visual verdict #106 (noprot item 2), confirmed #107/#108:
+        # in the donation table a negative attacker net sat in the
+        # same black as the victim loss, so "-999.998101" next to
+        # "0.000900" (default preset) or "-999.899111" next to the red
+        # "0.099890" (noprot) read as a huge victim loss. A negative
+        # attacker net is the attacker's loss — good news, not the
+        # number the verdict turns on — so it renders muted grey
+        # (.att-loss, the site's secondary #6b7280); a positive
+        # attacker net still breaches in red; error rows stay plain.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Default preset: all four attacker nets negative, all muted.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertEqual(html.count("class='att-loss'"), 4)
+        self.assertIn("<td class='att-loss'>-999.998101</td>", html)
+        self.assertIn("<td class='att-loss'>-0.999999</td>", html)
+        # The victim-loss cells are untouched: no breach red here.
+        self.assertNotIn("<td class='breach'>0.000900</td>", html)
+        # noprot: the two breaching victim losses stay red, all four
+        # attacker nets (all negative) are muted, not black.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertEqual(html.count("class='att-loss'"), 4)
+        self.assertIn("<td class='att-loss'>-999.899111</td>", html)
+        self.assertIn("<td class='att-loss'>-0.090909</td>", html)
+        self.assertIn("<td class='breach'>0.909091</td>", html)
+        self.assertIn("<td class='breach'>0.099890</td>", html)
+        # Synthetic rows: a profiting attacker still breaches red, an
+        # error row stays plain "—" (no att-loss, no breach).
+        mixed = [{"name": "donation_inflation", "pass": False, "detail": [
+            {"donation": 1_000_000_000, "victim_loss": 6,
+             "attacker_net": 5000},
+            {"donation": 1_000_000_000_000, "victim_loss": 909091,
+             "attacker_net": -90909},
+            {"donation": 1_000_000_000_000_000, "victim_loss": None,
+             "attacker_net": None, "error": "below minimum deposit"}]}]
+        html = build.results_html(mixed, vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<td class='breach'>0.005000</td>", html)
+        self.assertIn("<td class='att-loss'>-0.090909</td>", html)
+        self.assertIn("<td>—</td>", html)
+        self.assertEqual(html.count("class='att-loss'"), 1)
+        # The CSS rule and the Worker-side template carry the same
+        # class and the same sign condition.
+        self.assertIn(".att-loss{color:#6b7280}", build.CSS)
+        js = build.checker_results_html_js()
+        self.assertIn("class='att-loss'", js)
+        self.assertIn("BigInt(row.attacker_net)<0n", js)
+
     def test_email_params_block_is_light_full_width_box(self):
         # Visual verdict #98 (2026-11-18) supersedes #76/#96: the
         # content-width fix made the block a ~270px narrow dark slab
