@@ -2928,6 +2928,27 @@ class TestChecker(unittest.TestCase):
         self.assertLessEqual(max(bodies.values()) / min(bodies.values()), 1.4,
                              "card bodies unbalanced: %r" % bodies)
 
+    def test_homepage_cards_have_no_bottom_margin(self):
+        # Visual verdict #111 finding 1: the homepage's outer white
+        # card (<main>) carried ~59px of dead space below the three
+        # bottom cards — .cards margin-bottom 1.5em (25.5px) stacked
+        # on main's own 2em bottom padding (34px). The cards are the
+        # last block on the page, so the margin bought nothing: the
+        # bottom whitespace is now main's padding alone (34px desktop,
+        # 22.4px mobile), matching the top of the page. The top margin
+        # stays 1.5em — it is the gap under the intro paragraphs.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".cards{display:grid;grid-template-columns:repeat(3,1fr);"
+            "gap:1em;margin:1.5em 0 0}", build.CSS)
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        self.assertTrue(home.rstrip().endswith("</div>"),
+                        "home body no longer ends with the cards block")
+        self.assertEqual(home.count('<section class="card">'), 3)
+
     def test_hero_last_paragraph_has_no_bottom_margin(self):
         # Visual verdict #57 remainder: ~30px of dead deep-green space
         # sat below the hero CTA button — the hero's last <p> (the CTA
