@@ -2222,6 +2222,10 @@ class TestChecker(unittest.TestCase):
         # bare bold text next to the filled white CTA on the left, so
         # it did not read as an action; it is now a secondary outline
         # button (class cta2), still with no arrow glyph.
+        # Visual verdict #90 secondary observation: the left column
+        # also carries justify-content:space-between, so the column's
+        # slack spreads evenly instead of pooling into one dead band
+        # between the CTA and the stats strip.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2232,7 +2236,8 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertIn(
             ".hero-top>div{flex:1;min-width:0;display:flex;"
-            "flex-direction:column}", build.CSS)
+            "flex-direction:column;justify-content:space-between}",
+            build.CSS)
         self.assertIn(
             ".hero-checks{flex:0 0 320px;background:rgba(255,255,255,.09);",
             build.CSS)
@@ -2296,22 +2301,32 @@ class TestChecker(unittest.TestCase):
         # (panel y576 vs stats text y562) — the hero's ugliest point.
         # Cause: .hero-stats is a <p>, and the base rule gives every
         # <p> margin-bottom .65em (~10px at the strip's .9em size);
-        # margin-top:auto pins the strip to the column bottom, so its
-        # bottom margin is pure misalignment — the strip floats above
-        # the panel's bottom edge. The remaining ~3px is line-height
-        # leading below the last text line, not a layout error (the
-        # panel's own note text has the same slack above its padding).
-        # Invariant (reflection #353 rule candidate (aj), adopted
-        # here): the stats strip's box bottom must equal the panel's
-        # bottom edge — i.e. no bottom margin on the pinned strip.
+        # the strip must therefore carry margin-bottom:0 or it floats
+        # above the panel's bottom edge. The remaining ~3px is
+        # line-height leading below the last text line, not a layout
+        # error (the panel's own note text has the same slack above
+        # its padding).
+        # The strip is pinned to the column bottom by the column's
+        # justify-content:space-between (first item at the top, last
+        # item at the bottom), NOT by margin-top:auto on the strip
+        # itself — the auto margin concentrated all the column's slack
+        # into one ~60px dead band between the CTA and the strip
+        # (verdict #90 secondary observation), while space-between
+        # spreads it evenly across the column's gaps. Invariant
+        # (reflection #353 rule candidate (aj), adopted here): the
+        # stats strip's box bottom must equal the panel's bottom edge
+        # — i.e. no bottom margin on the pinned strip.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn("p{margin:.65em 0}", build.CSS)
+        col = build.CSS.index(".hero-top>div{")
+        col_rule = build.CSS[col:build.CSS.index("}", col) + 1]
+        self.assertIn("justify-content:space-between", col_rule)
         start = build.CSS.index(".hero-stats{display:flex;")
         rule = build.CSS[start:build.CSS.index("}", start) + 1]
-        self.assertIn("margin-top:auto", rule)
+        self.assertNotIn("margin-top:auto", rule)
         self.assertIn("margin-bottom:0", rule)
 
     def test_hero_checks_panel_note_fills_right_column(self):
@@ -2367,19 +2382,28 @@ class TestChecker(unittest.TestCase):
         # and the flow diagram below looked detached, sunk under a
         # blank deep-green band spanning the left two-thirds. Fix: the
         # left column is now a flex column (stretch to the row height)
-        # and the strip's margin-top is auto, so it sits at the
-        # column's foot, level with the panel bottom, and the gap to
-        # the flow is just the flow's own .9em margin. No copy change;
-        # when the left column is taller than the panel (narrow
-        # widths) auto computes to 0 and the CTA paragraph's .65em
-        # bottom margin still separates it from the strip's border.
+        # and the strip sits at the column's foot, level with the
+        # panel bottom, and the gap to the flow is just the flow's own
+        # .9em margin. No copy change; when the left column is taller
+        # than the panel (narrow widths) the slack is 0 and the CTA
+        # paragraph's .65em bottom margin still separates it from the
+        # strip's border.
+        # Visual verdict #90 secondary observation: pinning the strip
+        # with margin-top:auto concentrated ALL the column's slack
+        # into one ~60px dead band between the CTA and the strip.
+        # The strip is now pinned by the column's
+        # justify-content:space-between instead (first item at the
+        # top, last item at the bottom), which spreads the same slack
+        # evenly across the column's gaps; margin-bottom:0 on the
+        # strip is unchanged, so the box-bottom alignment invariant
+        # still holds.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn(
-            ".hero-stats{display:flex;gap:1.5em;margin-top:auto;",
+            ".hero-stats{display:flex;gap:1.5em;padding-top:.9em;",
             build.CSS)
         self.assertIn(".hero-stats strong{display:block;font-size:1.5em;",
                       build.CSS)
