@@ -15109,17 +15109,20 @@ class TestChecker(unittest.TestCase):
             '50 USDC, 72-hour report"', build_text)
 
     def test_home_cards_bottom_links(self):
-        # Visual verdict #112 item 2 (2026-11-19, real browser):
-        # the bottom link was pinned to the card bottom by
-        # margin-top:auto (verdict #52's fix, when bodies were
-        # unbalanced). Bodies are balanced now, but real-browser
-        # font metrics wrap them unevenly, so the auto margin
-        # reopened a ~40px gap above the link — the link read as
-        # nailed to the card bottom, disconnected from its text.
-        # The link now follows the body text (no auto margin,
-        # padding-top .3em); leftover space lands below the link,
-        # inside the card's bottom padding. One footer link per
-        # card, each pointing at the card's own destination.
+        # Visual verdict #112 item 2, reopened by #113 (2026-11-19,
+        # real browser): the bottom link still sat ~33-34px below the
+        # body text. The 06:37 fix (removing margin-top:auto) only
+        # shrank it 40px to 33px, so the auto margin was never the
+        # gap. Measured decomposition (headless glyph scan,
+        # hidden_files/measure-cardgap-113.py): 27px = body line-box
+        # slack below the glyphs 5.5px + body margin-bottom 11.05px
+        # + link padding-top 5.1px + link line-box slack above the
+        # glyphs 4.3px; the real browser reads 33-34px (its font
+        # metrics add ~6px). The fix cuts three of the four: card
+        # body margin .65em -> .3em, link padding-top .3em -> 0,
+        # link line-height 1.65 -> 1.35. Leftover space lands below
+        # the link, inside the card's bottom padding. One footer
+        # link per card, each pointing at the card's own destination.
         import re
         from pathlib import Path
         build_text = (Path.home() / "workspace/taskmarket/site"
@@ -15127,8 +15130,11 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(build_text.count('class="card-link"'), 3)
         self.assertIn('"display:flex;flex-direction:column}"',
                       build_text)
+        self.assertIn('.card p:not(.card-link){margin-bottom:.3em}',
+                      build_text)
         self.assertIn('.card .card-link{margin-top:0;'
-                      'padding-top:.3em;margin-bottom:0;font-weight:700}',
+                      'padding-top:0;line-height:1.35;'
+                      'margin-bottom:0;font-weight:700}',
                       build_text)
         rule = re.search(r'\.card \.card-link\{[^}]*\}',
                          build_text).group(0)
