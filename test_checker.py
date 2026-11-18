@@ -16633,6 +16633,23 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(model.partial_profit, 500)
         self.assertEqual(model.partial_value, Fraction(99_500))
         self.assertEqual(model.partial_share, Fraction(199, 200))
+    def test_multi_token_par_swap_guide_page(self):
+        # Pins the guide page: the guide add() must exist in build.py
+        # with the headline numbers, and the /guides/ index must link
+        # to it. The numbers are re-derived in
+        # test_multi_token_par_swap_model_numbers; this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-multi-token-par-swap/"',
+                      build)
+        for num in ("98,000", "100,000", "2,000", "1,000", "5,000",
+                    "10,000", "500", "99,500", "0.995", "0.98",
+                    "1.25", "15,000", "25,000", "USDX", "FAP",
+                    "MultiTokenVault", "Buttonwood"):
+            self.assertIn(num, build)
+        self.assertIn('<a href="/guides/erc4626-multi-token-par-swap/">',
+                      build)
 
 
 if __name__ == "__main__":
