@@ -2023,6 +2023,40 @@ class TestChecker(unittest.TestCase):
                       "font-weight:700;color:#111827}", build.CSS)
         self.assertIn(".track-group .track-list{margin-top:.4em;margin-bottom:0}", build.CSS)
 
+    def test_track_list_filter(self):
+        # Visual verdict #105 item 1: the 33-item First Flight group,
+        # once expanded, was a wall of text with no way to find one
+        # review, and each card still carried a bullet on top of its
+        # green left bar. The long list now has a filter box (live
+        # text match, count line) and no bullets; content unchanged.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        ff = track[track.index("CodeHawks First Flight"):]
+        ff = ff[:ff.index("</details>")]
+        self.assertEqual(ff.count("<li>"), 33)
+        self.assertIn('<input type="search" id="track-filter"',
+                      ff)
+        self.assertIn('oninput="filterTrack(this.value)"', ff)
+        self.assertIn('<span id="track-count" role="status">33 reviews</span>',
+                      ff)
+        self.assertIn("function filterTrack(q){", ff)
+        self.assertIn("No reviews match.", ff)
+        # The placeholder promises 'flash loan' works, but the items
+        # spell it 'flash-loan': separators are normalized on both
+        # sides so a space query matches hyphenated text.
+        self.assertIn("replace(/[^a-z0-9]+/g,' ')", ff)
+        self.assertIn(".track-list--long{list-style:none;padding-left:0}",
+                      build.CSS)
+        self.assertIn(".track-filter{display:flex;", build.CSS)
+        self.assertIn(".track-filter #track-count{font-size:.9em;",
+                      build.CSS)
+        # The other four groups keep their plain lists and bullets.
+        self.assertEqual(track.count('class="track-list">'), 4)
+
     def test_audit_long_track_list_uses_cards(self):
         # Verdict #104 item 2: the 33-item First Flight group, once
         # expanded, was a wall of text with only hairline separators.
@@ -2035,7 +2069,9 @@ class TestChecker(unittest.TestCase):
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         track = audit[audit.index("<h2>Track record</h2>"):]
-        self.assertEqual(track.count('track-list--long'), 1)
+        # 'track-list--long' now occurs twice in the section: the <ul>
+        # itself and the filter script's querySelector (verdict #105).
+        self.assertEqual(track.count('track-list--long'), 2)
         self.assertIn('<ul class="track-list track-list--long">', track)
         ff = track[track.index("CodeHawks First Flight"):]
         ff = ff[:ff.index("</ul>")]
