@@ -29,6 +29,11 @@ class TestChecker(unittest.TestCase):
         self.assertIn("10,000,000,000,000,000\u00a0shares", prev)
         self.assertIn("0.000001\u00a0USDC", prev)
         self.assertEqual(len(results["preview_consistency"]["detail"]), 3)
+        # Verdict #101 item 3 (content side): when preview and execution
+        # agree, each amount is stated once - no "X == X" with the same
+        # 16-digit number twice.
+        self.assertIn("preview matches execution", prev)
+        self.assertNotIn("==", prev)
         fee = results["fee_conservation"]["detail"][0]
         self.assertEqual(
             fee, "yield 10,000.000000\u00a0USDC, fee 1,000.000000\u00a0USDC, "
