@@ -2142,7 +2142,13 @@ class TestChecker(unittest.TestCase):
         # thick 48x24 CSS arrow itself became the clip-art - two
         # chunky white blocks on the dark hero, the most jarring
         # element on the page. The arrow is now a slim 2px chevron
-        # in 60%-white (32x16 box, 18x2 shaft, 10x10 chevron head):
+        # in 60%-white (32x16 box, 31x2 shaft, 10x10 chevron head).
+        # The shaft must reach the chevron vertex: head box sits
+        # right:4px (x=18..28, centre 23), rotate(45deg) puts the
+        # vertex at x = 23 + 5*sqrt(2) = 30.07, so the 31px shaft
+        # overlaps it by ~0.9px. The first chevron build used an
+        # 18px shaft, which stopped ~12px short of the vertex and
+        # rendered as a disconnected dash on the live page.
         # a connector, not a block. Same language as the text arrows
         # elsewhere on the site. No disc, no glyph, no thick bar,
         # no triangle.
@@ -2151,10 +2157,10 @@ class TestChecker(unittest.TestCase):
             "flex:0 0 auto;width:32px;height:16px}", build.CSS)
         self.assertIn(
             ".flow-arrow::before{content:\"\";position:absolute;left:0;"
-            "top:7px;width:18px;height:2px;"
+            "top:7px;width:31px;height:2px;"
             "background:rgba(255,255,255,.6)}", build.CSS)
         self.assertIn(
-            ".flow-arrow::after{content:\"\";position:absolute;right:2px;"
+            ".flow-arrow::after{content:\"\";position:absolute;right:4px;"
             "top:3px;width:10px;height:10px;"
             "border-top:2px solid rgba(255,255,255,.6);"
             "border-right:2px solid rgba(255,255,255,.6);"
@@ -17001,11 +17007,11 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertIn(
             ".flow-arrow::before{content:\"\";position:absolute;left:0;"
-            "top:7px;width:18px;height:2px;"
+            "top:7px;width:31px;height:2px;"
             "background:rgba(255,255,255,.6)}",
             build.CSS)
         self.assertIn(
-            ".flow-arrow::after{content:\"\";position:absolute;right:2px;"
+            ".flow-arrow::after{content:\"\";position:absolute;right:4px;"
             "top:3px;width:10px;height:10px;"
             "border-top:2px solid rgba(255,255,255,.6);"
             "border-right:2px solid rgba(255,255,255,.6);"
@@ -17013,6 +17019,15 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertNotIn("width:48px;height:24px", build.CSS)
         self.assertNotIn("border-width:12px 0 12px 16px", build.CSS)
+        # Connectivity invariant: the 10x10 chevron head sits
+        # right:4px, so its box spans x=18..28 with centre (23, 8);
+        # rotate(45deg) puts its vertex at x = 23 + 5*sqrt(2) = 30.07.
+        # The 31px shaft ends past the vertex, so shaft and head
+        # overlap by ~0.9px and render as one arrow.
+        import math
+        shaft_end = 31
+        chevron_vertex_x = (32 - 4 - 10 + 5) + 5 * math.sqrt(2)
+        self.assertGreater(shaft_end, chevron_vertex_x)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".flow-arrow{position:relative;align-self:center;"
