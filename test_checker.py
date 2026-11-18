@@ -3828,14 +3828,17 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
 
-    def test_loss_chart_values_hug_bar_end(self):
-        # Visual verdict #96: on /checker/?preset=noprot the 0.099890
-        # value sat in a fixed right-hand column, ~630px from its short
-        # bar's end, reading as an orphaned column while the 0.909091
-        # value hugged the full bar. Values now live inside the track,
-        # positioned from the bar's own width: outside the fill for
-        # short bars, inside it (white) once the bar is long enough to
-        # hold the text (>=60%).
+    def test_loss_chart_values_in_fixed_column_before_bar(self):
+        # Visual verdict #110 item 2 (2026-11-19): on
+        # /checker/?preset=noprot the two values sat ~660px apart in
+        # different colours — 0.909091 white inside the 100% bar,
+        # 0.099890 dark outside the 11% bar (the verdict #96 hug-the-
+        # bar-end design) — and the eye had to jump to find them.
+        # Values are now flex items in the row, between the donation
+        # label and the track: one x for every row, one colour, each
+        # immediately left of its bar's start. This is not a return
+        # to #96's fixed right-hand column (orphaned ~630px from a
+        # short bar's end); the value is adjacent to its bar.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -3843,58 +3846,62 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        # Full bar: value inside, white, right edge at the bar end.
+        # Full row: label, value, track — in that order, value dark.
         # Visual verdict #106 (noprot item 1): a breaching row also
         # carries how many times its loss exceeds the pass bound, so
         # the short red bar is not misread as a small loss — the worst
         # row is 909091/1000 = 909x, the 1B row 99890/1000 = 99.9x.
-        self.assertIn("<span class='loss-value loss-value--inside' "
-                      "style='--pct:100.0%'>0.909091 &middot; 909&times;</span>", html)
-        # Short bar: value outside, dark, left edge just past the fill.
-        self.assertIn("<span class='loss-value' "
-                      "style='--pct:11.0%'>0.099890 &middot; 99.9&times;</span>", html)
+        self.assertIn("<div class='loss-row'><span class='loss-label'>"
+                      "1,000,000</span><span class='loss-value'>"
+                      "0.909091 &middot; 909&times;</span>"
+                      "<span class='loss-track'><span class='loss-fill fail' "
+                      "style='width:100.0%'></span></span></div>", html)
+        # Short bar: same value position, same colour, no --pct.
+        self.assertIn("<div class='loss-row'><span class='loss-label'>"
+                      "1,000,000,000</span><span class='loss-value'>"
+                      "0.099890 &middot; 99.9&times;</span>"
+                      "<span class='loss-track'><span class='loss-fill fail' "
+                      "style='width:11.0%'></span></span></div>", html)
         # The chart note defines what the multiple means.
         self.assertIn("the ×N after a red value is how many times that "
                       "loss exceeds the bound", html)
-        # Both values are children of their track, not siblings after it
-        # (3 hits: the inside value's class names it twice).
-        self.assertEqual(html.count("loss-value"), 3)
-        self.assertNotIn("</span></span><span class='loss-value'>", html)
-        self.assertNotIn("</span></span><span class='loss-value ", html)
-        # The CSS pins the positioning: absolute, from the --pct var.
-        self.assertIn(".loss-chart--bare .loss-track{position:relative;"
-                      "overflow:visible}", build.CSS)
-        self.assertIn(".loss-chart--bare .loss-value{position:absolute;"
-                      "top:50%;left:calc(var(--pct,0%) + .55em);"
-                      "transform:translateY(-50%);white-space:nowrap}",
-                      build.CSS)
-        self.assertIn(".loss-chart--bare .loss-value--inside{"
-                      "left:calc(var(--pct,0%) - .55em);"
-                      "transform:translate(-100%,-50%);color:#fff}",
-                      build.CSS)
+        # No trace of the hug-the-bar-end mechanism: no inside class,
+        # no --pct variable anywhere in the chart markup or CSS.
+        self.assertNotIn("loss-value--inside", html)
+        self.assertNotIn("--pct:", html)
+        self.assertNotIn("loss-value--inside", build.CSS)
+        self.assertNotIn("--pct", build.CSS)
+        # The CSS pins the new positioning: a static flex item in the
+        # row flow, dark text, never absolutely positioned.
+        self.assertIn(".loss-chart--bare .loss-value{position:static;"
+                      "flex:0 0 auto;white-space:nowrap;text-align:left;"
+                      "color:#111827}", build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-track{position:relative",
+                         build.CSS)
         # Guide charts (plain .loss-chart, values as flex items) are
-        # untouched: the new rules are scoped to --bare only.
+        # untouched: the new rule is scoped to --bare only.
         self.assertNotIn(".loss-chart .loss-value{position:absolute",
                          build.CSS)
         # The Worker-side template renders the same structure.
         js = build.checker_results_html_js()
-        self.assertIn("loss-value--inside", js)
-        self.assertIn("--pct:", js)
-        self.assertIn("pct>=60", js)
+        self.assertNotIn("loss-value--inside", js)
+        self.assertNotIn("--pct:", js)
+        self.assertNotIn("pct>=60", js)
+        self.assertIn("<span class='loss-value'>", js)
         # Worker-side multiple: same rule as the Python renderer.
         self.assertIn("&middot;", js)
         self.assertIn("&times;", js)
         self.assertIn("boundB", js)
         # Short-bar case: seeded vault, losses [1, 1, 1, 13] — three
-        # 7.7% bars stay outside, only the 100% worst row flips inside.
+        # 7.7% bars and the 100% worst row all carry plain values.
         A50 = 50_000_000_000_000
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
                     vault_assets=A50, vault_supply=A50),
             vic=100_000_000_000, off=0, mn=0, fee=0, vassets=A50, vshares=A50)
-        self.assertEqual(html.count("loss-value--inside"), 1)
-        self.assertEqual(html.count("--pct:7.7%"), 3)
-        self.assertIn("--pct:100.0%", html)
+        self.assertEqual(html.count("loss-value--inside"), 0)
+        self.assertEqual(html.count("<span class='loss-value'>"), 4)
+        self.assertNotIn("--pct:", html)
 
     def test_loss_chart_omits_tiny_rows_and_replaces_sparse_charts(self):
         # Visual verdict #94 (second pass, 09:15-09:20): the dashed
