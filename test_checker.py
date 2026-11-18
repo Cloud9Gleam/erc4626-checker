@@ -4773,6 +4773,63 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(audit.count('class="hint-full"'), 0)
         self.assertEqual(audit.count('class="hint-short"'), 0)
 
+    def test_checker_notice_compact_on_mobile(self):
+        # Mobile checker intro compaction (2026-11-19, verdict #109
+        # follow-up): at 360px the notice above the form is 291.5px
+        # (~11 lines) and each of the 7 form labels carries .7em
+        # top+bottom margin (~157px of gap inside the form); together
+        # they push Run checks 2.16 viewports down at 360x667. Below
+        # 640px the notice's secondary sentences hide behind
+        # .notice-extra and the label margins halve. The honesty
+        # core and the how-to link stay visible on every viewport;
+        # desktop is untouched: full notice, .7em label margins.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".notice .notice-extra{display:none}", build.CSS)
+        self.assertIn("#checker-form label{margin:.35em 0}", build.CSS)
+        # Both mobile rules must live inside the 640px media query
+        # (the same string that collapses the form to one column),
+        # not in the base CSS where they would also shrink the
+        # notice and the labels on desktop.
+        start = build.CSS.index(
+            "#checker-form{grid-template-columns:1fr}")
+        block = build.CSS[start:start + 700]
+        self.assertIn(".notice .notice-extra{display:none}", block)
+        self.assertIn("#checker-form label{margin:.35em 0}", block)
+        # Desktop rules untouched.
+        self.assertIn("label{display:block;margin:.7em 0;color:#111827}",
+                      build.CSS)
+        html = build.checker_body()
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # The static page carries one extra span. The Worker source
+        # embeds the checker page twice (PAGES + CHECKER_TEMPLATE)
+        # and the notice sits in neither replaced block (form,
+        # Parameters, API link, email para), so it appears in both —
+        # JSON-escaped there (json.dumps turns " into \"), hence
+        # the escaped count.
+        self.assertEqual(html.count('class="notice-extra"'), 1)
+        self.assertEqual(worker.count('class=\\"notice-extra\\"'), 2)
+        for path_html in (html, worker):
+            # The secondary sentences are still in the HTML on
+            # desktop, just hidden below 640px.
+            self.assertIn("OpenZeppelin math with a decimals offset",
+                          path_html)
+            self.assertIn("amounts are USDC at 6 decimals", path_html)
+            self.assertIn("github.com/Cloud9Gleam/erc4626-checker",
+                          path_html)
+            # The honesty core and the how-to link are outside the
+            # span: visible on every viewport.
+            self.assertIn("does <strong>not</strong> read any chain, "
+                          "connect any wallet, or check a live vault",
+                          path_html)
+            self.assertIn("How to use the checker", path_html)
+        # The audit page has no notice-extra span.
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertEqual(audit.count('class="notice-extra"'), 0)
+
     def test_checker_perf_fee_hint_says_what_the_model_does(self):
         # Visual verdict #78: the min-height fix made the boxes equal,
         # but the Performance fee hint itself is still 1 line of text in
