@@ -237,11 +237,19 @@ def check_preview_consistency(v: Vault) -> dict:
     # each, or the reader cannot tell which number is which unit. One
     # line per operation: a single comma-joined line wraps with the final
     # "USDC" orphaned alone on its own line, so each amount is bound to
-    # its unit with a non-breaking space and wraps land on "==" instead.
+    # its unit with a non-breaking space. When preview and execution
+    # agree (the normal case) each amount is stated once — the old
+    # "X == X" form repeated a 16-digit number and wrapped to five
+    # lines on a 360px screen. When they disagree the full "X == Y"
+    # form is kept, because the two numbers are the evidence.
+    def _ident(op, a, b, unit):
+        if a == b:
+            return f"{op} preview matches execution: {a}{NBSP}{unit}"
+        return f"{op} {a}{NBSP}{unit} == {b}{NBSP}{unit}"
     return {"name": "preview_consistency", "pass": ok,
-            "detail": [f"deposit {_fmt_int(dep)}{NBSP}shares == {_fmt_int(got)}{NBSP}shares",
-                       f"mint {_fmt_usdc(mint_assets)}{NBSP}USDC == {_fmt_usdc(paid)}{NBSP}USDC",
-                       f"redeem {_fmt_usdc(red)}{NBSP}USDC == {_fmt_usdc(out)}{NBSP}USDC"]}
+            "detail": [_ident("deposit", _fmt_int(dep), _fmt_int(got), "shares"),
+                       _ident("mint", _fmt_usdc(mint_assets), _fmt_usdc(paid), "USDC"),
+                       _ident("redeem", _fmt_usdc(red), _fmt_usdc(out), "USDC")]}
 
 
 def check_fee_conservation(v: Vault) -> dict:
@@ -305,8 +313,10 @@ def check_minimum_viable_deposit(v: Vault, vault_assets: int = 0,
     else:
         detail.append("no zero-share deposit: 1 base unit mints 1 share")
     if v.min_deposit > min_assets:
-        detail.append(f"min-deposit floor {_fmt_usdc(v.min_deposit)}{NBSP}USDC binds: "
-                      f"effective minimum {_fmt_usdc(effective)}{NBSP}USDC")
+        # When the floor binds, effective == the floor, so the amount
+        # is stated once — the old form repeated it ("floor X binds:
+        # effective minimum X") for no information.
+        detail.append(f"min-deposit floor binds: effective minimum {_fmt_usdc(effective)}{NBSP}USDC")
     return {"name": "minimum_viable_deposit", "pass": ok, "detail": detail}
 
 
