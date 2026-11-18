@@ -3956,6 +3956,39 @@ class TestChecker(unittest.TestCase):
         # so the form tag reads <form id=\"audit-order\" there.
         self.assertIn('<form id=\\"audit-order\\"', worker)
 
+    def test_audit_compose_email_is_the_primary_button(self):
+        # Visual verdict #102 (2026-11-18): the two buttons at the
+        # bottom of the /audit/ order form were pixel-identical green
+        # outlines — white bg, green text, 1px green border — so the
+        # form's primary action (Compose email, the thing that actually
+        # sends the inquiry) read as a secondary operation next to
+        # Copy request text. Compose email is now the solid green
+        # primary button; Copy request text stays the outline
+        # secondary. Copy buttons elsewhere (pay address, curl, email
+        # params) are untouched — the rule is scoped to #audit-order.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "#audit-order button.primary{background:#0a7d2c;color:#fff;"
+            "border:0}", build.CSS)
+        self.assertIn(
+            "#audit-order button.primary:hover{background:#086623}",
+            build.CSS)
+        self.assertIn(
+            '<button type="button" class="primary" '
+            'onclick="composeAuditEmail()">Compose email</button>',
+            build.AUDIT_FORM)
+        self.assertIn(
+            '<button type="button" onclick="copyAuditRequest()">'
+            'Copy request text</button>', build.AUDIT_FORM)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("#audit-order button.primary{background:#0a7d2c;",
+                      worker)
+        self.assertIn('class=\\"primary\\"', worker)
+
     def test_loss_chart_bars_are_thick_and_rows_tight(self):
         # Visual verdict #59: on /checker/?preset=noprot the Victim loss
         # chart read as broken — four ~11px hairline bars in a ~140px
