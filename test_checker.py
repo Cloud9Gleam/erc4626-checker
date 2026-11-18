@@ -1912,6 +1912,40 @@ class TestChecker(unittest.TestCase):
         self.assertIn("getAttribute('data-full')", audit)
         self.assertIn(".pay-row .addr-toggle{", build.CSS)
 
+    def test_audit_pay_address_has_basescan_link(self):
+        # Visual verdict #103 (2026-11-18): the pay-box had no way to
+        # verify the payment address on-chain — a payer about to send 50
+        # USDC could only trust the truncated display and the Copy
+        # button. The row now carries a "View on BaseScan" link to the
+        # full address, so the address and its USDC activity can be
+        # checked before paying. A plain link, not a third button: the
+        # row already has toggle + copy.
+        import sys
+        import re
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertIn(
+            '<a class="basescan-link" href="https://basescan.org/address/'
+            + build.PAY_ADDR + '" target="_blank" rel="noopener">'
+            'View on BaseScan</a>', audit)
+        self.assertIn(".pay-row a.basescan-link{flex-shrink:0;"
+                      "white-space:nowrap;font-size:.9em}", build.CSS)
+        # Inside the pay-row, after the copy button, before the note.
+        row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
+        self.assertIsNotNone(row, "pay-row not found")
+        self.assertLess(row.group(0).index("Copy payment address"),
+                        row.group(0).index("View on BaseScan"))
+        self.assertLess(row.group(0).index("View on BaseScan"),
+                        row.group(0).index("pay-note"))
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(".pay-row a.basescan-link{flex-shrink:0;", worker)
+        self.assertIn("https://basescan.org/address/" + build.PAY_ADDR,
+                      worker)
+        self.assertIn("View on BaseScan", worker)
+
     def test_toggle_pay_addr_clears_copy_status(self):
         # Verdict #56: after copying, "Payment address copied." stayed
         # on screen when the address was toggled back to truncated — a
