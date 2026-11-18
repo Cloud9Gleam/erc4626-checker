@@ -4708,6 +4708,66 @@ class TestChecker(unittest.TestCase):
                       "donation and minimum-viable-deposit checks.",
                       checker)
 
+    def test_checker_hints_short_on_mobile(self):
+        # Visual verdict #109 item 1 (2026-11-19): at 360px the six
+        # checker hints run ~7-8 lines each, ~850px of the 1676px form
+        # (measured 2026-11-18), and push Run checks 3.17 viewports
+        # down. Each hint now carries a one-line summary (.hint-short);
+        # below 640px only the summary shows and the 4.95em min-height
+        # floor is lifted (it only exists to keep the two desktop
+        # columns even; below 640px the form is one column, so there
+        # is nothing to keep even). Desktop is untouched: the full
+        # hint shows, the short span is hidden, the floor stays.
+        # Both render paths (static checker_body and the Worker-side
+        # formHTML) must carry the same six pairs.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn("#checker-form .hint .hint-short{display:none}",
+                      build.CSS)
+        self.assertIn("#checker-form .hint .hint-full{display:none}",
+                      build.CSS)
+        self.assertIn("#checker-form .hint .hint-short{display:inline}",
+                      build.CSS)
+        self.assertIn("#checker-form .hint{min-height:0}", build.CSS)
+        # The mobile rules must live inside the 640px media query
+        # (the same string that collapses the form to one column),
+        # not in the base CSS where they would also hide the full
+        # hints on desktop.
+        start = build.CSS.index(
+            "#checker-form{grid-template-columns:1fr}")
+        block = build.CSS[start:start + 600]
+        self.assertIn("#checker-form .hint .hint-full{display:none}",
+                      block)
+        self.assertIn("#checker-form .hint .hint-short{display:inline}",
+                      block)
+        self.assertIn("#checker-form .hint{min-height:0}", block)
+        # The desktop floor itself is untouched (also locked by
+        # test_checker_form_hints_share_one_height).
+        self.assertIn("#checker-form .hint{min-height:4.95em}", build.CSS)
+        shorts = ("Virtual shares. 6 is the standard; "
+                  "0 means no protection.",
+                  "The smallest deposit the vault accepts.",
+                  "The deposit made after the donation.",
+                  "Assets already in the vault. 0 = a new vault.",
+                  "Shares already issued. 0 = a new vault.",
+                  "The cut from the yield. 1000 bps = 10%.")
+        html = build.checker_body()
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        for path_html in (html, worker):
+            self.assertEqual(path_html.count('class="hint-full"'), 6)
+            self.assertEqual(path_html.count('class="hint-short"'), 6)
+            for short in shorts:
+                self.assertIn(short, path_html)
+        # The audit form's single hint is untouched: no spans there.
+        # (The shared CSS legitimately names .hint-full/.hint-short,
+        # so count the markup class attributes, not the bare names.)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertEqual(audit.count('class="hint-full"'), 0)
+        self.assertEqual(audit.count('class="hint-short"'), 0)
+
     def test_checker_perf_fee_hint_says_what_the_model_does(self):
         # Visual verdict #78: the min-height fix made the boxes equal,
         # but the Performance fee hint itself is still 1 line of text in
