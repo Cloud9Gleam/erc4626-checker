@@ -2054,8 +2054,12 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".track-filter{display:flex;", build.CSS)
         self.assertIn(".track-filter #track-count{font-size:.9em;",
                       build.CSS)
-        # The other four groups keep their plain lists and bullets.
-        self.assertEqual(track.count('class="track-list">'), 4)
+        # The other four groups use the same white-card treatment as
+        # the long list (visual verdict #106 audit item 1) — no plain
+        # bullet list is left in the section. They carry their own
+        # class so the filter still targets only the First Flight list.
+        self.assertEqual(track.count('class="track-list track-list--cards">'), 4)
+        self.assertEqual(track.count('class="track-list">'), 0)
 
     def test_audit_long_track_list_uses_cards(self):
         # Verdict #104 item 2: the 33-item First Flight group, once
@@ -2080,6 +2084,34 @@ class TestChecker(unittest.TestCase):
                       "border-left:3px solid #0a7d2c;", build.CSS)
         self.assertIn(".track-group .track-list--long li:last-child{border:1px solid #e5e7eb;"
                       "border-left:3px solid #0a7d2c;", build.CSS)
+        self.assertEqual(track.count('<a href="/research/'), 41)
+
+    def test_audit_short_track_lists_use_cards(self):
+        # Visual verdict #106 audit item 1: inside one Track record the
+        # four short groups were plain bullet lists while First Flight
+        # was white cards with a green left bar — the plain ones read
+        # as unstyled next to the cards. All four now share the card
+        # treatment under their own class, so the filter still targets
+        # only the First Flight list. Content unchanged: still 41
+        # research links in the section.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        self.assertEqual(track.count('class="track-list track-list--cards">'), 4)
+        self.assertEqual(track.count('class="track-list">'), 0)
+        # 'track-list--long' still occurs exactly twice in the section:
+        # the First Flight <ul> and the filter script's querySelector.
+        self.assertEqual(track.count('track-list--long'), 2)
+        self.assertIn('<ul class="track-list track-list--long">', track)
+        self.assertIn(".track-list--cards li{background:#fff;border:1px solid #e5e7eb;"
+                      "border-left:3px solid #0a7d2c;", build.CSS)
+        self.assertIn(".track-group .track-list--cards li:last-child{border:1px solid #e5e7eb;"
+                      "border-left:3px solid #0a7d2c;", build.CSS)
+        self.assertIn(".track-list--cards{list-style:none;padding-left:0}",
+                      build.CSS)
         self.assertEqual(track.count('<a href="/research/'), 41)
 
     def test_audit_what_you_get_is_a_list(self):
