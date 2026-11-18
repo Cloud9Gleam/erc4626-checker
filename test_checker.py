@@ -1912,6 +1912,32 @@ class TestChecker(unittest.TestCase):
         self.assertIn("getAttribute('data-full')", audit)
         self.assertIn(".pay-row .addr-toggle{", build.CSS)
 
+    def test_poc_packaging_page_states_offer_and_hard_rule(self):
+        # PoC-packaging service page (2026-11-18): the offer must state
+        # input, output, price, turnaround, contact, and the hard rule
+        # (never submit/disclose/front-run another hunter's finding)
+        # in one place, and the homepage must link to it.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        poc = pages["/poc-packaging/"]
+        self.assertIn("25 USDC", poc)
+        self.assertIn("72 hours", poc)
+        self.assertIn("outreach@n1netw3n.live", poc)
+        self.assertIn("never submit, disclose, or", poc)
+        self.assertIn("front-run", poc)
+        self.assertIn("What you send", poc)
+        self.assertIn("What you get", poc)
+        self.assertIn("forge test", poc)
+        self.assertIn("reproduced 3/3", poc)
+        # Anonymised worked example: no protocol or target name.
+        self.assertNotIn("Dutch", poc)
+        self.assertNotIn("dutch-clock", poc)
+        home = pages["/"]
+        self.assertIn('<a href="/poc-packaging/">PoC packaging</a>', home)
+
     def test_audit_pay_address_has_basescan_link(self):
         # Visual verdict #103 (2026-11-18): the pay-box had no way to
         # verify the payment address on-chain — a payer about to send 50
@@ -2263,6 +2289,15 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".flow{display:flex;align-items:stretch", build.CSS)
         self.assertIn(".flow-step{flex:1;background:#fff", build.CSS)
         self.assertIn(".flow-arrow{position:relative;align-self:center", build.CSS)
+        # Visual verdicts #106/#107: at 641-900px the middle step's body
+        # wraps to two lines, so the stretched steps 1 and 3 keep all
+        # the slack at the bottom (measured 800px: botGap 43.2px vs
+        # topGap 17.9px, 31% of the card). The step content is
+        # vertically centred, so the slack splits top and bottom
+        # instead of reading as a dead band. At 1919px nothing wraps,
+        # so this is a no-op there.
+        self.assertIn("display:flex;flex-direction:column;justify-content:center}",
+                      build.CSS)
         # The step arrows must be unmistakable on the dark hero — but
         # they must read as connectors, not as objects. The 15:07 fix
         # gave them a solid white disc (8.07:1 vs the hero, 5.27:1
