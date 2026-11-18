@@ -2293,6 +2293,18 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Victim loses", hero)
         self.assertIn("1,000,000 USDC", hero)
         self.assertIn("0.909091 USDC", hero)
+        # Visual verdict #111: the three steps read as unfilled
+        # placeholder boxes on desktop (text 32-56% of the card width).
+        # Each step carries one honest sub-line from the site's own
+        # donation-attack writeup ("deposit a little, donate a lot, let
+        # the victim deposit"; the victim's 100,000 USDC deposit buys
+        # 999 shares, not 100,000). The sub-line is a smaller grey tier.
+        self.assertEqual(hero.count('class="flow-note"'), 3)
+        self.assertIn("before the victim deposits", hero)
+        self.assertIn("the victim's deposit buys fewer shares", hero)
+        self.assertIn("of a 100,000 USDC deposit", hero)
+        self.assertIn(".flow-note{display:block;font-size:.88em;color:#4b5563;"
+                      "margin-top:.2em}", build.CSS)
         # Visual verdict #106: the second sentence was a fragment —
         # "With the standard offset-6 defense, under 0.001 USDC."
         # has no verb. The loss is the subject now; the number is
@@ -2844,8 +2856,14 @@ class TestChecker(unittest.TestCase):
         # white space at the bottom of steps 1-2. The full sentence
         # already sits in the paragraph directly above the flow and in
         # the flow's aria-label, so the step body is just the figure.
-        # Every step body must be short enough to stay on one line at
-        # the desktop card width (~220px at .95em).
+        # Visual verdict #111 changed the shape: each step now carries
+        # one extra sub-line (.flow-note, a separate block line) because
+        # the bare figures left the cards looking like unfilled
+        # placeholders. The #57 rule survives per line: the value line
+        # and the note line must each fit on one line at the desktop
+        # card width (~366px inner; the note runs at .88em, so 40 chars
+        # fit). All three steps share the shape, so they grow together
+        # and no card is left with dead space at the bottom.
         import re
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
@@ -2853,17 +2871,25 @@ class TestChecker(unittest.TestCase):
             r'<div class="flow-step[^"]*">(.*?)</div>', home, re.S)
         self.assertEqual(len(steps), 3)
         for body in steps:
-            # Title (<strong>, display:block) and body are separate
-            # lines; measure each, not the concatenation.
-            m = re.match(r'<span[^>]*>\d</span><strong>([^<]*)</strong>(.*)$',
-                         body.strip(), re.S)
+            # Title (<strong>, display:block), value line and note
+            # line are separate lines; measure each, not the
+            # concatenation.
+            m = re.match(
+                r'<span[^>]*>\d</span><strong>([^<]*)</strong>'
+                r'([^<]*)<span class="flow-note">([^<]*)</span>$',
+                body.strip(), re.S)
             self.assertIsNotNone(m, "flow step shape changed: %r" % body)
-            title, rest = m.group(1), m.group(2).strip()
+            title, value, note = m.group(1), m.group(2), m.group(3)
             self.assertLessEqual(len(title), 21,
                                  "flow step title wraps: %r" % title)
-            self.assertLessEqual(len(rest), 26,
-                                 "flow step body wraps: %r" % rest)
-        self.assertIn("<strong>Victim loses</strong>0.909091 USDC</div>", home)
+            self.assertLessEqual(len(value), 26,
+                                 "flow step value wraps: %r" % value)
+            self.assertLessEqual(len(note), 40,
+                                 "flow step note wraps: %r" % note)
+        self.assertIn(
+            "<strong>Victim loses</strong>0.909091 USDC"
+            '<span class="flow-note">of a 100,000 USDC deposit</span></div>',
+            home)
         self.assertNotIn("0.909091 USDC of a 100,000 USDC deposit</div>", home)
         # The full sentence survives just above the flow and in the
         # aria-label, so nothing was lost by shortening the step body.
