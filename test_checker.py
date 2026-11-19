@@ -3201,22 +3201,32 @@ class TestChecker(unittest.TestCase):
         # read [address][Show shortened][Copy][BaseScan] with the
         # same ~10px gap between every item, so the display-preference
         # toggle looked stuck to the button group — and BaseScan
-        # wrapped to an orphan second line. The toggle now takes its
-        # own full-width line directly under the address it controls,
-        # so line 1 is the money actions only: address + Copy +
-        # BaseScan. The DOM order is address, copy button, BaseScan
-        # link, toggle, note; the copy script and the toggle function
-        # use getElementById, so the reorder cannot break them.
+        # wrapped to an orphan second line. The first fix (flex:0 0
+        # 100% + max-width:max-content on the button itself) was
+        # disproved by visual verdict #116: max-width:max-content
+        # clamps the 100% flex-basis to the button's content width,
+        # so wrapping depended on leftover space in row 1 — headless
+        # Chromium wrapped, the real browser did not. The toggle now
+        # sits inside a full-width wrapper span: the wrapper is the
+        # flex item (flex:0 0 100%, no max-width anywhere on it), so
+        # it always takes its own line regardless of font rendering,
+        # and the button inside is a plain inline element. DOM order
+        # is address, copy button, BaseScan link, toggle, note; the
+        # copy script and the toggle function use getElementById, so
+        # the wrapper cannot break them.
         import re
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        m = re.search(r"\.pay-row \.addr-toggle\{[^}]*\}", build.CSS)
-        self.assertIsNotNone(m, ".pay-row .addr-toggle rule not found")
+        m = re.search(r"\.pay-row \.addr-toggle-wrap\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, ".pay-row .addr-toggle-wrap rule not found")
         self.assertIn("flex:0 0 100%", m.group(0))
-        self.assertIn("max-width:max-content", m.group(0))
-        self.assertIn("text-align:left", m.group(0))
+        self.assertNotIn("max-width", m.group(0))
+        t = re.search(r"\.pay-row \.addr-toggle\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(t, ".pay-row .addr-toggle rule not found")
+        self.assertNotIn("flex:", t.group(0))
+        self.assertNotIn("max-width", t.group(0))
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         # Button-anchored markers: the bare string "Show shortened"
         # also occurs inside the toggle's own script
@@ -3225,15 +3235,19 @@ class TestChecker(unittest.TestCase):
         i_addr = audit.index('id="pay-addr"')
         i_copy = audit.index(">Copy payment address</button>")
         i_scan = audit.index(">View on BaseScan</a>")
+        i_wrap = audit.index('<span class="addr-toggle-wrap">')
         i_tog = audit.index(">Show shortened</button>")
         i_note = audit.index('<span class="pay-note">')
         self.assertLess(i_addr, i_copy)
         self.assertLess(i_copy, i_scan)
-        self.assertLess(i_scan, i_tog)
+        self.assertLess(i_scan, i_wrap)
+        self.assertLess(i_wrap, i_tog)
         self.assertLess(i_tog, i_note)
-        # The toggle is a <button> with no flex-basis anywhere else:
-        # exactly one rule may set its line behaviour.
-        self.assertEqual(len(re.findall(r"\.pay-row \.addr-toggle\{",
+        # The toggle button is inside the wrapper, and the wrapper
+        # closes before the pay-note: exactly one wrapper rule may
+        # set its line behaviour.
+        self.assertLess(audit.index("</span>", i_tog), i_note)
+        self.assertEqual(len(re.findall(r"\.pay-row \.addr-toggle-wrap\{",
                                         build.CSS)), 1)
 
     def test_audit_pay_row_note_attached(self):
@@ -4641,12 +4655,13 @@ class TestChecker(unittest.TestCase):
                       worker)
         self.assertNotIn(".email-para pre{background:#f9fafb", worker)
         # The blanket "width:max-content" guard used to live here, but
-        # it trips on any unrelated rule that legitimately uses it:
-        # visual verdict #115 (d) caps the /audit/ toggle button with
-        # max-width:max-content so only its text is clickable. The
-        # guard is scoped to the rule it protects instead — the
-        # .email-para pre must never be content-width (verdict #98:
-        # that made it a ~270px narrow slab).
+        # it trips on any unrelated rule that legitimately uses it.
+        # (Visual verdict #115 (d) once capped the /audit/ toggle
+        # button with max-width:max-content; verdict #116 replaced
+        # that with a full-width wrapper span, so no such rule remains
+        # on the toggle.) The guard is scoped to the rule it protects
+        # instead — the .email-para pre must never be content-width
+        # (verdict #98: that made it a ~270px narrow slab).
         self.assertNotIn(".email-para pre{width:max-content", worker)
         # The curl example is a plain <pre> outside .email-para and
         # keeps the dark full-width code style.
