@@ -17614,7 +17614,7 @@ class TestChecker(unittest.TestCase):
         expected = {
             "Rounding directions":
                 "Every preview within 1 base unit of the exact ratio"
-                " — tested at deposits of 1, 100 and 10,000 USDC.",
+                " — deposits of 1, 100, 10,000 USDC.",
             "Preview consistency":
                 "Preview must equal execution exactly — tested on a "
                 "10,000 USDC deposit and a 1,000,000-share mint and redeem.",
