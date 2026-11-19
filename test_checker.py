@@ -2597,8 +2597,12 @@ class TestChecker(unittest.TestCase):
         # hidden_files/measure-cardwidth.py at 1919px: main inner
         # 948px, prose fill ~74%, right whitespace ~26%; the donation
         # table (903px), check table (885px) and pay row (903px) all
-        # still fit with no overflow. The 72ch cap is deliberately
-        # untouched — widening it would undo the #114 readability fix.
+        # still fit with no overflow. (2026-11-19 update: the prose
+        # cap was later raised 72ch -> 80ch — the top of the 60-80ch
+        # range #114 cited — after verdicts #116/#117/#118 kept
+        # flagging the ~26% right whitespace; measured fill then
+        # 74% -> 82%. Removing the cap entirely would still be ~105
+        # chars/line and would undo the #114 readability fix.)
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -4776,23 +4780,24 @@ class TestChecker(unittest.TestCase):
 
     def test_params_box_is_full_width(self):
         # Visual verdict #117 finding (e) (2026-11-19): the
-        # Parameters box is a <p>, so the 72ch prose cap caught it
+        # Parameters box is a <p>, so the 80ch prose cap caught it
         # too — the box sat at ~696px inside a ~948px card (73%)
         # and its middle line wrapped, leaving a lone "USDC." on
         # its own line in both presets. The box is a summary card,
         # not prose: exempt it from the cap so it spans the card
-        # like the result cards below it. The 72ch cap itself stays
-        # for real prose, and the box markup and numbers are
+        # like the result cards below it. The 80ch cap itself stays
+        # for real prose (raised from 72ch 2026-11-19, see the cap
+        # comment in build.py), and the box markup and numbers are
         # untouched.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn("main p{max-width:72ch}", build.CSS)
+        self.assertIn("main p{max-width:80ch}", build.CSS)
         self.assertIn("main p.params{max-width:none}", build.CSS)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
-        self.assertIn("main p{max-width:72ch}", worker)
+        self.assertIn("main p{max-width:80ch}", worker)
         self.assertIn("main p.params{max-width:none}", worker)
 
     def test_track_groups_are_cards(self):
