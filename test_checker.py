@@ -2692,6 +2692,30 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".nav-inner nav::-webkit-scrollbar{display:none}", build.CSS)
 
+    def test_mobile_nav_fade_hint(self):
+        # Visual verdict #119 item 3, 2026-11-19: the scrollable mobile
+        # nav hid Research/Guides with no cue — at 360px nav clientW
+        # 154px against scrollW 325px, two of four links fully hidden.
+        # The right-edge fade (mask-image, last 28px to transparent)
+        # signals "more to the right". Fixed 28px, not a percentage,
+        # so wider phones don't over-fade a whole link. Measured with
+        # hidden_files/measure-nav-fade.py: 360px mask-image renders,
+        # header stays 59.0px, nav still scrolls (scrollW 325);
+        # 1919px computed mask is none (rule lives in the <=640px
+        # media query, desktop untouched).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "-webkit-mask-image:linear-gradient(to right,"
+            "#000 calc(100% - 28px),transparent);",
+            build.CSS)
+        self.assertIn(
+            "mask-image:linear-gradient(to right,"
+            "#000 calc(100% - 28px),transparent)}",
+            build.CSS)
+
     def test_homepage_intro_has_subheading(self):
         # Visual verdict #105 item 3: below the hero sat a ~5-line
         # full-width paragraph with no subheading separating it from
