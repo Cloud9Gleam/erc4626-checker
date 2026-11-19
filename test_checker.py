@@ -4612,6 +4612,36 @@ class TestChecker(unittest.TestCase):
         # quotes appear backslash-escaped there.
         self.assertIn('<div class=\\"audit-page\\">', worker)
 
+    def test_audit_trailing_list_has_no_bottom_margin(self):
+        # Visual verdict #112/#113 (2026-11-19): the /audit/ main card
+        # ended with ~49px of dead white below its last line (real
+        # browser ~55px) — the trailing "What you do not get" ul's
+        # .65em bottom margin stacked on main's 2em bottom padding.
+        # The ul is the page's last block, so its margin buys no
+        # spacing; it is zeroed. The last li's .3em bottom margin
+        # collapses out of the ul too (measured: it alone leaves ~6px),
+        # so it is zeroed as well. main padding stays — the homepage's
+        # 34px was confirmed good, and this rule is scoped to
+        # .audit-page so no other page's lists move.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".audit-page > ul:last-child{margin-bottom:0}",
+            build.CSS)
+        self.assertIn(
+            ".audit-page > ul:last-child > li:last-child{margin-bottom:0}",
+            build.CSS)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertTrue(audit.rstrip().endswith("</ul></div>"))
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(".audit-page > ul:last-child{margin-bottom:0}", worker)
+        self.assertIn(
+            ".audit-page > ul:last-child > li:last-child{margin-bottom:0}",
+            worker)
+
     def test_audit_order_form_is_a_card(self):
         # Visual verdict #100 (2026-11-18): on /audit/ the Start
         # form's four inputs sat bare on the white page — no grouping
