@@ -992,12 +992,20 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Donation inflation", failed)
         self.assertIn("verdict-strip fail", failed)
         self.assertIn('href="#results"', failed)
+        # Visual verdict #124 (g) (2026-11-20): a bare "&darr;" at the
+        # end read as expand / decoration / jump-to-the-failed-item.
+        # The strip must say in words where it goes — the full results
+        # below the form — and never end on the bare arrow again.
+        self.assertIn("see the full results below", failed)
+        self.assertNotIn("Donation inflation &darr;", failed)
         passed = build.verdict_strip_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
         self.assertIn("ALL PASS", passed)
         self.assertIn("verdict-strip pass", passed)
         self.assertNotIn("SOME FAILED", passed)
+        self.assertIn("see the full results below", passed)
+        self.assertNotIn("checks passed &darr;", passed)
         body = build.checker_body()
         self.assertEqual(body.count("verdict-strip"), 1)
         self.assertLess(body.index("verdict-strip"),
