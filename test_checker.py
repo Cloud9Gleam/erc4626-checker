@@ -4046,9 +4046,11 @@ class TestChecker(unittest.TestCase):
         # scale/red/×N legend is part of it now, not a footnote.
         self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000013 USDC).</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
         # Offset 18: every loss is 0 — no row can draw a bar, so there
-        # is no chart at all, just the one sentence (verdict #94: four
-        # placeholder rows were the worst case of the broken-chart
-        # read). The sentence carries the exact figure.
+        # is no chart at all, just the one legend item (verdict #94:
+        # four placeholder rows were the worst case of the broken-chart
+        # read; verdict #117 (f): the zero-loss facts use the same
+        # legend list form as the charted preset, not a grey
+        # footnote). The item carries the exact figure.
         html = build.results_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
@@ -4056,11 +4058,14 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("width:0.0%"), 0)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("No donation loses anything: every victim loss is 0.000000 USDC.", html)
+        self.assertIn("<ul class='loss-head'><li><strong>No loss:</strong> No donation loses anything: every victim loss is 0.000000 USDC.</li></ul>", html)
+        self.assertNotIn("<p class='loss-note'>", html)
         # Mixed table: one tiny row, one drawable row, one error row —
-        # a single drawable bar is not a chart, so the chart is
-        # replaced by the peak sentence; the error row is named in it
-        # and explained in the table's Note column.
+        # a single drawable bar is not a chart, so there is no chart —
+        # but the peak facts still arrive as the same legend list the
+        # charted preset carries (verdict #117 (f)), not a grey
+        # footnote; the error row is named in it and explained in
+        # the table's Note column.
         mixed = [{"name": "donation_inflation", "pass": False, "detail": [
             {"donation": 1_000_000_000, "victim_loss": 6,
              "attacker_net": -1},
@@ -4072,7 +4077,8 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("loss-chart", html)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("Victim loss peaks at 0.909091 USDC at a 1,000,000 USDC donation; every other donation with a loss figure loses at most 0.000006 USDC — too little to draw a bar at this scale. Rows with no loss figure are listed in the table above.", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Peak:</strong> Victim loss peaks at 0.909091 USDC at a 1,000,000 USDC donation.</li><li><strong>Others:</strong> Every other donation with a loss figure loses at most 0.000006 USDC — too little to draw a bar at this scale.</li><li><strong>No figure:</strong> Rows with no loss figure are listed in the table above.</li></ul>", html)
+        self.assertNotIn("<p class='loss-note'>", html)
         # Chart with an error row as well as an omitted row: both
         # sentences join the header, in the same order, followed by
         # the scale/red/×N sentence; no footnote below the chart.
@@ -4182,7 +4188,9 @@ class TestChecker(unittest.TestCase):
         # rows under 0.5% of the worst row are omitted from the chart
         # (named in the note; exact figures stay in the table above),
         # and when fewer than two rows can draw a bar there is no
-        # chart at all, just one sentence carrying the same numbers.
+        # chart at all, just the peak facts as the same legend list
+        # the charted preset carries (verdict #117 (f)), not a grey
+        # footnote.
         # The .loss-track--tiny / .loss-too-small rules stay in the
         # shared stylesheet (dead but harmless — removing them would
         # churn every page's CSS for no visible gain); no renderer
@@ -4203,16 +4211,17 @@ class TestChecker(unittest.TestCase):
         self.assertIn("width:100.0%", html)
         self.assertIn("width:11.0%", html)
         # Default preset (offset 6): losses 0 / 0 / 1 / 900 base units —
-        # a single drawable bar is not a chart, so the peak sentence
-        # replaces it; the smaller donations are capped by their
-        # ceiling figure.
+        # a single drawable bar is not a chart, so the peak facts
+        # arrive as the legend list, not a grey footnote; the smaller
+        # donations are capped by their ceiling figure.
         html = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
         self.assertNotIn("loss-chart", html)
-        self.assertIn("Victim loss peaks at 0.000900 USDC at a 1,000,000,000 USDC donation; every other donation loses at most 0.000001 USDC — too little to draw a bar at this scale.", html)
-        # Offset 18: every loss is 0 — no chart, just the all-zero
-        # sentence.
+        self.assertIn("<ul class='loss-head'><li><strong>Peak:</strong> Victim loss peaks at 0.000900 USDC at a 1,000,000,000 USDC donation.</li><li><strong>Others:</strong> Every other donation loses at most 0.000001 USDC — too little to draw a bar at this scale.</li></ul>", html)
+        self.assertNotIn("<p class='loss-note'>", html)
+        # Offset 18: every loss is 0 — no chart, just the one legend
+        # item.
         html = build.results_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
@@ -4220,12 +4229,15 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-track--tiny"), 0)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("No donation loses anything: every victim loss is 0.000000 USDC.", html)
+        self.assertIn("<ul class='loss-head'><li><strong>No loss:</strong> No donation loses anything: every victim loss is 0.000000 USDC.</li></ul>", html)
+        self.assertNotIn("<p class='loss-note'>", html)
         # The Worker-side template renders the same omission note and
-        # peak sentence, and no placeholder chip.
+        # peak list, and no placeholder chip.
         js = build.checker_results_html_js()
         self.assertIn("Rows losing under 0.5% of the worst row (", js)
         self.assertIn("Victim loss peaks at ", js)
+        self.assertIn("<strong>Peak:</strong> Victim loss peaks at ", js)
+        self.assertIn("<strong>No loss:</strong> No donation loses anything", js)
         self.assertIn("No donation loses anything: every victim loss is ", js)
         self.assertNotIn("loss-track--tiny", js)
         self.assertNotIn("loss-too-small", js)
@@ -14693,8 +14705,9 @@ class TestChecker(unittest.TestCase):
         # is shorter than the 1M row's — without the anchor value in the
         # legend a reader misreads "bigger donation = safer". The header
         # must name the worst row's loss in USDC. Where the chart is
-        # replaced by the peak sentence (verdict #94: fewer than two
-        # drawable bars), the sentence must name the same value.
+        # replaced by the peak list (verdict #94: fewer than two
+        # drawable bars; verdict #117 (f): same legend list form, no
+        # grey footnote), the list must name the same value.
         import importlib.util
         from pathlib import Path
         spec = importlib.util.spec_from_file_location(
@@ -14710,11 +14723,16 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(
             "Bars are scaled to the worst row in this table;", html)
         # Offset 6: a single drawable bar is not a chart — the peak
-        # sentence names the same worst-row value.
+        # facts name the same worst-row value, as the same legend list
+        # the charted preset carries (verdict #117 (f)), not a grey
+        # footnote.
         v = Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)
         html = build.results_html(run_all(v), off=6, mn=1_000_000, fee=1000)
         self.assertIn("Victim loss peaks at 0.000900 USDC", html)
         self.assertNotIn("Bars are scaled to the worst row in this table", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Peak:</strong> Victim loss peaks at 0.000900 USDC at a 1,000,000,000 USDC donation.</li><li><strong>Others:</strong> Every other donation loses at most 0.000001 USDC — too little to draw a bar at this scale.</li></ul>", html)
+        self.assertNotIn("<p class='loss-note'>", html)
+        self.assertNotIn("<div class='loss-chart", html)
     def test_donation_loss_recognition_guide_numbers(self):
         # Pins /guides/erc4626-donation-loss-recognition/ to its
         # model: a donation into a vault carrying an unrecognised
