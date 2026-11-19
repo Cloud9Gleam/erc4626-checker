@@ -3853,9 +3853,21 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-track--tiny"), 0)
         self.assertNotIn("too small to draw", html)
         self.assertIn("Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.", html)
+        # Visual verdict #113 item (d): the omitted-rows statement is
+        # a header inside the chart, above the bars — not a footnote
+        # below them. A first glance at the chart now sees which rows
+        # are missing before seeing the bars; the footnote below keeps
+        # only the scale/red/×N explanation.
+        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</p>", html)
+        self.assertLess(html.index("loss-head"), html.index("loss-row"))
+        note = html.split("<p class='loss-note'>", 1)[1].split("</p>", 1)[0]
+        self.assertNotIn("Rows losing under 0.5%", note)
+        self.assertIn("Bars are scaled to the worst row in this table", note)
+        self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em}", build.CSS)
         # The Worker-side template renders the same omission note, and
         # no placeholder label anywhere.
         self.assertIn("Rows losing under 0.5% of the worst row (", build.checker_results_html_js())
+        self.assertIn("loss-head", build.checker_results_html_js())
         self.assertNotIn("too small to draw", build.checker_results_html_js())
         self.assertNotIn("loss-track--tiny", build.checker_results_html_js())
         self.assertIn("width:100.0%", html)
@@ -3898,6 +3910,22 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
         self.assertIn("Victim loss peaks at 0.909091 USDC at a 1,000,000 USDC donation; every other donation with a loss figure loses at most 0.000006 USDC — too little to draw a bar at this scale. Rows with no loss figure are listed in the table above.", html)
+        # Chart with an error row as well as an omitted row: both
+        # sentences join the header, in the same order, and the
+        # footnote below keeps only the scale explanation.
+        mixed2 = [{"name": "donation_inflation", "pass": False, "detail": [
+            {"donation": 1_000_000, "victim_loss": 6,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000, "victim_loss": 909091,
+             "attacker_net": -90909},
+            {"donation": 1_000_000_000_000, "victim_loss": 500000,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000_000_000, "victim_loss": None,
+             "attacker_net": None, "error": "below minimum deposit"}]}]
+        html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("loss-chart loss-chart--bare", html)
+        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row. Rows with no loss figure are not drawn either; see the table above.</p>", html)
+        self.assertLess(html.index("loss-head"), html.index("loss-row"))
         # Giant minimum deposit: every row errors, no number to chart.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=10 ** 21,
