@@ -974,6 +974,38 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
 
+    def test_verdict_strip_above_form(self):
+        # Visual verdict #119 item 2 (2026-11-19): the result banner
+        # sits below the form, so a visitor arriving on
+        # /checker/?preset=noprot sees the form first and must scroll
+        # to learn the verdict. A one-line strip above the form must
+        # carry the same verdict and link down to the full results.
+        # The Worker JS renderer carries the same strip; it is verified
+        # by the verdict-strip node harness, not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        failed = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
+        self.assertIn("SOME FAILED", failed)
+        self.assertIn("Donation inflation", failed)
+        self.assertIn("verdict-strip fail", failed)
+        self.assertIn('href="#results"', failed)
+        passed = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertIn("ALL PASS", passed)
+        self.assertIn("verdict-strip pass", passed)
+        self.assertNotIn("SOME FAILED", passed)
+        body = build.checker_body()
+        self.assertEqual(body.count("verdict-strip"), 1)
+        self.assertLess(body.index("verdict-strip"),
+                        body.index('<form id="checker-form"'))
+        self.assertIn("ALL PASS", body)
+        self.assertIn(".verdict-strip.fail", build.CSS)
+        self.assertIn(".verdict-strip a", build.CSS)
+
     def test_email_para_carries_vault_state(self):
         # The 'Prefer email?' mailto must carry the parameters actually
         # run. The mailbox reply path already parses vault_assets_usdc
