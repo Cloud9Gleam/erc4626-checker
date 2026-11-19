@@ -3861,16 +3861,15 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-track--tiny"), 0)
         self.assertNotIn("too small to draw", html)
         self.assertIn("Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.", html)
-        # Visual verdict #113 item (d): the omitted-rows statement is
-        # a header inside the chart, above the bars — not a footnote
-        # below them. A first glance at the chart now sees which rows
-        # are missing before seeing the bars; the footnote below keeps
-        # only the scale/red/×N explanation.
-        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</p>", html)
+        # Visual verdict #114 new finding (d): the chart legend lived
+        # in two places — the omitted-rows header above the bars and
+        # the scale/red/×N footnote below them. It is now one block:
+        # the header above the bars carries the omitted-rows sentence
+        # plus the scale/red/×N explanation, and there is no footnote
+        # below the chart at all.
+        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row. Bars are scaled to the worst row in this table (0.909091 USDC); red bars breach the pass bound; the ×N after a red value is how many times that loss exceeds the bound.</p>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
-        note = html.split("<p class='loss-note'>", 1)[1].split("</p>", 1)[0]
-        self.assertNotIn("Rows losing under 0.5%", note)
-        self.assertIn("Bars are scaled to the worst row in this table", note)
+        self.assertNotIn("<p class='loss-note'>", html)
         self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em}", build.CSS)
         # The Worker-side template renders the same omission note, and
         # no placeholder label anywhere.
@@ -3890,6 +3889,9 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-fill fail"), 0)
         self.assertEqual(html.count("loss-fill pass"), 4)
         self.assertIn("width:7.7%", html)
+        # No rows omitted here, yet the header is still present: the
+        # scale/red/×N legend is part of it now, not a footnote.
+        self.assertIn("<p class='loss-head'>Bars are scaled to the worst row in this table (0.000013 USDC); red bars breach the pass bound; the ×N after a red value is how many times that loss exceeds the bound.</p>", html)
         # Offset 18: every loss is 0 — no row can draw a bar, so there
         # is no chart at all, just the one sentence (verdict #94: four
         # placeholder rows were the worst case of the broken-chart
@@ -3919,8 +3921,8 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-too-small"), 0)
         self.assertIn("Victim loss peaks at 0.909091 USDC at a 1,000,000 USDC donation; every other donation with a loss figure loses at most 0.000006 USDC — too little to draw a bar at this scale. Rows with no loss figure are listed in the table above.", html)
         # Chart with an error row as well as an omitted row: both
-        # sentences join the header, in the same order, and the
-        # footnote below keeps only the scale explanation.
+        # sentences join the header, in the same order, followed by
+        # the scale/red/×N sentence; no footnote below the chart.
         mixed2 = [{"name": "donation_inflation", "pass": False, "detail": [
             {"donation": 1_000_000, "victim_loss": 6,
              "attacker_net": -1},
@@ -3932,8 +3934,9 @@ class TestChecker(unittest.TestCase):
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row. Rows with no loss figure are not drawn either; see the table above.</p>", html)
+        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row. Rows with no loss figure are not drawn either; see the table above. Bars are scaled to the worst row in this table (0.909091 USDC); red bars breach the pass bound; the ×N after a red value is how many times that loss exceeds the bound.</p>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
+        self.assertNotIn("<p class='loss-note'>", html)
         # Giant minimum deposit: every row errors, no number to chart.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=10 ** 21,
@@ -14501,10 +14504,10 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(round(float(F(100_000, 11) / 10_000 * 100), 1), 90.9)
 
 
-    def test_loss_chart_note_names_worst_row_value(self):
+    def test_loss_chart_head_names_worst_row_value(self):
         # The bar chart is scaled to the worst row, and the 1B row's bar
         # is shorter than the 1M row's — without the anchor value in the
-        # caption a reader misreads "bigger donation = safer". The note
+        # legend a reader misreads "bigger donation = safer". The header
         # must name the worst row's loss in USDC. Where the chart is
         # replaced by the peak sentence (verdict #94: fewer than two
         # drawable bars), the sentence must name the same value.
