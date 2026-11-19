@@ -4338,14 +4338,14 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.", html)
         # Visual verdict #114 new finding (d): the chart legend lived
         # in two places — the omitted-rows header above the bars and
-        # the scale/red/×N footnote below them. It is now one block:
+        # the scale/red footnote below them. It is now one block:
         # the header above the bars carries the omitted-rows sentence
-        # plus the scale/red/×N explanation, and there is no footnote
+        # plus the scale/red explanation, and there is no footnote
         # below the chart at all.
         # Visual verdict #116 new finding (c): the legend is a list
         # now — one line per idea, each with a bold label — not one
         # paragraph of four sentences.
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li></ul>", html)
         self.assertNotIn("<p class='loss-head'>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
@@ -4370,8 +4370,8 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-fill pass"), 4)
         self.assertIn("width:7.7%", html)
         # No rows omitted here, yet the header is still present: the
-        # scale/red/×N legend is part of it now, not a footnote.
-        self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000013 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        # scale/red legend is part of it now, not a footnote.
+        self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000013 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li></ul>", html)
         # Offset 18: every loss is 0 — no row can draw a bar, so there
         # is no chart at all, just the one legend item (verdict #94:
         # four placeholder rows were the worst case of the broken-chart
@@ -4409,13 +4409,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn("width:100.0%", html)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li></ul>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("too little to draw", html)
         self.assertNotIn("<p class='loss-note'>", html)
         # Chart with an error row as well as an omitted row: both
         # sentences join the header, in the same order, followed by
-        # the scale/red/×N sentence; no footnote below the chart.
+        # the scale/red sentence; no footnote below the chart.
         mixed2 = [{"name": "donation_inflation", "pass": False, "detail": [
             {"donation": 1_000_000, "victim_loss": 6,
              "attacker_net": -1},
@@ -4427,7 +4427,7 @@ class TestChecker(unittest.TestCase):
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li></ul>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
         # Giant minimum deposit: every row errors, no number to chart.
@@ -4474,17 +4474,19 @@ class TestChecker(unittest.TestCase):
                       "0.099890 USDC &middot; 99.9&times; the bound</span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:11.0%'></span></span></div>", html)
-        # The chart note defines what the multiple means. (Visual
-        # verdict #115 (c): the scale sentence is now three short
-        # sentences, so the ×N clause starts with a capital T.)
+        # Visual verdict #124 new finding ③ (2026-11-20): the
+        # legend no longer carries a ×N line — the bar value itself
+        # says "909× the bound", so the legend line restated it.
+        # The multiple's meaning is defined by the label, not the
+        # legend any more.
+        self.assertNotIn("<strong>×N:</strong>", html)
+        self.assertNotIn("The ×N after a red value", html)
         # Visual verdict #123 new finding ③ follow-up (2026-11-20):
         # the longer label squeezes the mobile track to ~30px, so
         # below 640px the bare-chart value takes its own line and
         # the track gets the full row width again.
         self.assertIn(".loss-chart--bare .loss-value{flex:1 1 100%}",
                       build.CSS)
-        self.assertIn("The ×N after a red value is how many times that "
-                      "loss exceeds the bound", html)
         # No trace of the hug-the-bar-end mechanism: no inside class,
         # no --pct variable anywhere in the chart markup or CSS.
         self.assertNotIn("loss-value--inside", html)
@@ -4662,7 +4664,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertEqual(html.count("loss-row"), 1)
         self.assertIn("<span class='loss-value'>0.000900 USDC</span><span class='loss-track'><span class='loss-fill pass' style='width:100.0%'></span></span>", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC, 1,000,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000900 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC, 1,000,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000900 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li></ul>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("too little to draw", html)
         self.assertNotIn("<p class='loss-note'>", html)
@@ -15191,7 +15193,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             "Bars are scaled to the worst row in this table "
             "(0.000900 USDC)", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC, 1,000,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000900 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC, 1,000,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000900 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li></ul>", html)
         self.assertNotIn("<p class='loss-note'>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertIn("<div class='loss-chart loss-chart--bare'>", html)
