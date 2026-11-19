@@ -2027,6 +2027,78 @@ class TestChecker(unittest.TestCase):
         home = pages["/"]
         self.assertIn('<a href="/poc-packaging/">PoC packaging</a>', home)
 
+    def test_gate_check_pages_state_verdict_and_links(self):
+        # Gate-check pages (2026-11-20, #4 packaging build): each page
+        # must carry its writeup's Gate 6 conclusion verbatim, the KILL
+        # characterization (not a clean negative), scope-table
+        # availability, audit history, and pinned-commit resolvability —
+        # with no new verdict and no participation recommendation — and
+        # must link to the #1 checker and the #2 micro-audit.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        titles = dict((p, t) for p, t, d, k, b in build.PAGES)
+        for path in ("/gate-check/robinhood/", "/gate-check/ondo-perps/",
+                     "/gate-check/usdai/"):
+            self.assertIn("gate check", titles[path])
+            page = pages[path]
+            self.assertIn("2026-11-01", page)
+            self.assertIn(
+                "KILLED. Not picked, not audited, no PoC, no submission, "
+                "no money,", page)
+            self.assertIn(
+                "This is NOT a clean negative and is NOT counted toward "
+                "any kill", page)
+            self.assertIn("not a recommendation", page)
+            self.assertNotIn("we recommend", page)
+            self.assertNotIn("Submit a finding", page)
+            self.assertNotIn("Apply now", page)
+            self.assertIn('<a href="/checker/">', page)
+            self.assertIn('<a href="/audit/">', page)
+        rh = pages["/gate-check/robinhood/"]
+        self.assertIn("Gate 6 (NO-KYC payout) — UNCONFIRMED, primary kill.",
+                      rh)
+        self.assertIn("no scope table", rh)
+        self.assertIn("CertiK's Skynet page", rh)
+        self.assertIn("Armanino LLP quarterly reserve reports", rh)
+        self.assertIn("No Robinhood source repository was located", rh)
+        self.assertIn("0x4783C67b63dE2B358Ac5951a7D41F47A38F3C046", rh)
+        self.assertIn("cantina.xyz/bounties/2acbecd1-3a5e-44fb-a324-a524c156d690",
+                      rh)
+        op = pages["/gate-check/ondo-perps/"]
+        self.assertIn("Gate 6 (NO-KYC payout) — FAILED, primary kill.", op)
+        self.assertIn("full name, date of birth, proof of address", op)
+        self.assertIn(
+            "a copy of a passport or other government-issued ID.", op)
+        self.assertIn("no scope table", op)
+        self.assertIn(
+            "No perps-specific audit report with clear scope and findings "
+            "was located.", op)
+        self.assertIn(
+            "No Ondo Perps contract repository, commit, or forge setup "
+            "was located.", op)
+        self.assertIn("not use a pooled smart contract to govern user "
+                      "funds", op)
+        self.assertIn("cantina.xyz/bounties/5ffa2a58-2121-4986-b318-43f8ba9a559e",
+                      op)
+        us = pages["/gate-check/usdai/"]
+        self.assertIn("Gate 6 (NO-KYC payout) — UNCONFIRMED, primary kill.",
+                      us)
+        self.assertIn(
+            "Gate 5 (forge-runnable at pinned scope) — PARTIALLY "
+            "UNCONFIRMED,", us)
+        self.assertIn("23b06f19b779505b3e71510c80e434bf4a11f97c", us)
+        self.assertIn("does NOT exist in any", us)
+        self.assertIn("0c8946fb6b3c041636c058d84fc40bb910a025f4", us)
+        self.assertIn("Quantstamp, USD.Ai Chip Token, timeline 2026-02-03",
+                      us)
+        self.assertIn('successful!" with exit code 0', us)
+        self.assertIn("112\nmissing entries", us)
+        self.assertIn("cantina.xyz/bounties/32e64f2e-5f01-4a0b-bbe3-76f32c17b99f",
+                      us)
+
     def test_audit_pay_address_has_basescan_link(self):
         # Visual verdict #103 (2026-11-18): the pay-box had no way to
         # verify the payment address on-chain — a payer about to send 50
@@ -2086,12 +2158,17 @@ class TestChecker(unittest.TestCase):
         # the model docstring says the donation AND minimum-viable-deposit
         # checks use it. Both render paths (Python form + Worker JS form)
         # and the API table must say so; the old wording must be gone.
+        # 2026-11-20 (visual verdict #122 item 2): the sentence now
+        # continues with the victim-loss clause -- the Vault assets now
+        # hint was lengthened so it renders 4 lines like its row partner
+        # (Victim deposit), evening row 2 of the form at desktop.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         checker = dict((p, b) for p, t, d, k, b in build.PAGES)["/checker/"]
-        self.assertIn("The donation and minimum-viable-deposit checks use this.",
+        self.assertIn("The donation and minimum-viable-deposit checks use this, "
+                      "and the victim loss is measured against this state.",
                       checker)
         # The API note ends with a period now: its "; 0 = a new vault"
         # tail was dropped (visual verdict #105 item 5) so the note fits
@@ -2103,7 +2180,18 @@ class TestChecker(unittest.TestCase):
                          checker)
         self.assertNotIn("Only the donation check uses", checker)
         self.assertNotIn("Seeds only the donation check", checker)
-        self.assertIn("The donation and minimum-viable-deposit checks use this.",
+        self.assertNotIn("minimum-viable-deposit checks use this.</span>",
+                         checker)
+        # Regression guard (2026-11-20): the Worker-side form is a
+        # single-quoted JS string -- an apostrophe in any hint breaks
+        # worker.js at node --check. The first version of the
+        # victim-loss clause used "victim's loss" and broke the build;
+        # the clause must stay apostrophe-free ("victim loss").
+        self.assertNotIn("'", "The donation and minimum-viable-deposit "
+                              "checks use this, and the victim loss is "
+                              "measured against this state.")
+        self.assertIn("The donation and minimum-viable-deposit checks use this, "
+                      "and the victim loss is measured against this state.",
                       build.worker_js(
                           dict((p, b) for p, t, d, k, b in build.PAGES)))
 
@@ -5507,7 +5595,7 @@ class TestChecker(unittest.TestCase):
         # Regression guard: the form HTML is duplicated in a
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check.
-        hint = ("The deposit made after the donation, at the inflated share price — "
+        hint = ("The deposit after the donation, at the inflated price — "
                 "it mints fewer shares than it should. Its loss is the deposit minus "
                 "what those shares redeem for. Below the minimum, or minting zero "
                 "shares, it reverts and no loss is measured.")
@@ -5518,6 +5606,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn(hint, src)
         self.assertIn(hint.replace("—", "\\u2014"), src)
         self.assertNotIn("The deposit the donation attacker targets.", src)
+        # 2026-11-20 (visual verdict #122 item 2): the first clause was
+        # trimmed ("made after the donation, at the inflated share price"
+        # -> "after the donation, at the inflated price") so the hint
+        # renders 4 lines like its row partner (Vault assets now),
+        # evening row 2 of the form at desktop. The old wording must
+        # be gone from both render copies.
+        self.assertNotIn("at the inflated share price", src)
         js = (Path.home() / "workspace/taskmarket/site/checker.js").read_text()
         self.assertLess(js.index("w.donate(d)"), js.index("w.deposit(victimDeposit)"))
         self.assertIn("const vicLoss = victimDeposit - vicOut;", js)
