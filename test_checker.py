@@ -3566,6 +3566,15 @@ class TestChecker(unittest.TestCase):
         self.assertIsNotNone(t, ".pay-row .addr-toggle rule not found")
         self.assertNotIn("flex:", t.group(0))
         self.assertNotIn("max-width", t.group(0))
+        # Visual verdict #124 (f): the toggle was 14.45px / #6b7280 /
+        # 4.45:1 — the smallest, lowest-contrast item in the pay-row.
+        # It now renders at .95em in #374151 (the pay-note's colour,
+        # 9.49:1): legible, still a plain underlined link, still no
+        # button chrome, still below the copy button in the hierarchy.
+        self.assertIn("font-size:.95em", t.group(0))
+        self.assertIn("color:#374151", t.group(0))
+        self.assertNotIn("font-size:.85em", t.group(0))
+        self.assertNotIn("color:#6b7280", t.group(0))
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         # Button-anchored markers: the bare string "Show shortened"
         # also occurs inside the toggle's own script
