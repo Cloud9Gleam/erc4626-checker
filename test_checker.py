@@ -2470,7 +2470,7 @@ class TestChecker(unittest.TestCase):
 
     def test_homepage_hero_is_full_bleed(self):
         # Visual verdict #105 item 2: at 1919px the homepage hero was
-        # a rounded card inside the 1280px column — ~320px of bare
+        # a rounded card inside the then-1280px column — ~320px of bare
         # margin on each side, and the dark green band stopped short
         # of the viewport edges. The hero is now hoisted out of the
         # body at render time and served in a full-width band (same
@@ -2503,13 +2503,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<div class="flow"', hero_block)
         self.assertIn('class="hero-stats"', hero_block)
         # The band carries the gradient; the inner hero is transparent
-        # (its own gradient would restart at the 1280px box and seam),
+        # (its own gradient would restart at the 1024px box and seam),
         # centred, square-cornered, shadowless.
         self.assertIn(
             ".hero-bleed{background:linear-gradient(135deg,#0c3b2e,#0a5c38)}",
             build.CSS)
         self.assertIn(
-            ".hero-bleed .hero{background:transparent;max-width:1280px;"
+            ".hero-bleed .hero{background:transparent;max-width:1024px;"
             "margin:0 auto;border-radius:0;box-shadow:none;"
             "padding:1.5em 1.25em .9em}", build.CSS)
         # Only the homepage has a hero band: the shared CSS is inlined
@@ -2521,6 +2521,30 @@ class TestChecker(unittest.TestCase):
         # hero (body-based hero tests keep slicing it from there).
         body = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn('<div class="hero">', body)
+
+    def test_page_column_is_1024(self):
+        # Visual verdict #115 finding 1 (2026-11-19): the 72ch prose
+        # cap (~700px) sat inside a 1280px column (~1204px inner) —
+        # prose filled only ~58% of every card, ~42% bare on the
+        # right. The page column is now 1024px: nav, wrap and hero
+        # share the value so the three stay aligned. Measured with
+        # hidden_files/measure-cardwidth.py at 1919px: main inner
+        # 948px, prose fill ~74%, right whitespace ~26%; the donation
+        # table (903px), check table (885px) and pay row (903px) all
+        # still fit with no overflow. The 72ch cap is deliberately
+        # untouched — widening it would undo the #114 readability fix.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".nav-inner{max-width:1024px;margin:0 auto;", build.CSS)
+        self.assertIn(
+            ".wrap{max-width:1024px;margin:0 auto;", build.CSS)
+        self.assertIn(
+            ".hero-bleed .hero{background:transparent;max-width:1024px;",
+            build.CSS)
+        self.assertNotIn("max-width:1280px", build.CSS)
 
     def test_homepage_intro_has_subheading(self):
         # Visual verdict #105 item 3: below the hero sat a ~5-line
