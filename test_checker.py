@@ -1006,6 +1006,25 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".verdict-strip.fail", build.CSS)
         self.assertIn(".verdict-strip a", build.CSS)
 
+    def test_verdict_strip_full_width(self):
+        # Visual verdict #120 checker item 1 (2026-11-19): the strip is a
+        # <p> inside <main>, so the 80ch prose cap clamped it to ~778px
+        # while the notice box and form card beside it run 946px — it
+        # read as a pill button, not a banner. A strip is UI, not prose:
+        # exempt it from the cap. Measured with
+        # hidden_files/measure-hero-void.py at 1919px: strip 814px ->
+        # 946px, exactly the notice/form width; the 80ch cap itself is
+        # untouched (other prose still capped).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".verdict-strip{font-weight:700;border-radius:8px;"
+            "padding:.6em 1em;margin:0 0 1em;max-width:none}",
+            build.CSS)
+        self.assertIn("main p{max-width:80ch}", build.CSS)
+
     def test_email_para_carries_vault_state(self):
         # The 'Prefer email?' mailto must carry the parameters actually
         # run. The mailbox reply path already parses vault_assets_usdc
