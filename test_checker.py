@@ -4522,6 +4522,13 @@ class TestChecker(unittest.TestCase):
         # lines were clear on the red fill but still easy to miss on
         # the white track at normal viewing distance, so the lines
         # are widened to 2px here (alpha stays .5).
+        # Visual verdict #123 item (a) (2026-11-20): at .5 the 2px
+        # lines were still faint on the white track at normal viewing
+        # distance — only clearly visible zoomed 3x — while the
+        # red-bar lines already read black and clear. Width alone
+        # did not fix noticeability, so alpha goes .5 -> .8 here;
+        # the red-bar lines go near-black, which is their already
+        # accepted look, not a regression.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -4532,14 +4539,14 @@ class TestChecker(unittest.TestCase):
             ".loss-chart--bare .loss-track::after{content:\"\";"
             "position:absolute;inset:0;pointer-events:none;"
             "background-image:linear-gradient(to right,transparent "
-            "calc(25% - 1px),rgba(17,24,39,.5) calc(25% - 1px),"
-            "rgba(17,24,39,.5) calc(25% + 1px),transparent "
+            "calc(25% - 1px),rgba(17,24,39,.8) calc(25% - 1px),"
+            "rgba(17,24,39,.8) calc(25% + 1px),transparent "
             "calc(25% + 1px)),linear-gradient(to right,transparent "
-            "calc(50% - 1px),rgba(17,24,39,.5) calc(50% - 1px),"
-            "rgba(17,24,39,.5) calc(50% + 1px),transparent "
+            "calc(50% - 1px),rgba(17,24,39,.8) calc(50% - 1px),"
+            "rgba(17,24,39,.8) calc(50% + 1px),transparent "
             "calc(50% + 1px)),linear-gradient(to right,transparent "
-            "calc(75% - 1px),rgba(17,24,39,.5) calc(75% - 1px),"
-            "rgba(17,24,39,.5) calc(75% + 1px),transparent "
+            "calc(75% - 1px),rgba(17,24,39,.8) calc(75% - 1px),"
+            "rgba(17,24,39,.8) calc(75% + 1px),transparent "
             "calc(75% + 1px))}",
             build.CSS)
         html = build.results_html(
