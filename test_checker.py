@@ -2064,11 +2064,17 @@ class TestChecker(unittest.TestCase):
         # continuous wall, several screens with no folding or summary
         # (visual verdicts #51/#52). Each group is now a <details> with
         # the group title as its summary: the page scans as five lines.
-        # All five groups are closed by default (visual verdict #109
+        # Four groups are closed by default (visual verdict #109
         # item 2): the first group used to stay open, adding ~250px on
         # desktop / ~500px on mobile and pushing "What you do not get"
-        # to the 3rd (desktop) / 7th (mobile) viewport; its summary line
-        # still carries the strongest claim, one click away.
+        # to the 3rd (desktop) / 7th (mobile) viewport. (2026-11-19
+        # update: verdict #119 item 3 second half supersedes #109 for
+        # the FIRST group only — the strongest proof (Gamma 25/27,
+        # BattleChain 9/9, Zaros 66/70) was invisible behind one click
+        # on the paid page, so the first group is open by default and
+        # the other four stay closed; the 33-item First Flight wall
+        # still folds. The first group's summary line still carries
+        # the strongest claim, now visible without a click.)
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2077,14 +2083,15 @@ class TestChecker(unittest.TestCase):
         track = audit[audit.index("<h2>Track record</h2>"):]
         self.assertEqual(track.count('<details class="track-group"'), 5)
         self.assertEqual(track.count("<summary>"), 5)
-        self.assertNotIn('<details class="track-group" open>', track)
+        self.assertEqual(track.count('<details class="track-group" open>'), 1)
         # Strongest proof first: the ended contests whose full awarded
-        # sets were re-verified — now as a closed group like the rest.
+        # sets were re-verified — open by default (see above), the only
+        # open group; the rest are closed like before.
         # Visual verdict #112 item 1: a folded row showed only its
         # title, so each summary now carries a one-line preview of the
         # strongest item(s) inside; the folded state still proves the
         # method at a glance.
-        self.assertIn('<details class="track-group">\n'
+        self.assertIn('<details class="track-group" open>\n'
                       '<summary>Full awarded set re-verified — ended contests (3)'
                       '<span class="track-toggle"><span class="when-closed">Show 3 reviews</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
@@ -2601,13 +2608,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<div class="flow"', hero_block)
         self.assertIn('class="hero-stats"', hero_block)
         # The band carries the gradient; the inner hero is transparent
-        # (its own gradient would restart at the 1024px box and seam),
+        # (its own gradient would restart at the 1280px box and seam),
         # centred, square-cornered, shadowless.
         self.assertIn(
             ".hero-bleed{background:linear-gradient(135deg,#0c3b2e,#0a5c38)}",
             build.CSS)
         self.assertIn(
-            ".hero-bleed .hero{background:transparent;max-width:1024px;"
+            ".hero-bleed .hero{background:transparent;max-width:1280px;"
             "margin:0 auto;border-radius:0;box-shadow:none;"
             "padding:1.5em 1.25em .9em}", build.CSS)
         # Only the homepage has a hero band: the shared CSS is inlined
@@ -2620,12 +2627,12 @@ class TestChecker(unittest.TestCase):
         body = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn('<div class="hero">', body)
 
-    def test_page_column_is_1024(self):
+    def test_page_column_is_layered_wide_tier(self):
         # Visual verdict #115 finding 1 (2026-11-19): the 72ch prose
         # cap (~700px) sat inside a 1280px column (~1204px inner) —
         # prose filled only ~58% of every card, ~42% bare on the
-        # right. The page column is now 1024px: nav, wrap and hero
-        # share the value so the three stay aligned. Measured with
+        # right. The page column became 1024px: nav, wrap and hero
+        # shared the value so the three stayed aligned. Measured with
         # hidden_files/measure-cardwidth.py at 1919px: main inner
         # 948px, prose fill ~74%, right whitespace ~26%; the donation
         # table (903px), check table (885px) and pay row (903px) all
@@ -2635,18 +2642,30 @@ class TestChecker(unittest.TestCase):
         # flagging the ~26% right whitespace; measured fill then
         # 74% -> 82%. Removing the cap entirely would still be ~105
         # chars/line and would undo the #114 readability fix.)
+        # Visual verdict #119 item 1 (2026-11-19): at 1919px the page
+        # still ran ~440-1460px with ~440px bare on each side (~46%),
+        # and the verdict's fix is LAYERED widening of the non-prose
+        # zones, not the content column. So the tier split: nav and
+        # hero are the wide tier (1280px) — full-bleed bands whose
+        # content can use the width without touching any prose —
+        # while .wrap stays 1024px. Widening .wrap would widen the
+        # white card and leave the 80ch prose more isolated inside it
+        # (the #114 problem at a bigger scale). Measured with
+        # hidden_files/measure-home-wide.py at 1919px: hero green
+        # sides 419/434px -> 291/306px, hero lead 2 lines -> 1 line
+        # of ~80 chars, nav and hero left edges aligned at ~291px.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            ".nav-inner{max-width:1024px;margin:0 auto;", build.CSS)
+            ".nav-inner{max-width:1280px;margin:0 auto;", build.CSS)
         self.assertIn(
             ".wrap{max-width:1024px;margin:0 auto;", build.CSS)
         self.assertIn(
-            ".hero-bleed .hero{background:transparent;max-width:1024px;",
+            ".hero-bleed .hero{background:transparent;max-width:1280px;",
             build.CSS)
-        self.assertNotIn("max-width:1280px", build.CSS)
+        self.assertNotIn(".wrap{max-width:1280px", build.CSS)
 
     def test_mobile_nav_is_one_scrollable_row(self):
         # Visual verdict #118 leftover, 2026-11-19: at 360px the header
