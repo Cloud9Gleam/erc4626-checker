@@ -15511,9 +15511,19 @@ class TestChecker(unittest.TestCase):
         self.assertGreaterEqual(
             build_text.count("up to 15 files, 50 USDC prepaid"),
             100)
+        # Visual verdict #120 item 4 (2026-11-19, real browser,
+        # desktop 1919px): the /audit/ H1 wrapped with only
+        # "72-hour report" on line 2 — the title was 832px in
+        # headless (114px slack) but the real browser's wider
+        # font pushed it over one line. Dropping "fixed scope, "
+        # from the title (the body still opens "A fixed-scope
+        # review…", so nothing is lost) cuts it to 653px
+        # (293px slack), which holds one line even in a wider
+        # system font. Measured with
+        # hidden_files/measure-audit-h1.py.
         self.assertIn(
-            'add("/audit/", "Vault micro-audit — fixed scope, '
-            '50 USDC, 72-hour report"', build_text)
+            'add("/audit/", "Vault micro-audit — 50 USDC, '
+            '72-hour report"', build_text)
 
     def test_home_cards_bottom_links(self):
         # Visual verdict #112 item 2, reopened by #113 (2026-11-19,
