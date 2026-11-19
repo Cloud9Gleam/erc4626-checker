@@ -4147,7 +4147,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #116 new finding (c): the legend is a list
         # now — one line per idea, each with a bold label — not one
         # paragraph of four sentences.
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC).</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
         self.assertNotIn("<p class='loss-head'>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
@@ -4173,7 +4173,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("width:7.7%", html)
         # No rows omitted here, yet the header is still present: the
         # scale/red/×N legend is part of it now, not a footnote.
-        self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000013 USDC).</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000013 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
         # Offset 18: every loss is 0 — no row can draw a bar, so there
         # is no chart at all, just the one legend item (verdict #94:
         # four placeholder rows were the worst case of the broken-chart
@@ -4222,7 +4222,7 @@ class TestChecker(unittest.TestCase):
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC).</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
         # Giant minimum deposit: every row errors, no number to chart.
@@ -4282,8 +4282,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-value{position:static;"
                       "flex:0 0 auto;white-space:nowrap;text-align:left;"
                       "color:#111827}", build.CSS)
-        self.assertNotIn(".loss-chart--bare .loss-track{position:relative",
-                         build.CSS)
+        # 2026-11-19 gridlines (verdict #120 item 3): position:relative
+        # is back on the bare track, but for a different job — it
+        # anchors the gridline ::after overlay, not an absolutely
+        # positioned value. The value stays static (asserted above);
+        # the overlay is pinned by test_loss_chart_gridlines.
+        self.assertIn(".loss-chart--bare .loss-track{position:relative}",
+                      build.CSS)
         # Guide charts (plain .loss-chart, values as flex items) are
         # untouched: the new rule is scoped to --bare only.
         self.assertNotIn(".loss-chart .loss-value{position:absolute",
@@ -4308,6 +4313,48 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-value--inside"), 0)
         self.assertEqual(html.count("<span class='loss-value'>"), 4)
         self.assertNotIn("--pct:", html)
+
+    def test_loss_chart_gridlines(self):
+        # Visual verdict #120 checker item 3 (2026-11-19): the donation
+        # chart had no axis — the 11% bar could only be read via the
+        # legend. Gridlines at 25/50/75% of the scale (worst row),
+        # drawn as a ::after overlay above the fills so they stay
+        # visible across a 100% bar too. The overlay is positioned, so
+        # the track carries position:relative again — for the overlay
+        # only; the value stays a static flex item (see the #110 test
+        # above), never absolutely positioned inside the track.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".loss-chart--bare .loss-track{position:relative}",
+                      build.CSS)
+        self.assertIn(
+            ".loss-chart--bare .loss-track::after{content:\"\";"
+            "position:absolute;inset:0;pointer-events:none;"
+            "background-image:linear-gradient(to right,transparent "
+            "calc(25% - .5px),rgba(17,24,39,.25) calc(25% - .5px),"
+            "rgba(17,24,39,.25) calc(25% + .5px),transparent "
+            "calc(25% + .5px)),linear-gradient(to right,transparent "
+            "calc(50% - .5px),rgba(17,24,39,.25) calc(50% - .5px),"
+            "rgba(17,24,39,.25) calc(50% + .5px),transparent "
+            "calc(50% + .5px)),linear-gradient(to right,transparent "
+            "calc(75% - .5px),rgba(17,24,39,.25) calc(75% - .5px),"
+            "rgba(17,24,39,.25) calc(75% + .5px),transparent "
+            "calc(75% + .5px))}",
+            build.CSS)
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        # The legend Scale line says what the lines mark.
+        self.assertIn("Gridlines mark 25%, 50% and 75% of that scale.",
+                      html)
+        # Worker-side template carries the same sentence.
+        self.assertIn("Gridlines mark 25%, 50% and 75% of that scale.",
+                      build.checker_results_html_js())
+        # Guide charts (plain .loss-chart) get no gridlines: the rule
+        # is scoped to --bare only.
+        self.assertNotIn(".loss-chart .loss-track::after", build.CSS)
 
     def test_loss_chart_omits_tiny_rows_and_replaces_sparse_charts(self):
         # Visual verdict #94 (second pass, 09:15-09:20): the dashed
