@@ -2251,6 +2251,34 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:640px){.track-group summary .track-toggle"
                       "{display:none}}", build.CSS)
 
+    def test_track_single_disclosure_triangle(self):
+        # Visual verdict #121 item 2: each summary showed TWO disclosure
+        # triangles — the native left ::marker plus the right toggle's
+        # CSS triangle. The toggle (label + triangle) is the single
+        # desktop affordance, so the native marker is hidden above
+        # 640px; below 640px the toggle itself is hidden, so the
+        # marker stays as the only expand hint there. One triangle per
+        # summary at every viewport, never zero, never two.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        # Desktop: native marker off (both the modern rule and the
+        # legacy WebKit pseudo-element), toggle + its triangle intact.
+        self.assertIn("@media (min-width:641px){.track-group summary{list-style:none}",
+                      build.CSS)
+        self.assertIn(".track-group summary::-webkit-details-marker{display:none}",
+                      build.CSS)
+        self.assertEqual(track.count('<span class="track-toggle">'), 5)
+        self.assertEqual(track.count('<span class="tri"></span>'), 5)
+        # Mobile: the marker is still the expand hint — its colour
+        # rule stays, and the toggle-hide rule it pairs with stays.
+        self.assertIn(".track-group summary::marker{color:#0a7d2c}", build.CSS)
+        self.assertIn("@media (max-width:640px){.track-group summary .track-toggle"
+                      "{display:none}}", build.CSS)
+
     def test_track_list_filter(self):
         # Visual verdict #105 item 1: the 33-item First Flight group,
         # once expanded, was a wall of text with no way to find one
