@@ -2196,13 +2196,19 @@ class TestChecker(unittest.TestCase):
         # continues with the victim-loss clause -- the Vault assets now
         # hint was lengthened so it renders 4 lines like its row partner
         # (Victim deposit), evening row 2 of the form at desktop.
+        # 2026-11-20 (1024px follow-up): the clause was trimmed from
+        # "and the victim loss is measured against this state." to
+        # "and victim loss is measured against it." -- at 1024px the
+        # tail "this state." orphaned onto a 5th line while Victim
+        # stayed at 4; the shorter tail pulls it back to 4 lines at
+        # 1024 with no change at 1919/1600/1280/800.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         checker = dict((p, b) for p, t, d, k, b in build.PAGES)["/checker/"]
         self.assertIn("The donation and minimum-viable-deposit checks use this, "
-                      "and the victim loss is measured against this state.",
+                      "and victim loss is measured against it.",
                       checker)
         # The API note ends with a period now: its "; 0 = a new vault"
         # tail was dropped (visual verdict #105 item 5) so the note fits
@@ -2222,10 +2228,10 @@ class TestChecker(unittest.TestCase):
         # victim-loss clause used "victim's loss" and broke the build;
         # the clause must stay apostrophe-free ("victim loss").
         self.assertNotIn("'", "The donation and minimum-viable-deposit "
-                              "checks use this, and the victim loss is "
-                              "measured against this state.")
+                              "checks use this, and victim loss is "
+                              "measured against it.")
         self.assertIn("The donation and minimum-viable-deposit checks use this, "
-                      "and the victim loss is measured against this state.",
+                      "and victim loss is measured against it.",
                       build.worker_js(
                           dict((p, b) for p, t, d, k, b in build.PAGES)))
 
