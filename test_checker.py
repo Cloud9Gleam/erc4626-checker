@@ -2700,6 +2700,12 @@ class TestChecker(unittest.TestCase):
         # in 60%-white (32x16 box, 31x2 shaft, 10x10 chevron head).
         # Verdict #101 (2026-11-18) then called the 60% chevron
         # thin and low-contrast: 90%-white and 3px strokes now.
+        # Visual verdict #123 (2026-11-20) still read the 32x16 /
+        # 3px / 90%-white chevron as a small grey ">" at 1919px:
+        # 10% of a card's width, and a 3px stroke anti-aliases
+        # grey. Enlarged to 40x20, 4px strokes, solid white —
+        # still a slim chevron connector, not the #100 chunky
+        # blocks (48x24 stays forbidden).
         # The loss step's pink wash was also read as inconsistent
         # with the two white cards, so the loss card is white too;
         # its loss signal is the red border, red badge and red
@@ -2707,9 +2713,9 @@ class TestChecker(unittest.TestCase):
         # tall with a true 16.6px bottom gap (padding only), so
         # the "tall and empty" reading was a misread, not a slice.
         # The shaft must reach the chevron vertex: head box sits
-        # right:4px (x=18..28, centre 23), rotate(45deg) puts the
-        # vertex at x = 23 + 5*sqrt(2) = 30.07, so the 31px shaft
-        # overlaps it by ~0.9px. The first chevron build used an
+        # right:5px (x=23..35, centre 29), rotate(45deg) puts the
+        # vertex at x = 29 + 6*sqrt(2) = 37.49, so the 39px shaft
+        # overlaps it by ~1.5px. The first chevron build used an
         # 18px shaft, which stopped ~12px short of the vertex and
         # rendered as a disconnected dash on the live page.
         # a connector, not a block. Same language as the text arrows
@@ -2717,16 +2723,16 @@ class TestChecker(unittest.TestCase):
         # no triangle.
         self.assertIn(
             ".flow-arrow{position:relative;align-self:center;"
-            "flex:0 0 auto;width:32px;height:16px}", build.CSS)
+            "flex:0 0 auto;width:40px;height:20px}", build.CSS)
         self.assertIn(
             ".flow-arrow::before{content:\"\";position:absolute;left:0;"
-            "top:7px;width:31px;height:3px;"
-            "background:rgba(255,255,255,.9)}", build.CSS)
+            "top:8px;width:39px;height:4px;"
+            "background:#fff}", build.CSS)
         self.assertIn(
-            ".flow-arrow::after{content:\"\";position:absolute;right:4px;"
-            "top:3px;width:10px;height:10px;"
-            "border-top:3px solid rgba(255,255,255,.9);"
-            "border-right:3px solid rgba(255,255,255,.9);"
+            ".flow-arrow::after{content:\"\";position:absolute;right:5px;"
+            "top:4px;width:12px;height:12px;"
+            "border-top:4px solid #fff;"
+            "border-right:4px solid #fff;"
             "transform:rotate(45deg)}", build.CSS)
         self.assertNotIn("rgba(255,255,255,.6)", build.CSS[
             build.CSS.index(".flow-arrow::before"):])
@@ -18774,41 +18780,44 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #101 (2026-11-18) then called the 2px /
         # 60%-white chevron thin and low-contrast: 3px strokes in
         # 90%-white now.
+        # Visual verdict #123 (2026-11-20) still read the 32x16 /
+        # 3px / 90%-white chevron as a small grey ">" at 1919px:
+        # enlarged to 40x20, 4px strokes, solid white.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
             ".flow-arrow{position:relative;align-self:center;"
-            "flex:0 0 auto;width:32px;height:16px}",
+            "flex:0 0 auto;width:40px;height:20px}",
             build.CSS)
         self.assertIn(
             ".flow-arrow::before{content:\"\";position:absolute;left:0;"
-            "top:7px;width:31px;height:3px;"
-            "background:rgba(255,255,255,.9)}",
+            "top:8px;width:39px;height:4px;"
+            "background:#fff}",
             build.CSS)
         self.assertIn(
-            ".flow-arrow::after{content:\"\";position:absolute;right:4px;"
-            "top:3px;width:10px;height:10px;"
-            "border-top:3px solid rgba(255,255,255,.9);"
-            "border-right:3px solid rgba(255,255,255,.9);"
+            ".flow-arrow::after{content:\"\";position:absolute;right:5px;"
+            "top:4px;width:12px;height:12px;"
+            "border-top:4px solid #fff;"
+            "border-right:4px solid #fff;"
             "transform:rotate(45deg)}",
             build.CSS)
         self.assertNotIn("width:48px;height:24px", build.CSS)
         self.assertNotIn("border-width:12px 0 12px 16px", build.CSS)
-        # Connectivity invariant: the 10x10 chevron head sits
-        # right:4px, so its box spans x=18..28 with centre (23, 8);
-        # rotate(45deg) puts its vertex at x = 23 + 5*sqrt(2) = 30.07.
-        # The 31px shaft ends past the vertex, so shaft and head
-        # overlap by ~0.9px and render as one arrow.
+        # Connectivity invariant: the 12x12 chevron head sits
+        # right:5px, so its box spans x=23..35 with centre (29, 10);
+        # rotate(45deg) puts its vertex at x = 29 + 6*sqrt(2) = 37.49.
+        # The 39px shaft ends past the vertex, so shaft and head
+        # overlap by ~1.5px and render as one arrow.
         import math
-        shaft_end = 31
-        chevron_vertex_x = (32 - 4 - 10 + 5) + 5 * math.sqrt(2)
+        shaft_end = 39
+        chevron_vertex_x = (40 - 5 - 12 + 6) + 6 * math.sqrt(2)
         self.assertGreater(shaft_end, chevron_vertex_x)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".flow-arrow{position:relative;align-self:center;"
-                      "flex:0 0 auto;width:32px;height:16px}", worker)
+                      "flex:0 0 auto;width:40px;height:20px}", worker)
 
 
 
