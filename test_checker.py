@@ -4387,6 +4387,9 @@ class TestChecker(unittest.TestCase):
         # the track carries position:relative again — for the overlay
         # only; the value stays a static flex item (see the #110 test
         # above), never absolutely positioned inside the track.
+        # Visual verdict #121 item 4 (2026-11-19): alpha .25 was too
+        # faint — measured luminance delta ~17 on a red fill, ~58 on
+        # the white track — so the lines are darkened to .5 here.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -4397,14 +4400,14 @@ class TestChecker(unittest.TestCase):
             ".loss-chart--bare .loss-track::after{content:\"\";"
             "position:absolute;inset:0;pointer-events:none;"
             "background-image:linear-gradient(to right,transparent "
-            "calc(25% - .5px),rgba(17,24,39,.25) calc(25% - .5px),"
-            "rgba(17,24,39,.25) calc(25% + .5px),transparent "
+            "calc(25% - .5px),rgba(17,24,39,.5) calc(25% - .5px),"
+            "rgba(17,24,39,.5) calc(25% + .5px),transparent "
             "calc(25% + .5px)),linear-gradient(to right,transparent "
-            "calc(50% - .5px),rgba(17,24,39,.25) calc(50% - .5px),"
-            "rgba(17,24,39,.25) calc(50% + .5px),transparent "
+            "calc(50% - .5px),rgba(17,24,39,.5) calc(50% - .5px),"
+            "rgba(17,24,39,.5) calc(50% + .5px),transparent "
             "calc(50% + .5px)),linear-gradient(to right,transparent "
-            "calc(75% - .5px),rgba(17,24,39,.25) calc(75% - .5px),"
-            "rgba(17,24,39,.25) calc(75% + .5px),transparent "
+            "calc(75% - .5px),rgba(17,24,39,.5) calc(75% - .5px),"
+            "rgba(17,24,39,.5) calc(75% + .5px),transparent "
             "calc(75% + .5px))}",
             build.CSS)
         html = build.results_html(
