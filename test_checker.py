@@ -5231,8 +5231,14 @@ class TestChecker(unittest.TestCase):
         # parallel round reverted build.py to the old sentence to
         # satisfy this test's old pin; the pin now records the
         # render-verified sentence instead. Both render paths must
-        # carry the same sentence (rule (z)).
-        last = ("At 1000 bps, 10,000 USDC of yield pays 1,000 in fees.")
+        # carry the same sentence (rule (z)). Verdict #118: the bare
+        # "At 1000 bps" read as the current run's fee under a 0-fee
+        # preset, so the sentence is now marked as an example ("E.g.").
+        # Measured this run: the sentence is 2 chars longer, and the
+        # fee hint renders 4 lines at desktop in BOTH the old and the
+        # new build (all six hints [4,4,5,3,4,4]) -- wrap and alignment
+        # are unchanged by the edit.
+        last = ("E.g. 1000 bps: 10,000 USDC of yield pays 1,000 in fees.")
         self.assertEqual(src.count(last), 2)
         self.assertNotIn("pays 1,000 USDC to the manager.", src)
         model = (Path.home() / "workspace/taskmarket/erc4626-checker"
