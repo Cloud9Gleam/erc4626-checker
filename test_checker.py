@@ -2708,23 +2708,29 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn('ERC-4626', hero)
         self.assertNotIn('offset-6', hero)
 
-    def test_hero_paragraphs_use_balanced_text_wrap(self):
+    def test_hero_paragraphs_use_pretty_text_wrap(self):
         # Visual verdict #62: the hero intro paragraph wrapped so the
         # key comparison — "under 0.001 USDC." — sat alone on line 2,
         # a ~151px fragment under a ~1126px first line at 1919px, which
-        # blunted the 0.909091-vs-0.001 contrast. The wording and the
-        # numbers stay exactly as the model computed them; the fix is
-        # balancing, the same technique the h1 already uses
-        # (text-wrap:balance), so the browser spreads the paragraph
-        # evenly across its lines instead of leaving an orphan. The
-        # paragraphs now sit in the .hero-top text column (verdict #63
-        # put a checks panel on the right), so the rule targets them
-        # there instead of as direct .hero children.
+        # blunted the 0.909091-vs-0.001 contrast. The first fix was
+        # text-wrap:balance, but visual verdict #117 finding (g)
+        # (2026-11-19) measured its cost: balance shrinks every line
+        # to equal width, so in the 634px left column the intro lines
+        # ran only ~347-428px and left a ~240px band of empty green
+        # between the text and the checks card. text-wrap:pretty is
+        # the same orphan protection without the cost — lines fill the
+        # column like normal wrapping, only the last line is kept from
+        # being an orphan. The wording and the numbers stay exactly as
+        # the model computed them; the h1 keeps balance (a short
+        # heading, one line). The paragraphs sit in the .hero-top text
+        # column (verdict #63 put a checks panel on the right), so the
+        # rule targets them there instead of as direct .hero children.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn(".hero-top p{text-wrap:balance}", build.CSS)
+        self.assertIn(".hero-top p{text-wrap:pretty}", build.CSS)
+        self.assertNotIn(".hero-top p{text-wrap:balance}", build.CSS)
 
     def test_hero_checks_panel_fills_right_half(self):
         # Visual verdict #63: after balancing, the hero intro lines
