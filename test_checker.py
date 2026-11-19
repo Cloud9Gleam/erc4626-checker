@@ -2341,8 +2341,16 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(max(r["victim_loss"] for r in rows), 909091)
         # Layout: horizontal flow on desktop, stacked with down arrows
         # on a phone viewport.
-        self.assertIn(".flow{display:flex;align-items:stretch", build.CSS)
-        self.assertIn(".flow-step{flex:1;background:#fff", build.CSS)
+        self.assertIn(".flow{display:flex;align-items:stretch;justify-content:center;", build.CSS)
+        # Visual verdict #112 item 3 / #114 (e): at 1919px the equal
+        # flex:1 cards were 399px wide while their longest text lines
+        # measured 173/252/176px (43/63/44%) — steps 1 and 3 read as
+        # half-empty boxes. Adding sub-lines (#111) is exhausted as a
+        # fix, so the cards size to their content and the band centres
+        # itself: the whitespace sits outside the diagram, not inside
+        # the cards. Measured after the change: cards 207/287/210px,
+        # fill 83/88/84%.
+        self.assertIn(".flow-step{flex:0 1 auto;background:#fff", build.CSS)
         self.assertIn(".flow-arrow{position:relative;align-self:center", build.CSS)
         # Visual verdicts #106/#107: at 641-900px the middle step's body
         # wraps to two lines, so the stretched steps 1 and 3 keep all
@@ -2419,8 +2427,8 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("width:48px;height:24px", build.CSS)
         self.assertNotIn("border-width:12px 0 12px 16px", build.CSS)
         self.assertIn(
-            ".flow{display:flex;align-items:stretch;gap:.3em;"
-            "margin:.9em 0 .9em}", build.CSS)
+            ".flow{display:flex;align-items:stretch;justify-content:center;"
+            "gap:.3em;margin:.9em 0 .9em}", build.CSS)
         # No glyph left in the arrow spans, and no disc either: the
         # span itself has no background and no border-radius. (Scoped
         # to the flow diagram: the hero CTA below the flow legitimately
