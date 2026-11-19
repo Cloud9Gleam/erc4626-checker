@@ -4756,6 +4756,27 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(worker.count("<p class='params'>Parameters:"), 2)
         self.assertIn("{{PARAMS}}", worker)
 
+    def test_params_box_is_full_width(self):
+        # Visual verdict #117 finding (e) (2026-11-19): the
+        # Parameters box is a <p>, so the 72ch prose cap caught it
+        # too — the box sat at ~696px inside a ~948px card (73%)
+        # and its middle line wrapped, leaving a lone "USDC." on
+        # its own line in both presets. The box is a summary card,
+        # not prose: exempt it from the cap so it spans the card
+        # like the result cards below it. The 72ch cap itself stays
+        # for real prose, and the box markup and numbers are
+        # untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn("main p{max-width:72ch}", build.CSS)
+        self.assertIn("main p.params{max-width:none}", build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("main p{max-width:72ch}", worker)
+        self.assertIn("main p.params{max-width:none}", worker)
+
     def test_track_groups_are_cards(self):
         # Visual verdict #103 (2026-11-18): /audit/ read as flat plain
         # text — all 7 h2s identical, and the five Track record
