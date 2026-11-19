@@ -4015,10 +4015,15 @@ class TestChecker(unittest.TestCase):
         # the header above the bars carries the omitted-rows sentence
         # plus the scale/red/×N explanation, and there is no footnote
         # below the chart at all.
-        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row. Bars are scaled to the worst row in this table (0.909091 USDC). Red bars breach the pass bound. The ×N after a red value is how many times that loss exceeds the bound.</p>", html)
+        # Visual verdict #116 new finding (c): the legend is a list
+        # now — one line per idea, each with a bold label — not one
+        # paragraph of four sentences.
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC).</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
+        self.assertNotIn("<p class='loss-head'>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
-        self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em}", build.CSS)
+        self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;padding-left:1.2em}", build.CSS)
+        self.assertIn(".loss-head li{margin:.15em 0}", build.CSS)
         # The Worker-side template renders the same omission note, and
         # no placeholder label anywhere.
         self.assertIn("Rows losing under 0.5% of the worst row (", build.checker_results_html_js())
@@ -4039,7 +4044,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("width:7.7%", html)
         # No rows omitted here, yet the header is still present: the
         # scale/red/×N legend is part of it now, not a footnote.
-        self.assertIn("<p class='loss-head'>Bars are scaled to the worst row in this table (0.000013 USDC). Red bars breach the pass bound. The ×N after a red value is how many times that loss exceeds the bound.</p>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000013 USDC).</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
         # Offset 18: every loss is 0 — no row can draw a bar, so there
         # is no chart at all, just the one sentence (verdict #94: four
         # placeholder rows were the worst case of the broken-chart
@@ -4082,7 +4087,7 @@ class TestChecker(unittest.TestCase):
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row. Rows with no loss figure are not drawn either; see the table above. Bars are scaled to the worst row in this table (0.909091 USDC). Red bars breach the pass bound. The ×N after a red value is how many times that loss exceeds the bound.</p>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC).</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
         # Giant minimum deposit: every row errors, no number to chart.
