@@ -2099,6 +2099,40 @@ class TestChecker(unittest.TestCase):
         self.assertIn("cantina.xyz/bounties/32e64f2e-5f01-4a0b-bbe3-76f32c17b99f",
                       us)
 
+    def test_gate_brief_issue_1_state_tip_and_links(self):
+        # Gate brief issue #1 (2026-11-20, #5 packaging build): one
+        # verified gate result (Ondo Perps, quoted from its gate-check
+        # page — no new verdict, no new verification) plus one
+        # audit-model note (donation-attack exact integers from the
+        # existing model), with the fresh tip address, the mailbox,
+        # and links to the #1 checker and the #2 micro-audit.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        titles = dict((p, t) for p, t, d, k, b in build.PAGES)
+        page = pages["/gate-brief/issue-1/"]
+        self.assertIn("Gate brief", titles["/gate-brief/issue-1/"])
+        self.assertIn("2026-11-20", page)
+        self.assertIn("Ondo Perps", page)
+        self.assertIn("Gate 6 FAILED", page)
+        self.assertIn(
+            "KILLED. Not picked, not audited, no PoC, no submission, "
+            "no money,", page)
+        self.assertIn("full name, date of birth, proof of address", page)
+        self.assertIn("0.909091 USDC", page)
+        self.assertIn("0.0009 USDC", page)
+        self.assertIn("0x334FfC5922290d5595ad539Ee7717aF75F66f729", page)
+        self.assertIn("USDC on Base", page)
+        self.assertIn("outreach@n1netw3n.live", page)
+        self.assertIn('<a href="/gate-check/ondo-perps/">', page)
+        self.assertIn('<a href="/checker/">', page)
+        self.assertIn('<a href="/audit/">', page)
+        self.assertNotIn("we recommend", page)
+        self.assertNotIn("Submit a finding", page)
+        self.assertNotIn("Apply now", page)
+
     def test_audit_pay_address_has_basescan_link(self):
         # Visual verdict #103 (2026-11-18): the pay-box had no way to
         # verify the payment address on-chain — a payer about to send 50
