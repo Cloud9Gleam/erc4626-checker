@@ -2616,6 +2616,31 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertNotIn("max-width:1280px", build.CSS)
 
+    def test_mobile_nav_is_one_scrollable_row(self):
+        # Visual verdict #118 leftover, 2026-11-19: at 360px the header
+        # nav wrapped into a ragged three-row block ("Checker Vault /
+        # audit Research Guides" — "Vault audit" itself split across
+        # two lines) and the header ate ~115px of the first screen.
+        # Measured before/after with hidden_files/nav-measure.py:
+        # 360px header 114.9px -> one row ~60px, nav link lines 2 -> 1;
+        # 1919px header stays 62.4px, one row, unchanged. Below 640px
+        # the brand is pinned (flex:none) and the links scroll as one
+        # row (overflow-x:auto, nowrap) instead of wrapping.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "@media (max-width:640px){.nav-inner{flex-wrap:nowrap;",
+            build.CSS)
+        self.assertIn(".nav-inner .brand{flex:none}", build.CSS)
+        self.assertIn(
+            ".nav-inner nav{flex:1 1 auto;min-width:0;overflow-x:auto;"
+            "white-space:nowrap;",
+            build.CSS)
+        self.assertIn(
+            ".nav-inner nav::-webkit-scrollbar{display:none}", build.CSS)
+
     def test_homepage_intro_has_subheading(self):
         # Visual verdict #105 item 3: below the hero sat a ~5-line
         # full-width paragraph with no subheading separating it from
