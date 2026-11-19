@@ -3117,7 +3117,11 @@ class TestChecker(unittest.TestCase):
         # on narrow widths; the address still wraps instead of being
         # ellipsis-clipped -- a clipped payment address hides
         # characters the payer must see.
-        # Markup (address + toggle + copy) is unchanged.
+        # Visual verdict #115 (d) supersedes the markup: the toggle
+        # moved after the BaseScan link and takes its own full-width
+        # line under the address (see
+        # test_audit_pay_row_toggle_is_own_line) — the address box
+        # hugging rule itself is unchanged.
         import re
         import sys
         from pathlib import Path
@@ -3137,6 +3141,46 @@ class TestChecker(unittest.TestCase):
                       audit)
         self.assertIn("Show shortened", audit)
         self.assertIn("Copy payment address", audit)
+
+    def test_audit_pay_row_toggle_is_own_line(self):
+        # Visual verdict #115 (d): at the 1024px column the pay-row
+        # read [address][Show shortened][Copy][BaseScan] with the
+        # same ~10px gap between every item, so the display-preference
+        # toggle looked stuck to the button group — and BaseScan
+        # wrapped to an orphan second line. The toggle now takes its
+        # own full-width line directly under the address it controls,
+        # so line 1 is the money actions only: address + Copy +
+        # BaseScan. The DOM order is address, copy button, BaseScan
+        # link, toggle, note; the copy script and the toggle function
+        # use getElementById, so the reorder cannot break them.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        m = re.search(r"\.pay-row \.addr-toggle\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, ".pay-row .addr-toggle rule not found")
+        self.assertIn("flex:0 0 100%", m.group(0))
+        self.assertIn("max-width:max-content", m.group(0))
+        self.assertIn("text-align:left", m.group(0))
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        # Button-anchored markers: the bare string "Show shortened"
+        # also occurs inside the toggle's own script
+        # (btn.textContent='Show shortened'), which sits before the
+        # BaseScan link in the DOM.
+        i_addr = audit.index('id="pay-addr"')
+        i_copy = audit.index(">Copy payment address</button>")
+        i_scan = audit.index(">View on BaseScan</a>")
+        i_tog = audit.index(">Show shortened</button>")
+        i_note = audit.index('<span class="pay-note">')
+        self.assertLess(i_addr, i_copy)
+        self.assertLess(i_copy, i_scan)
+        self.assertLess(i_scan, i_tog)
+        self.assertLess(i_tog, i_note)
+        # The toggle is a <button> with no flex-basis anywhere else:
+        # exactly one rule may set its line behaviour.
+        self.assertEqual(len(re.findall(r"\.pay-row \.addr-toggle\{",
+                                        build.CSS)), 1)
 
     def test_audit_pay_row_note_attached(self):
         # Visual verdict #67 put a payment-safety note in the
@@ -3891,7 +3935,7 @@ class TestChecker(unittest.TestCase):
         # the header above the bars carries the omitted-rows sentence
         # plus the scale/red/×N explanation, and there is no footnote
         # below the chart at all.
-        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row. Bars are scaled to the worst row in this table (0.909091 USDC); red bars breach the pass bound; the ×N after a red value is how many times that loss exceeds the bound.</p>", html)
+        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row. Bars are scaled to the worst row in this table (0.909091 USDC). Red bars breach the pass bound. The ×N after a red value is how many times that loss exceeds the bound.</p>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
         self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em}", build.CSS)
@@ -3915,7 +3959,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("width:7.7%", html)
         # No rows omitted here, yet the header is still present: the
         # scale/red/×N legend is part of it now, not a footnote.
-        self.assertIn("<p class='loss-head'>Bars are scaled to the worst row in this table (0.000013 USDC); red bars breach the pass bound; the ×N after a red value is how many times that loss exceeds the bound.</p>", html)
+        self.assertIn("<p class='loss-head'>Bars are scaled to the worst row in this table (0.000013 USDC). Red bars breach the pass bound. The ×N after a red value is how many times that loss exceeds the bound.</p>", html)
         # Offset 18: every loss is 0 — no row can draw a bar, so there
         # is no chart at all, just the one sentence (verdict #94: four
         # placeholder rows were the worst case of the broken-chart
@@ -3958,7 +4002,7 @@ class TestChecker(unittest.TestCase):
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row. Rows with no loss figure are not drawn either; see the table above. Bars are scaled to the worst row in this table (0.909091 USDC); red bars breach the pass bound; the ×N after a red value is how many times that loss exceeds the bound.</p>", html)
+        self.assertIn("<p class='loss-head'>Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row. Rows with no loss figure are not drawn either; see the table above. Bars are scaled to the worst row in this table (0.909091 USDC). Red bars breach the pass bound. The ×N after a red value is how many times that loss exceeds the bound.</p>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
         # Giant minimum deposit: every row errors, no number to chart.
@@ -4002,8 +4046,10 @@ class TestChecker(unittest.TestCase):
                       "0.099890 &middot; 99.9&times;</span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:11.0%'></span></span></div>", html)
-        # The chart note defines what the multiple means.
-        self.assertIn("the ×N after a red value is how many times that "
+        # The chart note defines what the multiple means. (Visual
+        # verdict #115 (c): the scale sentence is now three short
+        # sentences, so the ×N clause starts with a capital T.)
+        self.assertIn("The ×N after a red value is how many times that "
                       "loss exceeds the bound", html)
         # No trace of the hug-the-bar-end mechanism: no inside class,
         # no --pct variable anywhere in the chart markup or CSS.
@@ -4540,7 +4586,14 @@ class TestChecker(unittest.TestCase):
                       "border:1px solid #d1d5db}",
                       worker)
         self.assertNotIn(".email-para pre{background:#f9fafb", worker)
-        self.assertNotIn("width:max-content", worker)
+        # The blanket "width:max-content" guard used to live here, but
+        # it trips on any unrelated rule that legitimately uses it:
+        # visual verdict #115 (d) caps the /audit/ toggle button with
+        # max-width:max-content so only its text is clickable. The
+        # guard is scoped to the rule it protects instead — the
+        # .email-para pre must never be content-width (verdict #98:
+        # that made it a ~270px narrow slab).
+        self.assertNotIn(".email-para pre{width:max-content", worker)
         # The curl example is a plain <pre> outside .email-para and
         # keeps the dark full-width code style.
         self.assertIn('<pre><code id="api-curl">', html)
