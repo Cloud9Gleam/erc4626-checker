@@ -1025,6 +1025,35 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertIn("main p{max-width:80ch}", build.CSS)
 
+    def test_home_intro_spacing_tightened(self):
+        # Visual verdict #120 item 5 (2026-11-19): the homepage's three
+        # cards sat ~204px below the "What this site is" heading — the
+        # stack was hero bottom padding + main's 1.5em top margin + 2em
+        # top padding (~91px flow-to-h2) plus the cards' own 1.5em top
+        # margin. Measured with hidden_files/measure-home-cards-gap.py
+        # at 1919px; after the fix the cards rise ~39px. The tightening
+        # is homepage-only: the main rule is scoped to .hero-bleed +
+        # .wrap (only the homepage has a hero band) and desktop-only
+        # (the mobile query already zeroes main's top margin for the
+        # full-bleed card). The global main padding and the 80ch prose
+        # cap are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "@media (min-width:641px){.hero-bleed + .wrap main{"
+            "margin-top:.75em;padding-top:1.25em}}",
+            build.CSS)
+        self.assertIn(
+            ".cards{display:grid;grid-template-columns:repeat(3,1fr);"
+            "gap:1em;margin:.75em 0 0}",
+            build.CSS)
+        self.assertIn(
+            "main{background:#fff;border:1px solid #e5e7eb;border-radius:12px;"
+            "padding:2em 2.25em;",
+            build.CSS)
+
     def test_email_para_carries_vault_state(self):
         # The 'Prefer email?' mailto must carry the parameters actually
         # run. The mailbox reply path already parses vault_assets_usdc
@@ -3185,15 +3214,20 @@ class TestChecker(unittest.TestCase):
         # on main's own 2em bottom padding (34px). The cards are the
         # last block on the page, so the margin bought nothing: the
         # bottom whitespace is now main's padding alone (34px desktop,
-        # 22.4px mobile), matching the top of the page. The top margin
-        # stays 1.5em — it is the gap under the intro paragraphs.
+        # 22.4px mobile), matching the top of the page.
+        # Visual verdict #120 item 5 (2026-11-19): the top margin was
+        # halved 1.5em -> .75em — the cards sat ~204px below the "What
+        # this site is" heading, and the intro-to-cards gap (25.5px)
+        # was half of the fix; the other half is the homepage-only
+        # main rule (see test_home_intro_spacing_tightened). The bottom
+        # margin stays 0.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
             ".cards{display:grid;grid-template-columns:repeat(3,1fr);"
-            "gap:1em;margin:1.5em 0 0}", build.CSS)
+            "gap:1em;margin:.75em 0 0}", build.CSS)
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertTrue(home.rstrip().endswith("</div>"),
                         "home body no longer ends with the cards block")
