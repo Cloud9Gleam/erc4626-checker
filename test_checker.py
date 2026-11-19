@@ -2054,6 +2054,8 @@ class TestChecker(unittest.TestCase):
         # method at a glance.
         self.assertIn('<details class="track-group">\n'
                       '<summary>Full awarded set re-verified — ended contests (3)'
+                      '<span class="track-toggle"><span class="when-closed">Show 3 reviews ▾</span>'
+                      '<span class="when-open">Hide ▴</span></span>'
                       '<span class="track-preview">Gamma 25 of 27 · BattleChain 9 of 9 · '
                       'Zaros 66 of 70</span></summary>',
                       track)
@@ -2064,6 +2066,8 @@ class TestChecker(unittest.TestCase):
         # distinguishable at a glance.
         self.assertIn('<details class="track-group">\n'
                       '<summary>Bounded slice — ended contests (3)'
+                      '<span class="track-toggle"><span class="when-closed">Show 3 reviews ▾</span>'
+                      '<span class="when-open">Hide ▴</span></span>'
                       '<span class="track-preview">RAAC 3 Highs + 1 Medium in 657 lines · '
                       'QuantAMM fee-logic Medium · Nexus 14 findings</span></summary>',
                       track)
@@ -2073,14 +2077,20 @@ class TestChecker(unittest.TestCase):
         # SNARKeling), so it now says (33).
         self.assertIn('<details class="track-group">\n'
                       '<summary>CodeHawks First Flight — practice and study reviews (33)'
+                      '<span class="track-toggle"><span class="when-closed">Show 33 reviews ▾</span>'
+                      '<span class="when-open">Hide ▴</span></span>'
                       '<span class="track-preview">Thunder Loan flash-loan drain · Puppy Raffle '
                       '9 findings · Vanguard router-bucket bypass</span></summary>',
                       track)
         # The two one-item groups preview their single item, not a count.
         self.assertIn('<summary>Reference (1)'
+                      '<span class="track-toggle"><span class="when-closed">Show reference ▾</span>'
+                      '<span class="when-open">Hide ▴</span></span>'
                       '<span class="track-preview">77 recurring vulnerability patterns, '
                       'each proven by a real finding</span></summary>', track)
         self.assertIn('<summary>Live finding (1)'
+                      '<span class="track-toggle"><span class="when-closed">Show finding ▾</span>'
+                      '<span class="when-open">Hide ▴</span></span>'
                       '<span class="track-preview">Auction clock never enforced — '
                       'forge reproduction 3/3</span></summary>', track)
         self.assertEqual(track.count('<span class="track-preview">'), 5)
@@ -2097,6 +2107,50 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".track-group summary{cursor:pointer;font-size:1.1em;"
                       "font-weight:700;color:#111827}", build.CSS)
         self.assertIn(".track-group .track-list{margin-top:.4em;margin-bottom:0}", build.CSS)
+
+    def test_track_summary_toggle(self):
+        # Visual verdict #115 (c) residual, measured 2026-11-19: the
+        # five Track record summaries fill only 45-73% of their grey
+        # box on desktop (right gaps 248-497px) — the title is short
+        # and the only expand hint is the small left marker. Each
+        # summary now carries a right-aligned affordance ("Show N
+        # reviews ▾" / "Hide ▴") that fills the dead right side and
+        # tells a first-time visitor the row opens. Pure CSS state
+        # swap via details[open]; hidden below 640px, where the rows
+        # already fill 89-100% of the box.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        self.assertEqual(track.count('<span class="track-toggle">'), 5)
+        self.assertEqual(track.count('<span class="when-closed">'), 5)
+        self.assertEqual(track.count('<span class="when-open">'), 5)
+        # One toggle per summary, between the title and the preview.
+        self.assertEqual(track.count('</span></span><span class="track-preview">'), 5)
+        # Closed labels match the group contents; the one-item groups
+        # use their noun, not a count.
+        self.assertEqual(track.count('Show 3 reviews ▾'), 2)
+        self.assertIn('Show 33 reviews ▾', track)
+        self.assertIn('Show reference ▾', track)
+        self.assertIn('Show finding ▾', track)
+        self.assertEqual(track.count('Hide ▴'), 5)
+        # Right-aligned, green, one line, no wrap; closed shows the
+        # Show label, open shows Hide — CSS only, no JS.
+        self.assertIn(".track-group summary .track-toggle{float:right;font-size:.85em;"
+                      "font-weight:400;color:#0a7d2c;white-space:nowrap;"
+                      "margin:.15em 0 0 .8em}", build.CSS)
+        self.assertIn(".track-group summary .track-toggle .when-open{display:none}",
+                      build.CSS)
+        self.assertIn(".track-group[open] summary .track-toggle .when-closed{display:none}",
+                      build.CSS)
+        self.assertIn(".track-group[open] summary .track-toggle .when-open{display:inline}",
+                      build.CSS)
+        # Mobile: rows already fill the box, so the toggle hides and
+        # the layout is exactly as before.
+        self.assertIn("@media (max-width:640px){.track-group summary .track-toggle"
+                      "{display:none}}", build.CSS)
 
     def test_track_list_filter(self):
         # Visual verdict #105 item 1: the 33-item First Flight group,
