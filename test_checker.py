@@ -4584,6 +4584,39 @@ class TestChecker(unittest.TestCase):
         # is scoped to --bare only.
         self.assertNotIn(".loss-chart .loss-track::after", build.CSS)
 
+    def test_loss_chart_label_column(self):
+        # Visual verdict #124 new finding 1 (2026-11-20): the
+        # donation-chart label column was 22em (~344px) while the
+        # longest donation label ("1,000,000,000") is ~102px of text,
+        # so on the noprot page the track was only ~28% of the row and
+        # the 100% bar (239px) was shorter than its own label column.
+        # The bare chart's labels are only the four fixed donation
+        # sizes, so 8em (~125px) leaves ~23px of slack and the track
+        # takes the freed width. Guide charts (plain .loss-chart)
+        # keep the 22em column — their labels are words — so the
+        # rule is scoped to --bare. Below 640px the bare label is
+        # full-width too: the two-class desktop rule would otherwise
+        # beat the one-class mobile rule and break the label/value/
+        # track stacking.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".loss-chart--bare .loss-label{flex:0 0 8em}",
+                      build.CSS)
+        self.assertIn(".loss-label{flex:0 0 22em;text-align:right;color:#374151}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-label{flex:1 1 100%}",
+                      build.CSS)
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        # Row markup untouched: label, value, track in that order.
+        self.assertIn("<div class='loss-row'><span class='loss-label'>1,000,000</span>"
+                      "<span class='loss-value'>0.909091 USDC &middot; 909&times; the bound</span>"
+                      "<span class='loss-track'><span class='loss-fill fail' style='width:100.0%'></span></span></div>",
+                      html)
+
     def test_loss_chart_omits_tiny_rows_and_charts_single_bar(self):
         # Visual verdict #123 (2026-11-20): a single drawable bar IS
         # a chart now — the sentence-only form read as a missing
