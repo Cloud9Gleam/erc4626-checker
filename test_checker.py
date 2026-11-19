@@ -4460,20 +4460,29 @@ class TestChecker(unittest.TestCase):
         # carries how many times its loss exceeds the pass bound, so
         # the short red bar is not misread as a small loss — the worst
         # row is 909091/1000 = 909x, the 1B row 99890/1000 = 99.9x.
+        # Visual verdict #123 new finding ③ (2026-11-20): the label
+        # carries its unit and the multiple's referent inline, so it
+        # no longer duplicates the table's bare number.
         self.assertIn("<div class='loss-row'><span class='loss-label'>"
                       "1,000,000</span><span class='loss-value'>"
-                      "0.909091 &middot; 909&times;</span>"
+                      "0.909091 USDC &middot; 909&times; the bound</span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:100.0%'></span></span></div>", html)
         # Short bar: same value position, same colour, no --pct.
         self.assertIn("<div class='loss-row'><span class='loss-label'>"
                       "1,000,000,000</span><span class='loss-value'>"
-                      "0.099890 &middot; 99.9&times;</span>"
+                      "0.099890 USDC &middot; 99.9&times; the bound</span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:11.0%'></span></span></div>", html)
         # The chart note defines what the multiple means. (Visual
         # verdict #115 (c): the scale sentence is now three short
         # sentences, so the ×N clause starts with a capital T.)
+        # Visual verdict #123 new finding ③ follow-up (2026-11-20):
+        # the longer label squeezes the mobile track to ~30px, so
+        # below 640px the bare-chart value takes its own line and
+        # the track gets the full row width again.
+        self.assertIn(".loss-chart--bare .loss-value{flex:1 1 100%}",
+                      build.CSS)
         self.assertIn("The ×N after a red value is how many times that "
                       "loss exceeds the bound", html)
         # No trace of the hug-the-bar-end mechanism: no inside class,
@@ -4619,7 +4628,7 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)))
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertEqual(html.count("loss-row"), 1)
-        self.assertIn("<span class='loss-value'>0.000900</span><span class='loss-track'><span class='loss-fill pass' style='width:100.0%'></span></span>", html)
+        self.assertIn("<span class='loss-value'>0.000900 USDC</span><span class='loss-track'><span class='loss-fill pass' style='width:100.0%'></span></span>", html)
         self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC, 1,000,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000900 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li><li><strong>×N:</strong> The ×N after a red value is how many times that loss exceeds the bound.</li></ul>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("too little to draw", html)
@@ -15153,7 +15162,7 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("<p class='loss-note'>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertIn("<div class='loss-chart loss-chart--bare'>", html)
-        self.assertIn("<span class='loss-value'>0.000900</span><span class='loss-track'><span class='loss-fill pass' style='width:100.0%'></span></span>", html)
+        self.assertIn("<span class='loss-value'>0.000900 USDC</span><span class='loss-track'><span class='loss-fill pass' style='width:100.0%'></span></span>", html)
     def test_donation_loss_recognition_guide_numbers(self):
         # Pins /guides/erc4626-donation-loss-recognition/ to its
         # model: a donation into a vault carrying an unrecognised
