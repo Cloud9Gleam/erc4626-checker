@@ -2320,6 +2320,10 @@ class TestChecker(unittest.TestCase):
         # Preview reads as a subtitle: block, one size down, grey, not bold.
         self.assertIn(".track-group summary .track-preview{display:block;font-size:.85em;"
                       "font-weight:400;color:#6b7280;margin-top:.15em}", build.CSS)
+        # Visual verdict #125 (f): the preview repeats the cards' numbers
+        # once the group is open, so it hides when open and only shows folded.
+        self.assertIn(".track-group[open] summary .track-preview{display:none}",
+                      build.CSS)
         self.assertNotIn("(32)</summary>", track)
         # No group lost its items: 3 + 33 + 3 + 1 + 1 = 41 research links
         # inside the five details blocks, and no bare h3 survives in the
