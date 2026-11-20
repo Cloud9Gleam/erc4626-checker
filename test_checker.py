@@ -2760,7 +2760,7 @@ class TestChecker(unittest.TestCase):
         hero_start = home.index('<div class="hero">')
         hero_end = home.index('<p>This site is one independent researcher')
         hero = home[hero_start:hero_end]
-        cta = home.index('Run the free ERC&#8209;4626 checker')
+        cta = home.index('Run the free checker')
         flow = home.index('<div class="flow"')
         self.assertLess(hero_start, cta)
         self.assertLess(cta, flow)
@@ -3205,6 +3205,12 @@ class TestChecker(unittest.TestCase):
         # break point; U+2011 NON-BREAKING HYPHEN is not, and it
         # renders as the same glyph. Scoped to the hero: the rest
         # of the site keeps plain hyphens.
+        # 2026-11-20: the CTA label itself was shortened to "Run the
+        # free checker" — it still wrapped to two lines at 360px even
+        # with the non-breaking hyphen (measured: button 305px, label
+        # needs 313px). No hyphen left in the label, so the break
+        # problem is gone by construction; the proof sentence still
+        # needs its non-breaking hyphen, guarded below.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -3213,10 +3219,34 @@ class TestChecker(unittest.TestCase):
         hero_start = home.index('<div class="hero">')
         hero_end = home.index('<p>This site is one independent researcher')
         hero = home[hero_start:hero_end]
-        self.assertIn('Run the free ERC&#8209;4626 checker', hero)
+        self.assertIn('Run the free checker', hero)
         self.assertIn('standard offset&#8209;6 defense', hero)
         self.assertNotIn('ERC-4626', hero)
         self.assertNotIn('offset-6', hero)
+
+    def test_hero_cta_label_fits_one_line_on_small_phones(self):
+        # The hero CTA is the funnel's first click and most X traffic
+        # is mobile: at 360px the old 31-character label wrapped to
+        # two lines ("Run the free ERC-4626 / checker", button 73.9px
+        # tall, headless-measured 2026-11-20). The short label fits
+        # one line down to a 320px viewport (about 195px of text at
+        # the 1.05em CTA size, plus padding, against a ~265px button)
+        # with no CSS change and no media query. ERC-4626 is still
+        # named in the page title, the H1's context, the proof
+        # sentence and the checks card, so the button loses no
+        # information — it just stops repeating the product name.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index('<p>This site is one independent researcher')
+        hero = home[hero_start:hero_end]
+        self.assertIn(
+            '<p class="hero-cta"><a class="cta" href="/checker/">'
+            'Run the free checker &rarr;</a></p>', hero)
+        self.assertNotIn('Run the free ERC', hero)
 
     def test_hero_paragraphs_use_pretty_text_wrap(self):
         # Visual verdict #62: the hero intro paragraph wrapped so the
@@ -3451,7 +3481,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(stats, hero)
         stats_idx = hero.index(stats)
         # Inside the left column: after the CTA, before the panel.
-        self.assertLess(hero.index("Run the free ERC&#8209;4626 checker"),
+        self.assertLess(hero.index("Run the free checker"),
                         stats_idx)
         self.assertLess(stats_idx, hero.index('<aside class="hero-checks">'))
         # Rule (p): the hero model count drifts with every new model,
