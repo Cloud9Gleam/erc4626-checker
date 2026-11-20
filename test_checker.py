@@ -2502,6 +2502,16 @@ class TestChecker(unittest.TestCase):
         # do not get" moves +424px at 1919px / +1021px at 360px; the
         # added height sits below the order form, so the conversion
         # path is unaffected.)
+        # (2026-11-21 update: visual verdict #136 item 3 reverses the
+        # #131 fold for the First Flight group — the largest body of
+        # evidence (33 reviews) was hidden behind one click on the
+        # paid page, and the fold was only justified while the open
+        # group was a wall. The entries are now split into a lead
+        # line + a smaller detail line with the date on its own line
+        # (see test_audit_track_record_entries_split_lead_and_detail),
+        # so the open group scans instead of walling. All five groups
+        # are now open by default; the added height still sits below
+        # the order form, so the conversion path is unaffected.)
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2510,11 +2520,11 @@ class TestChecker(unittest.TestCase):
         track = audit[audit.index("<h2>Track record</h2>"):]
         self.assertEqual(track.count('<details class="track-group"'), 5)
         self.assertEqual(track.count("<summary>"), 5)
-        self.assertEqual(track.count('<details class="track-group" open>'), 4)
+        self.assertEqual(track.count('<details class="track-group" open>'), 5)
         # Strongest proof first: the ended contests whose full awarded
-        # sets were re-verified — open by default (see above), and the
-        # three short groups with them; only the First Flight wall
-        # stays closed.
+        # sets were re-verified — open by default (see above), the
+        # three short groups with them, and since 2026-11-21 the
+        # First Flight group too (verdict #136 item 3).
         # Visual verdict #112 item 1: a folded row showed only its
         # title, so each summary now carries a one-line preview of the
         # strongest item(s) inside; the folded state still proves the
@@ -2538,11 +2548,13 @@ class TestChecker(unittest.TestCase):
                       '<span class="track-preview">RAAC 3 Highs + 1 Medium in 657 lines · '
                       'QuantAMM fee-logic Medium · Nexus 14 findings</span></summary>',
                       track)
-        # The 33-item First Flight wall is collapsed by default — and its
-        # heading count is honest: three reviews were added after the (30)
-        # heading was written (Vyper Vested Claims, Curve Storage Proofs,
-        # SNARKeling), so it now says (33).
-        self.assertIn('<details class="track-group">\n'
+        # The 33-item First Flight group is open by default since
+        # 2026-11-21 (visual verdict #136 item 3 reversed the #131
+        # fold — see the comment above). Its heading count is honest:
+        # three reviews were added after the (30) heading was written
+        # (Vyper Vested Claims, Curve Storage Proofs, SNARKeling), so
+        # it now says (33).
+        self.assertIn('<details class="track-group" open>\n'
                       '<summary>CodeHawks First Flight — practice and study reviews (33)'
                       '<span class="track-toggle"><span class="when-closed">Show 33 reviews</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
@@ -2657,7 +2669,67 @@ class TestChecker(unittest.TestCase):
         # The date is metadata, not a claim: muted grey, one size down,
         # and it never splits across lines (live render 2026-11-20
         # caught Thunder Loan wrapping as "Reviewed Nov 15," / "2026").
-        self.assertIn(".track-date{color:#6b7280;font-size:.9em;white-space:nowrap}", build.CSS)
+        # Since 2026-11-21 (visual verdict #136 item 3) it is also its
+        # own line under the entry, not pasted at the end of the
+        # sentence — display:block, with a small gap above it.
+        self.assertIn(".track-date{display:block;color:#6b7280;font-size:.9em;"
+                      "white-space:nowrap;margin-top:.3em}", build.CSS)
+
+    def test_audit_track_record_entries_split_lead_and_detail(self):
+        # Visual verdict #136 item 3 (2026-11-21): Track record entries
+        # were dense single paragraphs — title + counts + findings +
+        # tests in one run, the date pasted at the sentence end. Each
+        # entry now splits at its first top-level ';' into a lead line
+        # (title + counts + proof, a complete sentence) and a smaller,
+        # muted detail line; the date follows on its own line (see the
+        # CSS in test_audit_track_record_entries_carry_review_dates).
+        # Only the wording's punctuation changes: the split ';' becomes
+        # the lead's final '.', nothing else is reworded.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        self.assertEqual(track.count('<span class="track-detail">'), 39)
+        self.assertEqual(track.count('<span class="track-date">'), 41)
+        # The two entries with no top-level ';' stay single-paragraph:
+        # Gamma's only ';' sits inside a parenthesis, Dutch clock has
+        # none — their dates still drop to their own line via CSS.
+        for slug in ("gamma", "dutch-clock"):
+            m = re.search(r'<li><a href="/research/%s/">.*?</li>'
+                          % re.escape(slug), track, re.S)
+            self.assertIsNotNone(m, slug)
+            self.assertNotIn('<span class="track-detail">', m.group(0), slug)
+        # Every split entry: lead ends with '.' right before the detail
+        # span, the detail ends with '.' right before the date span.
+        for m in re.finditer(r'<li><a href="/research/[^"]+/">.*?</li>',
+                             track, re.S):
+            entry = m.group(0)
+            if '<span class="track-detail">' not in entry:
+                continue
+            self.assertRegex(entry,
+                             r'</a> — [^<]*\.\s<span class="track-detail">',
+                             entry[:80])
+            self.assertRegex(entry,
+                             r'<span class="track-detail">[^<]*\.</span> '
+                             r'<span class="track-date">Reviewed ',
+                             entry[:80])
+        # Spot checks: the leads are complete sentences, details intact.
+        self.assertIn('<a href="/research/thunder-loan/">Thunder Loan</a> — '
+                      'four flash-loan findings, all forge-proven (3 High, '
+                      '1 Medium graded High by the canonical report). '
+                      '<span class="track-detail">6 of 7 canonical High+Medium '
+                      'findings independently reproduced, 15/15 tests passing.'
+                      '</span>', track)
+        self.assertIn('<a href="/research/zaros/">Zaros Part 2</a> — 66 of 70 '
+                      'awarded findings re-derived (16 High, 35 Medium, '
+                      '19 Low; $70,000 pool), four presented as MISSes. '
+                      '<span class="track-detail">forge PoCs for M-NEGCAP 2/2, '
+                      'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
+        self.assertIn(".track-detail{display:block;font-size:.92em;"
+                      "color:#4b5563;margin-top:.25em}", build.CSS)
 
     def test_track_summary_toggle(self):
         # Visual verdict #115 (c) residual, measured 2026-11-19: the
