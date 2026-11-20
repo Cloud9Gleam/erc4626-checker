@@ -19883,6 +19883,26 @@ class TestChecker(unittest.TestCase):
             lm5 = build.page_lastmods({"/a/": css_b}, state_file=state)
             self.assertEqual(lm4["/a/"], lm5["/a/"])
 
+    def test_sitemap_url_count_matches_pages(self):
+        # 2026-11-20: four guide harnesses pinned the sitemap <url>
+        # count exactly (130/131/234/238 -> 239) and expired on every
+        # page addition -- the sitemap is generated from PAGES, so the
+        # count legitimately grows with the site. Exactness is pinned
+        # here, once, against len(build.PAGES); the harnesses now assert
+        # only a floor (>= 239), which still catches a shrunken or
+        # broken sitemap on the Worker-served side.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        build.main()
+        site = Path.home() / "workspace/taskmarket/site"
+        sitemap = (site / "sitemap.xml").read_text()
+        count = sitemap.count("<url>")
+        self.assertEqual(count, len(build.PAGES),
+                         f"sitemap has {count} <url> entries for "
+                         f"{len(build.PAGES)} PAGES")
+
     def test_worker_js_does_not_pollute_lastmod_state(self):
         # 2026-11-20: worker_js()'s lastmods=None fallback called a
         # page_lastmods() that WROTE the state file -- and tests call
