@@ -19147,6 +19147,31 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".flow-arrow{position:relative;align-self:center;"
                       "flex:0 0 auto;width:40px;height:20px}", worker)
 
+    def test_no_built_page_contains_undefined(self):
+        # Sitemap sweep 2026-11-20 (hidden_files/sitemap-sweep.mjs):
+        # all 238 sitemap URLs returned 200 with no "{{" leak, but
+        # exactly one page contained the literal word "undefined" --
+        # the deposit-into-queue guide, where it was legitimate prose
+        # ("the payable date is not late, it is undefined"). In a
+        # guide full of exact numbers it reads like a rendering bug,
+        # so the sentence was rewritten ("there is no payable date").
+        # This test rebuilds from build.py and pins the site-wide
+        # invariant: no built page may contain "undefined" anywhere,
+        # so any future occurrence -- prose or template leak -- fails
+        # loudly. (The legitimate code uses -- typeof process !==
+        # "undefined", passing undefined for a defaulted parameter,
+        # the usdc() null guard -- live in the Worker script, not in
+        # any page's HTML, so they cannot trip this.)
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        build.main()
+        site = Path.home() / "workspace/taskmarket/site"
+        bad = sorted(str(p.relative_to(site)) for p in site.rglob("*.html")
+                     if "undefined" in p.read_text())
+        self.assertEqual(bad, [])
+
 
 
 if __name__ == "__main__":
