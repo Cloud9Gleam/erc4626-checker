@@ -5985,6 +5985,55 @@ class TestChecker(unittest.TestCase):
         self.assertIn("#checker-form button{grid-column:1 / -1;",
                       build.CSS)
 
+    def test_run_checks_button_fold_margin(self):
+        # 2026-11-20 checker-improvement (visual verdict #129 item
+        # 1): the Run checks button sat 2px above the 998px fold at
+        # 1919px -- fully visible, but with no breathing room; any
+        # slightly shorter viewport hid the form's only action.
+        # Measured with hidden_files/measure-btnmargin.py (headless
+        # true render of the Worker-rendered page): button bottom
+        # 996px, 2px margin. The fix is ~20px of scoped vertical
+        # tightening above the button: the checker's own top notice
+        # padding .8em -> .55em (~8px), the form card's top padding
+        # 1.1em -> .8em (~5px), and the run-bar's top margin .7em ->
+        # .3em (~7px). Bar height (89px desktop, 84px mobile) and
+        # the sticky top constants are untouched -- the margin sits
+        # outside the bar -- so the #128 fix (bar never covering
+        # inputs) still holds. The /audit/ order form keeps its
+        # 1.1em top padding, and the FAIL/PASS result notices keep
+        # the plain .notice padding.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # The scoped notice rule exists exactly once, after the base
+        # .notice rule so the cascade applies it.
+        self.assertEqual(build.CSS.count(".notice-top{padding:.55em 1em}"), 1)
+        self.assertLess(build.CSS.index(".notice{background:#fffbeb;"),
+                        build.CSS.index(".notice-top{padding:.55em 1em}"))
+        # The checker's own top notice carries the class; the result
+        # notices keep the plain class (default preset passes, so the
+        # FAIL notice is checked on a noprot-parameter body instead --
+        # the preset name alone does not drive the numbers).
+        body = build.checker_body()
+        self.assertIn('class="notice notice-top"', body)
+        self.assertIn("<div class='notice'><p>This preset passes", body)
+        self.assertIn("<div class='notice'><p>A check failed.",
+                      build.checker_body(off=0, mn=0, fee=0,
+                                         preset="noprot"))
+        # Form card top padding tightened; the audit form untouched.
+        self.assertIn("padding:.8em 1.4em 1.3em}", build.CSS)
+        self.assertIn(
+            "#audit-order{background:#f9fafb;border:1px solid #e5e7eb;"
+            "border-radius:12px;padding:1.1em 1.4em 1.3em}",
+            build.CSS)
+        # Run-bar top margin tightened; bar height constants intact.
+        self.assertIn("margin:.3em -1.4em -1.3em;", build.CSS)
+        self.assertIn("top:calc(100vh - 89px)", build.CSS)
+        self.assertIn(
+            "@media (max-width:640px){.run-bar{top:calc(100vh - 84px)}}",
+            build.CSS)
+
     def test_checker_perf_fee_hint_says_what_the_model_does(self):
         # Visual verdict #78: the min-height fix made the boxes equal,
         # but the Performance fee hint itself is still 1 line of text in
