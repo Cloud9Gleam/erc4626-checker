@@ -5421,6 +5421,10 @@ class TestChecker(unittest.TestCase):
                 f"10,000,000,000,000,001{NB}shares"),
             [("deposit", f"10,000,000,000,000,000{NB}shares == "
                          f"10,000,000,000,000,001{NB}shares")])
+        self.assertEqual(
+            build.split_detail_line(
+                f"min-deposit floor binds: effective minimum 1.000000{NB}USDC"),
+            [("min-deposit floor binds", f"1.000000{NB}USDC")])
         self.assertIsNone(
             build.split_detail_line("floor/ceil directions hold"))
         self.assertIsNone(
@@ -5477,6 +5481,53 @@ class TestChecker(unittest.TestCase):
             self.assertIn(f'"{long_label}":"{short_label}"', js)
         self.assertIn("nbspUnits(esc(shortLabel(row[0])))", js)
         self.assertNotIn("shortLabel(row[1])", js)
+
+    def test_floor_binds_value_is_figure_only(self):
+        # 2026-11-20, checker-improvement: on a 360px phone the
+        # minimum-viable-deposit "floor binds" value wrapped to two
+        # lines ("effective minimum 1.000000 USDC" in a 252px block
+        # cell; hidden_files/measure-valuewrap.py, default preset
+        # @360: lines=2, the only wrap in the 4-width x 2-preset
+        # sweep). The label already says the floor binds, so the
+        # figure alone carries the meaning. Render-time only, like
+        # the LABEL_SHORT precedent: the model string and the API
+        # JSON keep "effective minimum", the displayed value is the
+        # figure. Verdict #132 item (g) — the two desktop wraps it
+        # named ("(unchanged)", "1 USDC mints") — did NOT reproduce
+        # in the same sweep: both cells are 1 line at 1919/1280/
+        # 1024/360 in both presets, with 200px+ of slack, so no
+        # desktop change is made for them.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        NB = "\u00a0"
+        v = Vault(decimals_offset=6, min_deposit=1_000_000,
+                  perf_fee_bps=1000)
+        # Model string untouched.
+        detail = check_minimum_viable_deposit(v)["detail"]
+        self.assertIn(
+            f"min-deposit floor binds: effective minimum 1.000000{NB}USDC",
+            detail)
+        # Rendered row: figure only, no "effective minimum".
+        html = build.results_html(run_all(v))
+        self.assertIn(
+            "<tr><td class='check-label'>min-deposit floor binds</td>"
+            "<td class='check-value'><span class='nowrap'>"
+            "<strong>1.000000</strong> USDC</span></td></tr>", html)
+        self.assertNotIn("effective minimum", html)
+        # Noprot has no floor-binds row (min_deposit 0); nothing
+        # changes there.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertNotIn("min-deposit floor binds", html)
+        # The Worker-side template carries the same strip.
+        js = build.checker_results_html_js()
+        self.assertIn(
+            'if(s.slice(0,i)==="min-deposit floor binds"'
+            '&&v.indexOf("effective minimum ")===0)'
+            'v=v.slice("effective minimum ".length);', js)
 
     def test_check_detail_numbers_are_bold(self):
         # Visual verdict #94 (second pass), the other half: the
