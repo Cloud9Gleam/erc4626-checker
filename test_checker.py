@@ -996,7 +996,12 @@ class TestChecker(unittest.TestCase):
         # end read as expand / decoration / jump-to-the-failed-item.
         # The strip must say in words where it goes — the full results
         # below the form — and never end on the bare arrow again.
-        self.assertIn("see the full results below", failed)
+        # 2026-11-20: "below &darr;" rides in a nowrap span so the
+        # arrow never orphans alone on a line at 360px (headless
+        # render: the ALL PASS strip left a bare "↓" on line 3).
+        # The wording is unchanged; only the markup wraps it.
+        self.assertIn("see the full results", failed)
+        self.assertIn('<span class="nowrap">below &darr;</span>', failed)
         self.assertNotIn("Donation inflation &darr;", failed)
         passed = build.verdict_strip_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
@@ -1004,7 +1009,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn("ALL PASS", passed)
         self.assertIn("verdict-strip pass", passed)
         self.assertNotIn("SOME FAILED", passed)
-        self.assertIn("see the full results below", passed)
+        self.assertIn("see the full results", passed)
+        self.assertIn('<span class="nowrap">below &darr;</span>', passed)
         self.assertNotIn("checks passed &darr;", passed)
         body = build.checker_body()
         self.assertEqual(body.count("verdict-strip"), 1)
