@@ -1014,6 +1014,32 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".verdict-strip.fail", build.CSS)
         self.assertIn(".verdict-strip a", build.CSS)
 
+    def test_api_params_table_has_scroll_hint(self):
+        # Mobile-360 render (2026-11-20, checker-improvement): the
+        # .api-params table is 615px wide inside a 310px .twrap at
+        # 360px — scrollable, but unlike the donation table it had no
+        # .twrap-hint, so "minfeeonly, offset18" and the whole Notes
+        # column were cut off at the card edge with no cue. Same
+        # pattern as the donation table's hint: one line, shown only
+        # at <=460px, desktop untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        body = build.checker_body()
+        hint = ("<p class='twrap-hint'>Scroll sideways to see all three "
+                "columns &rarr;</p>")
+        self.assertEqual(body.count(hint), 1)
+        self.assertLess(body.index("api-params"),
+                        body.index(hint))
+        self.assertLess(body.index(hint),
+                        body.index("<p>Vault state (assets and shares) seeds"))
+        self.assertEqual(body.count(
+            "Scroll sideways to see all four columns"), 1)
+        self.assertIn(".twrap-hint{display:none}", build.CSS)
+        self.assertIn("@media (max-width:460px){.twrap-hint{display:block",
+                      build.CSS)
+
     def test_verdict_strip_full_width(self):
         # Visual verdict #120 checker item 1 (2026-11-19): the strip is a
         # <p> inside <main>, so the 80ch prose cap clamped it to ~778px
