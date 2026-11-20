@@ -1046,11 +1046,22 @@ class TestChecker(unittest.TestCase):
         # (126px below the fold) and at 360x800 it is 1315px — the
         # form's only action is invisible on first paint on every
         # viewport, even after the #109 mobile compaction. The button
-        # now rides in a sticky bar at the form's bottom edge: visible
-        # on load, settling into its natural place once the form is
-        # fully scrolled into view. The bar bleeds to the card edges
+        # now rides in a sticky bar at the form's bottom edge,
+        # settling into its natural place once the form is fully
+        # scrolled into view. The bar bleeds to the card edges
         # and carries the card's own background, so it reads as the
         # card's foot, not a floating button.
+        # 2026-11-20 fix (verdict #128 item 1): the bar was
+        # position:sticky;bottom:0, which pulled it UP into the
+        # viewport the moment its natural spot fell below the fold
+        # -- at 1919x998 load it covered 36 of the 45px of the
+        # last-row inputs and the form looked broken. It is now
+        # top:calc(100vh - 89px): it sticks only once scrolling
+        # brings its top to the viewport-bottom line, so at load it
+        # stays in flow below the fold and covers nothing. 89px is
+        # the measured desktop bar height; mobile is 84px, set by
+        # the <=640px media query (see
+        # test_run_bar_mobile_top_offset).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -1060,13 +1071,30 @@ class TestChecker(unittest.TestCase):
             '<div class="run-bar"><button type="submit">Run checks'
             '</button></div>'), 1)
         self.assertIn(
-            ".run-bar{grid-column:1 / -1;position:sticky;bottom:0;"
+            ".run-bar{grid-column:1 / -1;position:sticky;"
+            "top:calc(100vh - 89px);"
             "z-index:5;background:#f9fafb;",
             build.CSS)
         self.assertIn("#checker-form .run-bar button{margin-top:0;"
                       "width:100%;box-sizing:border-box}",
                       build.CSS)
         self.assertEqual(body.count("Run checks"), 1)
+
+    def test_run_bar_mobile_top_offset(self):
+        # 2026-11-20, checker-improvement (verdict #128 item 1):
+        # the mobile bar is 84px tall (button 50px), not 89px, so
+        # the sticky top offset needs its own <=640px rule -- with
+        # the desktop 89px the bar would stick 5px too low and its
+        # bottom padding would be cut off on phones.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "@media (max-width:640px){.run-bar{top:calc(100vh - 84px)}}",
+            build.CSS)
+        self.assertEqual(build.CSS.count(".run-bar{grid-column:1 / -1;"), 1)
+        self.assertNotIn("position:sticky;bottom:0", build.CSS)
 
     def test_run_checks_button_fills_bar(self):
         # 2026-11-20, checker-improvement: the button lost its
@@ -1077,9 +1105,11 @@ class TestChecker(unittest.TestCase):
         # 155px in a 944px bar at every width, a small button in a
         # big empty grey strip. width:100% restores the stretch; the
         # button's .65em/1.6em padding needs border-box or it
-        # overflows the bar. Bar height is untouched (89px desktop,
-        # 84px mobile), so the verdict #126 (b) occlusion numbers
-        # are unchanged by this fix.
+        # overflows the bar. Bar height is 89px desktop, 84px
+        # mobile -- the verdict #128 fix changed the sticky
+        # mechanism (bottom:0 -> top:calc(100vh - height)) so the
+        # #126 (b) occlusion numbers no longer apply; the new
+        # numbers are asserted by hidden_files/measure-runbar-cover.py.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
