@@ -2265,13 +2265,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn("review prompts, not findings", page)
         self.assertIn("Nothing on this page claims a live vulnerability",
                       page)
-        self.assertIn("<strong>95 pattern entries</strong>", page)
+        self.assertIn("<strong>96 pattern entries</strong>", page)
         self.assertIn("Pattern 37 appears twice", page)
         self.assertIn("Pattern 39 does not exist", page)
         self.assertIn("in numerical order within each group", page)
-        self.assertEqual(page.count("<section id=\"pattern-"), 95)
-        self.assertEqual(page.count("<strong>Smell:</strong>"), 95)
-        self.assertEqual(page.count("<strong>Check:</strong>"), 95)
+        self.assertEqual(page.count("<section id=\"pattern-"), 96)
+        self.assertEqual(page.count("<strong>Smell:</strong>"), 96)
+        self.assertEqual(page.count("<strong>Check:</strong>"), 96)
         self.assertIn('<a href="/checker/">', page)
         self.assertIn('<a href="/audit/">', page)
         self.assertIn("50 USDC prepaid", page)
@@ -5147,7 +5147,14 @@ class TestChecker(unittest.TestCase):
             self.assertIn("<td class='check-label'>Yield</td>", html)
             self.assertIn("<td class='check-label'>Fee</td>", html)
             self.assertIn("<td class='check-label'>Holder gain</td>", html)
-            self.assertIn("deposit preview matches execution</td>", html)
+            # Verdict #130: the long preview label wrapped with an
+            # orphaned "execution" at 320-700px; the displayed label
+            # is shortened at render time (the model string, the
+            # splitter and the API JSON keep the full wording).
+            self.assertIn("<td class='check-label'>deposit preview</td>",
+                          html)
+            self.assertNotIn("deposit preview matches execution</td>",
+                             html)
         # The Worker-side template renders the same block.
         self.assertIn("<div class='check-details'>",
                       build.checker_results_html_js())
@@ -5218,6 +5225,47 @@ class TestChecker(unittest.TestCase):
                     if isinstance(line, str):
                         build.split_detail_line(line)
                         build.detail_table([line])
+
+    def test_check_table_short_labels(self):
+        # Visual verdict #130 (secondary item, headless-measured
+        # 2026-11-20): four detail labels wrapped with an orphaned
+        # last word at 320-700px — the preview labels ended
+        # "...matches / execution", the minimum-deposit label ended
+        # "...minting 1 / share" — because the value column's longest
+        # nowrap token (the 26-char "10,000,000,000,000,000 shares")
+        # sizes the value column wide and squeezes the label column.
+        # The displayed labels shorten at render time; the model
+        # strings, the splitter and the API JSON keep the full
+        # wording (pinned by test_split_detail_line and by the
+        # "preview matches execution" model assertion above).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        short = {
+            "deposit preview matches execution": "deposit preview",
+            "mint preview matches execution": "mint preview",
+            "redeem preview matches execution": "redeem preview",
+            "smallest deposit minting 1 share": "1-share threshold",
+        }
+        for v, kwargs in (
+                (Vault(decimals_offset=6, min_deposit=1_000_000,
+                       perf_fee_bps=1000), {}),
+                (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                 {"off": 0, "mn": 0, "fee": 0})):
+            html = build.results_html(run_all(v), **kwargs)
+            for long_label, short_label in short.items():
+                self.assertIn(
+                    f"<td class='check-label'>{short_label}</td>", html)
+                self.assertNotIn(f"{long_label}</td>", html)
+        # The Worker-side template carries the same map and applies
+        # it to the label cell, not the value cell.
+        js = build.checker_results_html_js()
+        self.assertIn("function shortLabel(s)", js)
+        for long_label, short_label in short.items():
+            self.assertIn(f'"{long_label}":"{short_label}"', js)
+        self.assertIn("nbspUnits(esc(shortLabel(row[0])))", js)
+        self.assertNotIn("shortLabel(row[1])", js)
 
     def test_check_detail_numbers_are_bold(self):
         # Visual verdict #94 (second pass), the other half: the
@@ -5297,7 +5345,7 @@ class TestChecker(unittest.TestCase):
             js)
         self.assertIn("function splitDetailLine(s)", js)
         self.assertIn("boldNumbers(nbspUnits(esc(row[1])))", js)
-        self.assertIn("nbspUnits(esc(row[0]))", js)
+        self.assertIn("nbspUnits(esc(shortLabel(row[0])))", js)
         # The same call survives only for the sentence-row fallback
         # (rounding's "floor/ceil directions hold"); the old per-line
         # <p class='check-detail'> loop is gone (pinned in the
