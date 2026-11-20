@@ -9451,6 +9451,26 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(claim(CAROL, a4, s4), 972_321_428_572)
         self.assertEqual(claim(fs_d, a4, s4), 19_642_857_142)
 
+        # The guide's prose must use the same decomposition: only
+        # 1,796.733212 of Alice's 1,800.362976 escape moves from
+        # Carol — the guide used to print 1,800.362976 as the amount
+        # moving from Carol, contradicting its own sentence two
+        # lines earlier ("she pays 1,796.733212 of Alice's fee").
+        # The rest is the manager's dilution shortfall (manager
+        # gets 1,996.370235, not 2,000), not Carol's loss.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index(
+            'add("/guides/erc4626-fee-crystallisation-on-exit/"')
+        section = build[start:build.index('""")', start) + 4]
+        self.assertIn("1,796.733212 moves from Carol to Alice",
+                      section)
+        self.assertIn("the manager's own dilution shortfall",
+                      section)
+        self.assertNotIn("1,800.362976 moves from Carol to Alice",
+                         section)
+
     def test_withdraw_slippage_guide_numbers(self):
         # Pins /guides/erc4626-withdraw-slippage/ to its model: a
         # previewWithdraw quote is not a commitment — a loss landing
