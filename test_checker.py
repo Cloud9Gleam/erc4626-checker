@@ -2530,6 +2530,81 @@ class TestChecker(unittest.TestCase):
                       "font-weight:700;color:#111827}", build.CSS)
         self.assertIn(".track-group .track-list{margin-top:.4em;margin-bottom:0}", build.CSS)
 
+    def test_audit_track_record_entries_carry_review_dates(self):
+        # Visual verdict #131 item 3 (2026-11-20): every Track record
+        # entry was dateless — a buyer could not tell whether a review
+        # was done last week or last year. Each of the 41 entries now
+        # carries the date its review was completed, as stated on the
+        # review's own page. Rule: the "done" date in the page intro;
+        # where the page states a different completion verb, that date
+        # (Gamma/BattleChain/Zaros: read/checked/extracted Nov 15;
+        # Dutch clock: submitted Oct 26; playbook: distilled Oct-Nov).
+        # Thunder Loan is the one judgment call: its page says "done
+        # Oct 10, 2026 with the proofs completed Nov 15, 2026" — the
+        # review (findings + proofs) was complete Nov 15, so Nov 15.
+        # AirDropper's page states only a month ("done Oct 2026"), so
+        # its entry is month-only; ranges keep the page's own range.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        expected = {
+            "gamma": "Nov 15, 2026",
+            "battlechain-confidence-pools": "Nov 15, 2026",
+            "zaros": "Nov 15, 2026",
+            "thunder-loan": "Nov 15, 2026",
+            "puppy-raffle": "Oct 11\u201312, 2026",
+            "santa": "Oct 13\u201315, 2026",
+            "beatland": "Oct 12, 2026",
+            "snowman": "Oct 11\u201312, 2026",
+            "datingdapp": "Oct 12, 2026",
+            "mycut": "Oct 11\u201312, 2026",
+            "algo": "Oct 12, 2026",
+            "airdropper": "Oct 2026",
+            "rust-fund": "Oct 12, 2026",
+            "stratax": "Nov 17, 2026",
+            "nft-dealers": "Nov 17, 2026",
+            "vanguard": "Nov 17, 2026",
+            "multisig-timelock": "Nov 17, 2026",
+            "rebatefi-hook": "Nov 17, 2026",
+            "token-0x": "Nov 17, 2026",
+            "brivault": "Nov 17, 2026",
+            "raisebox-faucet": "Nov 17, 2026",
+            "president-elector": "Nov 17, 2026",
+            "bid-beasts": "Nov 17, 2026",
+            "last-man-standing": "Nov 17, 2026",
+            "orderbook": "Nov 17, 2026",
+            "weather-witness": "Nov 17, 2026",
+            "company-simulator": "Nov 17, 2026",
+            "eggstravaganza": "Nov 17, 2026",
+            "rock-paper-scissors": "Nov 17, 2026",
+            "hawk-high": "Nov 17, 2026",
+            "ssswap": "Nov 17, 2026",
+            "inheritable-smart-contract-wallet": "Nov 17, 2026",
+            "open-eden": "Nov 17, 2026",
+            "vyper-vested-claims": "Nov 17, 2026",
+            "curve-storage-proofs": "Nov 17, 2026",
+            "snarkeling": "Nov 17, 2026",
+            "raac": "Nov 16, 2026",
+            "quantamm": "Nov 16, 2026",
+            "nexus": "Nov 16\u201317, 2026",
+            "patterns": "Oct\u2013Nov 2026",
+            "dutch-clock": "Oct 26, 2026",
+        }
+        self.assertEqual(len(expected), 41)
+        self.assertEqual(track.count('<span class="track-date">'), 41)
+        for slug, date in expected.items():
+            m = re.search(r'<li><a href="/research/%s/">.*?</li>'
+                          % re.escape(slug), track, re.S)
+            self.assertIsNotNone(m, slug)
+            self.assertIn('<span class="track-date">Reviewed %s</span>' % date,
+                          m.group(0), slug)
+        # The date is metadata, not a claim: muted grey, one size down.
+        self.assertIn(".track-date{color:#6b7280;font-size:.9em}", build.CSS)
+
     def test_track_summary_toggle(self):
         # Visual verdict #115 (c) residual, measured 2026-11-19: the
         # five Track record summaries fill only 45-73% of their grey
