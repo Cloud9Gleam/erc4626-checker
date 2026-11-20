@@ -13723,21 +13723,29 @@ class TestChecker(unittest.TestCase):
         # identical to Design R.
         self.assertEqual(claim(T - A - L, C, S_rem), 800_000)
 
-        # (7) Guide page carries the headline numbers and the
-        # chart widths (Alice 100,000 vs 90,000).
+        # (7) The headline numbers must sit in THIS guide's own
+        # text in build.py — not just somewhere on the site. The
+        # old global pins were vacuous: "1,000,000" occurs 1,037
+        # times in build.py and "90,000" 357 times, so deleting the
+        # whole queue-loss guide would not have failed the test.
+        # Section-scope them the way the preview-rounding test does.
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-queue-loss/"')
+        section = build[start:build.index('""")', start) + 4]
         self.assertIn("/guides/erc4626-queue-loss/", build)
         for needle in ("0.888889", "1.111111", "90,000", "810,000",
                        "110,000", "990,000", "800,000", "1,000,000",
                        "width:100.0%", "width:90.0%",
                        "moves exactly <strong>10,000</strong>"):
-            self.assertIn(needle, build)
+            self.assertIn(needle, section)
 
         # (8) The loss is never blamed on Alice alone: under
         # request pricing Carol bears the whole 100,000.
-        self.assertIn("Carol bears the whole 100,000 loss", build)
-        self.assertNotIn("Alice bears the whole 100,000", build)
+        self.assertIn("Carol bears the whole 100,000 loss", section)
+        self.assertNotIn("Alice bears the whole 100,000", section)
+        # Wrong rounding of the stayers' price must not appear.
+        self.assertNotIn("0.888888", section)
 
 
     def test_fee_asymmetry_guide_numbers(self):
@@ -13844,21 +13852,30 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(100_000 * USDC - 50_000 * USDC,
                          50_000 * USDC)
 
-        # (8) Guide page carries the headline numbers and the
-        # chart widths (deposit 100,000 vs mint 95,000).
+        # (8) The headline numbers must sit in THIS guide's own
+        # text in build.py — not just somewhere on the site. The
+        # old global pins were vacuous: "100,000" occurs 2,320
+        # times in build.py and "50,000" 675 times, so deleting the
+        # whole fee-asymmetry guide would not have failed the test.
+        # Section-scope them the way the preview-rounding test does.
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-fee-asymmetry/"')
+        section = build[start:build.index('""")', start) + 4]
         self.assertIn("/guides/erc4626-fee-asymmetry/", build)
         for needle in ("104,500", "5,500", "85,500.000001",
                        "94,999.999999", "4,499.999999", "50,000",
                        "100,000", "width:100.0%", "width:95.0%",
                        "Tax both doors and the bypass closes"):
-            self.assertIn(needle, build)
+            self.assertIn(needle, section)
 
         # (9) The guide never claims the fee is unavoidable or
         # that mint charges the same fee when it does not.
-        self.assertNotIn("the fee is unavoidable", build)
-        self.assertNotIn("mint() also charges 5%", build)
+        self.assertNotIn("the fee is unavoidable", section)
+        self.assertNotIn("mint() also charges 5%", section)
+        # Wrong by one base unit: the mint cost at $0.90 is
+        # 85,500.000001, never 85,500.000002.
+        self.assertNotIn("85,500.000002", section)
 
     def test_pause_claim_window_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-pause-claim-window/ to
