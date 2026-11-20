@@ -2245,6 +2245,42 @@ class TestChecker(unittest.TestCase):
         self.assertIn("cantina.xyz/bounties/32e64f2e-5f01-4a0b-bbe3-76f32c17b99f",
                       us)
 
+    def test_patterns_page_states_honesty_count_and_cta(self):
+        # Pattern-bank public page (2026-11-20, new build): the page
+        # must carry the honesty notice (review prompts, not findings;
+        # no live vulnerability claimed), the honest entry count with
+        # the duplicate-37 / missing-39 footnote, all 95 entries with
+        # a smell and a check, and CTAs to the #1 checker and the #2
+        # micro-audit with the audit page's own terms — with no
+        # contract address and no contest source filename leaking in.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        titles = dict((p, t) for p, t, d, k, b in build.PAGES)
+        self.assertIn("pattern library", titles["/patterns/"])
+        page = pages["/patterns/"]
+        self.assertIn("review prompts, not findings", page)
+        self.assertIn("Nothing on this page claims a live vulnerability",
+                      page)
+        self.assertIn("<strong>95 pattern entries</strong>", page)
+        self.assertIn("Pattern 37 appears twice", page)
+        self.assertIn("Pattern 39 does not exist", page)
+        self.assertIn("in numerical order within each group", page)
+        self.assertEqual(page.count("<section id=\"pattern-"), 95)
+        self.assertEqual(page.count("<strong>Smell:</strong>"), 95)
+        self.assertEqual(page.count("<strong>Check:</strong>"), 95)
+        self.assertIn('<a href="/checker/">', page)
+        self.assertIn('<a href="/audit/">', page)
+        self.assertIn("50 USDC prepaid", page)
+        self.assertIn("72 hours", page)
+        self.assertIn("outreach@n1netw3n.live", page)
+        self.assertNotRegex(page, r"0x[0-9a-fA-F]{6,}")
+        self.assertNotIn(".sol", page)
+        self.assertIn("library-only", page)
+
     def test_gate_brief_issue_1_state_tip_and_links(self):
         # Gate brief issue #1 (2026-11-20, #5 packaging build): one
         # verified gate result (Ondo Perps, quoted from its gate-check
@@ -4598,8 +4634,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;padding-left:1.2em}", build.CSS)
         self.assertIn(".loss-head li{margin:.15em 0}", build.CSS)
         # The Worker-side template renders the same omission note, and
-        # no placeholder label anywhere.
-        self.assertIn("Rows losing under 0.5% of the worst row (", build.checker_results_html_js())
+        # no placeholder label anywhere. The note is built conditionally
+        # now (visual verdict #130): the reference is the pass bound
+        # on a bound-scaled chart, the worst row otherwise — both
+        # branches must be present in the template.
+        self.assertIn("Rows losing under 0.5% of \"+(boundScale?"
+                      "\"the pass bound\":\"the worst row\")+\" (",
+                      build.checker_results_html_js())
         self.assertIn("loss-head", build.checker_results_html_js())
         self.assertNotIn("too small to draw", build.checker_results_html_js())
         self.assertNotIn("loss-track--tiny", build.checker_results_html_js())
@@ -4793,6 +4834,11 @@ class TestChecker(unittest.TestCase):
         # tiny passing rows plain (noprot's 0 and 0.000006 would read
         # "0.0006% of the bound", noise), and passing means loss <=
         # bound, so the share never exceeds 100%.
+        # Visual verdict #130 (2026-11-20, checker-improvement): the
+        # bar length now agrees with the label — nothing breaches and
+        # the worst loss is 90% of the bound, so the chart is scaled
+        # to the bound and the bar is 90% wide instead of 100% of
+        # itself.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -4806,7 +4852,7 @@ class TestChecker(unittest.TestCase):
                       "1,000,000,000</span><span class='loss-value'>"
                       "0.000900 USDC &middot; 90% of the bound</span>"
                       "<span class='loss-track'><span class='loss-fill pass' "
-                      "style='width:100.0%'></span></span></div>", html)
+                      "style='width:90.0%'></span></span></div>", html)
         # Noprot: breaching multiples intact, no bound share anywhere
         # (the two tiny passing rows are not drawn at all).
         html = build.results_html(
@@ -4954,18 +5000,44 @@ class TestChecker(unittest.TestCase):
         self.assertIn("width:11.0%", html)
         # Default preset (offset 6): losses 0 / 0 / 1 / 900 base units —
         # a single drawable bar is a chart now (visual verdict #123,
-        # 2026-11-20): one green 100% bar, the three smaller donations
+        # 2026-11-20): one green bar, the three smaller donations
         # named in the legend, no placeholder chip, no grey footnote.
         # Verdict #128 item 2 follow-up (2026-11-20): the bar also
         # carries its share of the pass bound — "90% of the bound" —
         # because 100% of itself says nothing.
+        # Visual verdict #130 (2026-11-20, checker-improvement): the
+        # bar itself is 90% wide now — nothing breaches and the worst
+        # loss is 90% of the bound, so the chart is scaled to the
+        # bound and the bar length finally agrees with its label. The
+        # legend names the bound as the scale (and the omitted-row
+        # threshold), and the Red line is dropped: no red bar can
+        # appear on a chart where nothing breaches.
         html = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertEqual(html.count("loss-row"), 1)
-        self.assertIn("<span class='loss-value'>0.000900 USDC &middot; 90% of the bound</span><span class='loss-track'><span class='loss-fill pass' style='width:100.0%'></span></span>", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC, 1,000,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000900 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li></ul>", html)
+        self.assertIn("<span class='loss-value'>0.000900 USDC &middot; 90% of the bound</span><span class='loss-track'><span class='loss-fill pass' style='width:90.0%'></span></span>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the pass bound (1 USDC, 1,000 USDC, 1,000,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li></ul>", html)
+        # Bound scale with more than one drawable row: losses 400 / 900
+        # base units against a 1000-unit bound — both bars scale to the
+        # bound (40% / 90%), not to the worst row, and the omitted row
+        # is measured against the bound too (2 base units is 0.2% of
+        # it). No Red line: nothing breaches.
+        bound_multi = [{"name": "donation_inflation", "pass": True, "detail": [
+            {"donation": 1_000_000, "victim_loss": 2,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000, "victim_loss": 400,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000_000, "victim_loss": 900,
+             "attacker_net": -1}]}]
+        html = build.results_html(bound_multi, vic=100_000_000_000, off=6,
+                                  mn=1_000_000, fee=1000)
+        self.assertIn("width:40.0%", html)
+        self.assertIn("width:90.0%", html)
+        self.assertIn("Bars are scaled to the pass bound (0.001 USDC)", html)
+        self.assertIn("Rows losing under 0.5% of the pass bound (1 USDC) are not drawn", html)
+        self.assertNotIn("Red bars breach the pass bound", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("too little to draw", html)
         self.assertNotIn("<p class='loss-note'>", html)
@@ -4985,7 +5057,8 @@ class TestChecker(unittest.TestCase):
         # sentence form is retired (verdict #123) — the JS carries no
         # Peak line any more.
         js = build.checker_results_html_js()
-        self.assertIn("Rows losing under 0.5% of the worst row (", js)
+        self.assertIn("Rows losing under 0.5% of \"+(boundScale?"
+                      "\"the pass bound\":\"the worst row\")+\" (", js)
         self.assertNotIn("Victim loss peaks at", js)
         self.assertNotIn("too little to draw", js)
         self.assertIn("<strong>No loss:</strong> No donation loses anything", js)
@@ -15687,7 +15760,12 @@ class TestChecker(unittest.TestCase):
         # must name the worst row's loss in USDC. Where a single bar is
         # all there is (visual verdict #123, 2026-11-20: the one-bar
         # case is charted now, the Peak/Others sentence form retired),
-        # the Scale line names the same value.
+        # the Scale line names the same value — except on a bound-scaled
+        # chart (visual verdict #130, 2026-11-20): when nothing breaches
+        # and the worst loss is at least 25% of the bound, the scale is
+        # the pass bound, so the Scale line names the bound and the
+        # worst-row value lives in the bar label instead ("90% of the
+        # bound").
         import importlib.util
         from pathlib import Path
         spec = importlib.util.spec_from_file_location(
@@ -15702,18 +15780,18 @@ class TestChecker(unittest.TestCase):
             "(0.909091 USDC)", html)
         self.assertNotIn(
             "Bars are scaled to the worst row in this table;", html)
-        # Offset 6: a single drawable bar is a chart — the Scale line
-        # names the same worst-row value, as the charted preset does.
+        # Offset 6: a single drawable bar is a chart — bound-scaled
+        # now, so the Scale line names the pass bound (0.001 USDC)
+        # and the worst-row value (0.000900 USDC) is in the bar label.
         v = Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)
         html = build.results_html(run_all(v), off=6, mn=1_000_000, fee=1000)
         self.assertIn(
-            "Bars are scaled to the worst row in this table "
-            "(0.000900 USDC)", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC, 1,000,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000900 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red:</strong> Red bars breach the pass bound.</li></ul>", html)
+            "Bars are scaled to the pass bound (0.001 USDC)", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the pass bound (1 USDC, 1,000 USDC, 1,000,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li></ul>", html)
         self.assertNotIn("<p class='loss-note'>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertIn("<div class='loss-chart loss-chart--bare'>", html)
-        self.assertIn("<span class='loss-value'>0.000900 USDC &middot; 90% of the bound</span><span class='loss-track'><span class='loss-fill pass' style='width:100.0%'></span></span>", html)
+        self.assertIn("<span class='loss-value'>0.000900 USDC &middot; 90% of the bound</span><span class='loss-track'><span class='loss-fill pass' style='width:90.0%'></span></span>", html)
     def test_donation_loss_recognition_guide_numbers(self):
         # Pins /guides/erc4626-donation-loss-recognition/ to its
         # model: a donation into a vault carrying an unrecognised
