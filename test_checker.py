@@ -5863,8 +5863,12 @@ class TestChecker(unittest.TestCase):
         # they push Run checks 2.16 viewports down at 360x667. Below
         # 640px the notice's secondary sentences hide behind
         # .notice-extra and the label margins halve. The honesty
-        # core and the how-to link stay visible on every viewport;
-        # desktop is untouched: full notice, .7em label margins.
+        # core and the how-to link stay visible on every viewport.
+        # Desktop: the full notice stays, but since 2026-11-20 the
+        # checker form's labels are .35em on desktop too (same value
+        # as this mobile rule) -- see
+        # test_checker_form_labels_compact_on_desktop. The global
+        # .7em label rule is still intact for every other form.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5911,6 +5915,35 @@ class TestChecker(unittest.TestCase):
         # The audit page has no notice-extra span.
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         self.assertEqual(audit.count('class="notice-extra"'), 0)
+
+    def test_checker_form_labels_compact_on_desktop(self):
+        # 2026-11-20 checker-improvement (measured with
+        # hidden_files/measure-fitform.py, headless true render):
+        # the desktop form's 7 labels each carried the global .7em
+        # top+bottom margin, so at 1919x998 the form ran 365-1140px
+        # and the last row's hints were sliced mid-line by the fold
+        # while Run checks sat ~65px below it. Halving the margin
+        # on #checker-form only (the same .35em the <=640px query
+        # already uses) saves ~12px per inter-row gap, ~48px over
+        # the form: form 775->727px, bottom 1140->1092, all six
+        # hints fully visible at load. (Row heights themselves stay
+        # 156px -- the content drives them; the saving is the gaps
+        # between rows.) The global .7em rule stays for every
+        # other form; the mobile media-query rule stays too (same
+        # value now, harmless). This is a spacing change only -- no
+        # content, numbers, preset semantics, CTA or API change.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Base CSS carries the desktop rule (once, outside any media
+        # query): the string occurs twice in build.CSS overall -- once
+        # here, once inside the <=640px query.
+        self.assertEqual(build.CSS.count("#checker-form label{margin:.35em 0}"), 2)
+        start = build.CSS.index("#checker-form{grid-template-columns:1fr}")
+        self.assertLess(build.CSS.index("#checker-form label{margin:.35em 0}"), start)
+        # Global label rule untouched (audit form, guide pages).
+        self.assertIn("label{display:block;margin:.7em 0;color:#111827}", build.CSS)
 
     def test_checker_perf_fee_hint_says_what_the_model_does(self):
         # Visual verdict #78: the min-height fix made the boxes equal,
