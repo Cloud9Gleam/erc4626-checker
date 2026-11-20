@@ -2318,6 +2318,13 @@ class TestChecker(unittest.TestCase):
         # tail "this state." orphaned onto a 5th line while Victim
         # stayed at 4; the shorter tail pulls it back to 4 lines at
         # 1024 with no change at 1919/1600/1280/800.
+        # 2026-11-20 (visual verdict #127): the assets hint was
+        # trimmed again -- "before the attack", "deposits from
+        # existing holders" and "Give both, or leave both at 0."
+        # dropped (the pairing rule stays in the Vault shares hint
+        # and the how-to guide). The pinned sentence below is
+        # unchanged; all six hints now render 3 lines at desktop (see
+        # test_checker_hints_render_three_lines).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5819,6 +5826,14 @@ class TestChecker(unittest.TestCase):
         # no high-water mark and no hurdle anywhere in either model.
         # The hint must therefore say exactly that -- 0 = no fee, and
         # no HWM/hurdle -- and must not claim a high-water mark.
+        # 2026-11-20 (visual verdict #127): the hint was trimmed from
+        # 4 lines to 3 -- "in basis points" dropped (the label says
+        # bps, and the short summary already reads the same way),
+        # "0 = no performance fee" shortened to "0 = no fee" (the
+        # label carries "Performance fee"), and the middle sentence
+        # compressed to "Taken on the gain itself, with no high-water
+        # mark or hurdle." The claim is unchanged: fee on the gain,
+        # no HWM, no hurdle. The example sentence below is untouched.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5828,10 +5843,9 @@ class TestChecker(unittest.TestCase):
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check. The
         # first draft used "manager's" and did exactly that.
-        hint = ("The cut from the yield, in basis points — "
-                "1000 bps = 10% of the gain. 0 = no performance fee. "
-                "The model takes it on the gain itself, with no "
-                "high water mark or hurdle.")
+        hint = ("The cut from the yield — 1000 bps = 10%. "
+                "0 = no fee. Taken on the gain itself, with no "
+                "high-water mark or hurdle.")
         self.assertNotIn("'", hint)
         self.assertIn(hint, src)
         self.assertNotIn("Fee on yield, in basis points — 1000 bps = 10%.", src)
@@ -5876,10 +5890,17 @@ class TestChecker(unittest.TestCase):
         # Regression guard: the form HTML is duplicated in a
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check.
+        # 2026-11-20 (visual verdict #127): the hint was trimmed from
+        # 4 lines to 3 -- the revert sentence ("Below the minimum, or
+        # minting zero shares, it reverts and no loss is measured.")
+        # moved to the Minimum deposit hint, where the parameter that
+        # causes the revert lives; the victim hint keeps the order of
+        # operations and the loss definition. All six hints now render
+        # 3 lines at 1919/1280 headless (see
+        # test_checker_hints_render_three_lines).
         hint = ("The deposit after the donation, at the inflated price — "
                 "it mints fewer shares than it should. Its loss is the deposit minus "
-                "what those shares redeem for. Below the minimum, or minting zero "
-                "shares, it reverts and no loss is measured.")
+                "what those shares redeem for.")
         self.assertNotIn("'", hint)
         # Python template copy carries the literal em dash; the JS mirror
         # carries the same text with a \u2014 escape, which JS renders
@@ -5914,9 +5935,17 @@ class TestChecker(unittest.TestCase):
         # Regression guard: the form HTML is duplicated in a
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check.
-        hint = ("Virtual shares the vault pretends to hold. 6 is the OpenZeppelin standard; "
+        # 2026-11-20 (visual verdict #127): the hint was trimmed from
+        # 4 lines to 3 -- "6 is the OpenZeppelin standard" shortened
+        # to "6 is the standard" (the page notice already says the
+        # model is OpenZeppelin math), and the tail ("shrinking the
+        # rounding loss the same way. The checker accepts 0–30.")
+        # dropped: the input enforces 0–30, and the rounding-loss
+        # mechanism is the virtual-shares guide's subject and is
+        # visible in the check results. The x10-per-unit fact stays.
+        hint = ("Virtual shares the vault pretends to hold. 6 is the standard; "
                 "0 means no protection. Each unit of offset divides the price of one share "
-                "by 10, shrinking the rounding loss the same way. The checker accepts 0–30.")
+                "by 10.")
         self.assertNotIn("'", hint)
         # Both copies (Python template + JS mirror) must carry it.
         self.assertEqual(src.count(hint), 2)
@@ -5941,14 +5970,85 @@ class TestChecker(unittest.TestCase):
         # Regression guard: the form HTML is duplicated in a
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check.
-        hint = ("The smallest deposit the vault accepts. The donation attacker seeds this "
-                "amount, at least 1 USDC even when the minimum is 0. Set it above the victim "
-                "deposit and that deposit reverts, so no loss is measured.")
+        # 2026-11-20 (visual verdict #127): the hint was trimmed from
+        # 4 lines to 3 -- "donation attacker" shortened to "attacker"
+        # (the page is the donation attack), and the third sentence
+        # compressed to "Above the victim deposit, it reverts and no
+        # loss is measured." The revert fact is now stated here, not
+        # in the Victim deposit hint; the 1 USDC seed floor stays.
+        hint = ("The smallest deposit the vault accepts. The attacker seeds this "
+                "amount, at least 1 USDC even when the minimum is 0. Above the victim "
+                "deposit, it reverts and no loss is measured.")
         self.assertNotIn("'", hint)
         # Both copies (Python template + JS mirror) must carry it, and
         # the old 1-line text (ending in a period after "amount") is gone.
         self.assertEqual(src.count(hint), 2)
         self.assertNotIn("The donation attacker seeds this amount.", src)
+
+    def test_checker_hints_render_three_lines(self):
+        # Visual verdict #127 (2026-11-20, real browser): the checker
+        # form's six hints each ran 4 lines of small grey text, and the
+        # inputs' visual weight was pressed down by the explanations --
+        # the form read as text-crowded. All six hint-full texts were
+        # trimmed to 3 lines at desktop (facts preserved; dropped
+        # clauses live elsewhere: the revert rule in the Minimum
+        # deposit hint, the pairing rule in the Vault shares hint and
+        # the how-to guide, the rounding-loss mechanism in the
+        # virtual-shares guide and the check results). Fresh pixel
+        # measurement this run (hidden_files/measure-hint-trim.py,
+        # headless chrome-headless-shell on the built static page):
+        # 1919x998 and 1280x800, all six hints 3 lines, box 74.0px
+        # (exactly the 4.95em floor -- no blank space, no 4th line),
+        # form 774.8px tall (was ~923px), no horizontal overflow;
+        # 360px shows only the one-line short summaries, unchanged.
+        # This test pins the six trimmed texts in both render copies
+        # (Python template + Worker JS mirror); the line counts
+        # themselves are a rendering property, verified by measurement.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        hints = [
+            "Virtual shares the vault pretends to hold. 6 is the standard; "
+            "0 means no protection. Each unit of offset divides the price of one share "
+            "by 10.",
+            "The smallest deposit the vault accepts. The attacker seeds this "
+            "amount, at least 1 USDC even when the minimum is 0. Above the victim "
+            "deposit, it reverts and no loss is measured.",
+            "The deposit after the donation, at the inflated price — "
+            "it mints fewer shares than it should. Its loss is the deposit minus "
+            "what those shares redeem for.",
+            "Assets already in the vault. 0 = a new vault. The donation and "
+            "minimum-viable-deposit checks use this, and victim loss is measured "
+            "against it.",
+            "Shares already issued, as the vault shows them — not the raw totalSupply. "
+            "The model counts 6-decimal shares. 0 = a new vault. Give both, or leave "
+            "both at 0.",
+            "The cut from the yield — 1000 bps = 10%. 0 = no fee. Taken on the gain "
+            "itself, with no high-water mark or hurdle. E.g. 1000 bps: 10,000 USDC of "
+            "yield pays 1,000 in fees.",
+        ]
+        for i, hint in enumerate(hints):
+            self.assertNotIn("'", hint)
+            if i == 2:
+                # Victim: the JS mirror carries the em dash as a
+                # \u2014 escape; the Python template carries it literal.
+                self.assertEqual(src.count(hint), 1)
+                self.assertEqual(
+                    src.count(hint.replace("—", "\\u2014")), 1)
+            else:
+                self.assertEqual(src.count(hint), 2)
+        # Old 4-line wordings must be gone from the form (two survive
+        # elsewhere and are not asserted here: "the OpenZeppelin
+        # default for a USDC vault" lives in the API table note, and
+        # "6 is the OpenZeppelin standard" lives in a guide).
+        self.assertNotIn("shrinking the rounding loss the same way", src)
+        self.assertNotIn("The checker accepts 0–30", src)
+        self.assertNotIn("Set it above the victim deposit", src)
+        self.assertNotIn("Below the minimum, or minting zero shares", src)
+        self.assertNotIn("deposits from existing holders", src)
+        self.assertNotIn("The model takes it on the gain itself", src)
 
     def test_donation_nonmonotonic_explanation(self):
         # The donation loss is not monotonic in the donation size (1B
