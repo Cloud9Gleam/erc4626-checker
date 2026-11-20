@@ -2440,6 +2440,16 @@ class TestChecker(unittest.TestCase):
         # the other four stay closed; the 33-item First Flight wall
         # still folds. The first group's summary line still carries
         # the strongest claim, now visible without a click.)
+        # (2026-11-20 update: visual verdict #131 item 3 extends the
+        # #119 trade to the three SHORT groups — the Bounded slice (3),
+        # Reference (1) and Live finding (1) are open by default too,
+        # so 8 proof entries show without a click instead of 3. The
+        # 33-item First Flight wall stays folded: it is the only group
+        # whose open height is a wall. Measured cost of opening the
+        # three short groups (headless, static audit page): "What you
+        # do not get" moves +424px at 1919px / +1021px at 360px; the
+        # added height sits below the order form, so the conversion
+        # path is unaffected.)
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2448,10 +2458,11 @@ class TestChecker(unittest.TestCase):
         track = audit[audit.index("<h2>Track record</h2>"):]
         self.assertEqual(track.count('<details class="track-group"'), 5)
         self.assertEqual(track.count("<summary>"), 5)
-        self.assertEqual(track.count('<details class="track-group" open>'), 1)
+        self.assertEqual(track.count('<details class="track-group" open>'), 4)
         # Strongest proof first: the ended contests whose full awarded
-        # sets were re-verified — open by default (see above), the only
-        # open group; the rest are closed like before.
+        # sets were re-verified — open by default (see above), and the
+        # three short groups with them; only the First Flight wall
+        # stays closed.
         # Visual verdict #112 item 1: a folded row showed only its
         # title, so each summary now carries a one-line preview of the
         # strongest item(s) inside; the folded state still proves the
@@ -2468,7 +2479,7 @@ class TestChecker(unittest.TestCase):
         # subtitle after the dash (visual verdicts #107/#108): the
         # distinguishing scope now leads, so the summaries are
         # distinguishable at a glance.
-        self.assertIn('<details class="track-group">\n'
+        self.assertIn('<details class="track-group" open>\n'
                       '<summary>Bounded slice — ended contests (3)'
                       '<span class="track-toggle"><span class="when-closed">Show 3 reviews</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
@@ -2486,13 +2497,16 @@ class TestChecker(unittest.TestCase):
                       '<span class="track-preview">Thunder Loan flash-loan drain · Puppy Raffle '
                       '9 findings · Vanguard router-bucket bypass</span></summary>',
                       track)
-        # The two one-item groups preview their single item, not a count.
-        self.assertIn('<summary>Reference (1)'
+        # The two one-item groups preview their single item, not a count —
+        # and both are open by default (2026-11-20, verdict #131 item 3).
+        self.assertIn('<details class="track-group" open>\n'
+                      '<summary>Reference (1)'
                       '<span class="track-toggle"><span class="when-closed">Show reference</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
                       '<span class="track-preview">77 recurring vulnerability patterns, '
                       'each proven by a real finding</span></summary>', track)
-        self.assertIn('<summary>Live finding (1)'
+        self.assertIn('<details class="track-group" open>\n'
+                      '<summary>Live finding (1)'
                       '<span class="track-toggle"><span class="when-closed">Show finding</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
                       '<span class="track-preview">Auction clock never enforced — '
