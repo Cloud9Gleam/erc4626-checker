@@ -12254,12 +12254,17 @@ class TestChecker(unittest.TestCase):
                  / "build.py").read_text()
         start = build.index('add("/guides/erc4626-donation-attack/"')
         section = build[start:build.index('""")', start) + 4]
-        for needle in ("99,999 shares", "99,999.09", "0.909",
-                       "1,000,000.91", "1,000,000", "100,000",
+        for needle in ("99,999 shares", "99,999.090909", "0.909091",
+                       "1,000,000.909091", "1,000,000", "100,000",
                        "0.0009", "Offset 18 bounds it to zero",
                        "each worth about 1 USDC"):
             self.assertIn(needle, section)
         self.assertNotIn("about 1,000 USDC", section)
+        # The rounded forms must not survive anywhere in the guide:
+        # they used to read 99,999.09 / 0.909 / 1,000,000.91.
+        for stale in ("99,999.09 USDC", "1,000,000.91 USDC",
+                      "0.909 USDC"):
+            self.assertNotIn(stale, section)
         # The same units error lived in the research page that tells
         # the same story; it is fixed there too. (The dead-shares
         # guide legitimately keeps "about 1,000 USDC" — there one
@@ -12268,6 +12273,21 @@ class TestChecker(unittest.TestCase):
         rstart = build.index('add("/research/erc4626-donation-inflation/"')
         rsection = build[rstart:build.index('""")', rstart) + 4]
         self.assertIn("each worth\nabout 1 USDC", rsection)
+        # The inflation-attack guide told the same story with the
+        # same rounding, plus the units error itself ("each share now
+        # costs about 1,000 USDC"); both fixed 2026-11-21.
+        istart = build.index('add("/guides/erc4626-inflation-attack/"')
+        isection = build[istart:build.index('""")', istart) + 4]
+        self.assertIn("each share now costs about\n1 USDC", isection)
+        self.assertNotIn("about 1,000 USDC", isection)
+        for needle in ("99,999.090909 USDC (a 0.909091 USDC loss)",
+                       "1,000,000.909091 USDC",
+                       "0.090909 USDC loss",
+                       "worst victim loss 0.909091 USDC"):
+            self.assertIn(needle, isection)
+        for stale in ("99,999.09 USDC", "1,000,000.91 USDC",
+                      "0.909 USDC", "0.091 USDC"):
+            self.assertNotIn(stale, isection)
         self.assertNotIn("about 1,000 USDC", rsection)
         # Only one add() for this path in build.py.
         self.assertEqual(
