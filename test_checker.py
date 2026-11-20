@@ -2065,7 +2065,7 @@ class TestChecker(unittest.TestCase):
                       audit, re.S)
         self.assertIsNotNone(m)
         self.assertIn(build.PAY_ADDR, m.group(0))
-        self.assertIn("Copy payment address", m.group(0))
+        self.assertIn(">Copy address</button>", m.group(0))
         # Firm price as a figure, not a hedged sentence: the title already
         # says 50 USDC, so the box must not hedge with "About".
         # Token/network are labelled chips, not prose.
@@ -2272,7 +2272,7 @@ class TestChecker(unittest.TestCase):
         # Inside the pay-row, after the copy button, before the note.
         row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
         self.assertIsNotNone(row, "pay-row not found")
-        self.assertLess(row.group(0).index("Copy payment address"),
+        self.assertLess(row.group(0).index("Copy address"),
                         row.group(0).index("View on BaseScan"))
         self.assertLess(row.group(0).index("View on BaseScan"),
                         row.group(0).index("pay-note"))
@@ -3697,9 +3697,9 @@ class TestChecker(unittest.TestCase):
         self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
                       audit)
         self.assertIn("Show shortened", audit)
-        self.assertIn("Copy payment address", audit)
+        self.assertIn(">Copy address</button>", audit)
 
-    def test_audit_pay_row_toggle_is_own_line(self):
+    def test_audit_pay_row_toggle_shares_line_one(self):
         # Visual verdict #115 (d): at the 1024px column the pay-row
         # read [address][Show shortened][Copy][BaseScan] with the
         # same ~10px gap between every item, so the display-preference
@@ -3709,11 +3709,23 @@ class TestChecker(unittest.TestCase):
         # disproved by visual verdict #116: max-width:max-content
         # clamps the 100% flex-basis to the button's content width,
         # so wrapping depended on leftover space in row 1 — headless
-        # Chromium wrapped, the real browser did not. The toggle now
-        # sits inside a full-width wrapper span: the wrapper is the
-        # flex item (flex:0 0 100%, no max-width anywhere on it), so
-        # it always takes its own line regardless of font rendering,
-        # and the button inside is a plain inline element. DOM order
+        # Chromium wrapped, the real browser did not. The second fix
+        # (2026-11-19) put the toggle in a full-width wrapper span
+        # (flex:0 0 100%), which always took its own line — but left
+        # it as an orphan link on a line of its own, and visual
+        # verdict #127 still called the pay-row crowded. The third
+        # fix (2026-11-20) makes room instead: the copy button label
+        # "Copy payment address" is now "Copy address" (the section
+        # is "Price and payment" and this is the only address on the
+        # page), freeing 78px — measured line 1 is address 409 +
+        # copy 151.3 + BaseScan 128.4 + toggle 127.5 + 3 gaps 30.6 =
+        # 846.8px against a 902.7px row, 45.9px slack at the 1024px
+        # column, so all four controls share row 1 at both 1919 and
+        # 1280 (headless true render). The wrapper span stays as the
+        # flex item (flex-shrink:0, no max-width anywhere on it, no
+        # flex-basis) so it can never be clamped; if a font ever
+        # pushes the row over, the toggle wraps to its own line —
+        # the 2026-11-19 layout — rather than breaking. DOM order
         # is address, copy button, BaseScan link, toggle, note; the
         # copy script and the toggle function use getElementById, so
         # the wrapper cannot break them.
@@ -3724,7 +3736,8 @@ class TestChecker(unittest.TestCase):
         import build
         m = re.search(r"\.pay-row \.addr-toggle-wrap\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".pay-row .addr-toggle-wrap rule not found")
-        self.assertIn("flex:0 0 100%", m.group(0))
+        self.assertIn("flex-shrink:0", m.group(0))
+        self.assertNotIn("flex:0 0 100%", m.group(0))
         self.assertNotIn("max-width", m.group(0))
         t = re.search(r"\.pay-row \.addr-toggle\{[^}]*\}", build.CSS)
         self.assertIsNotNone(t, ".pay-row .addr-toggle rule not found")
@@ -3745,7 +3758,7 @@ class TestChecker(unittest.TestCase):
         # (btn.textContent='Show shortened'), which sits before the
         # BaseScan link in the DOM.
         i_addr = audit.index('id="pay-addr"')
-        i_copy = audit.index(">Copy payment address</button>")
+        i_copy = audit.index(">Copy address</button>")
         i_scan = audit.index(">View on BaseScan</a>")
         i_wrap = audit.index('<span class="addr-toggle-wrap">')
         i_tog = audit.index(">Show shortened</button>")
@@ -3800,7 +3813,7 @@ class TestChecker(unittest.TestCase):
         row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
         self.assertIsNotNone(row, "pay-row not found")
         self.assertIn(note, row.group(0))
-        self.assertLess(row.group(0).index("Copy payment address"),
+        self.assertLess(row.group(0).index("Copy address"),
                         row.group(0).index(note))
         m = re.search(r"\.pay-row \.pay-note\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".pay-row .pay-note rule not found")
