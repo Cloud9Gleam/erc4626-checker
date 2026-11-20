@@ -4602,8 +4602,8 @@ class TestChecker(unittest.TestCase):
         # so the frame is gone too — the fill alone shows, against
         # the white card, with the note stating the scale.
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
-                      "border:0}",
+        self.assertIn(".loss-chart--bare .loss-track{position:relative;"
+                      "grid-column:3;background:transparent;border:0}",
                       build.CSS)
         self.assertIn("Bars are scaled to the worst row in this table", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
@@ -4772,7 +4772,7 @@ class TestChecker(unittest.TestCase):
         # the longer label squeezes the mobile track to ~30px, so
         # below 640px the bare-chart value takes its own line and
         # the track gets the full row width again.
-        self.assertIn(".loss-chart--bare .loss-value{flex:1 1 100%}",
+        self.assertIn(".loss-chart--bare .loss-axis{grid-column:1}",
                       build.CSS)
         # No trace of the hug-the-bar-end mechanism: no inside class,
         # no --pct variable anywhere in the chart markup or CSS.
@@ -4780,17 +4780,18 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("--pct:", html)
         self.assertNotIn("loss-value--inside", build.CSS)
         self.assertNotIn("--pct", build.CSS)
-        # The CSS pins the new positioning: a static flex item in the
-        # row flow, dark text, never absolutely positioned.
-        self.assertIn(".loss-chart--bare .loss-value{position:static;"
-                      "flex:0 0 auto;white-space:nowrap;text-align:left;"
-                      "color:#111827}", build.CSS)
+        # The CSS pins the new positioning: a grid item in column 2,
+        # dark text, never absolutely positioned.
+        self.assertIn(".loss-chart--bare .loss-value{grid-column:2;"
+                      "white-space:nowrap;text-align:left;color:#111827}",
+                      build.CSS)
         # 2026-11-19 gridlines (verdict #120 item 3): position:relative
         # is back on the bare track, but for a different job — it
         # anchors the gridline ::after overlay, not an absolutely
         # positioned value. The value stays static (asserted above);
         # the overlay is pinned by test_loss_chart_gridlines.
-        self.assertIn(".loss-chart--bare .loss-track{position:relative}",
+        self.assertIn(".loss-chart--bare .loss-track{position:relative;"
+                      "grid-column:3;background:transparent;border:0}",
                       build.CSS)
         # Guide charts (plain .loss-chart, values as flex items) are
         # untouched: the new rule is scoped to --bare only.
@@ -4901,7 +4902,8 @@ class TestChecker(unittest.TestCase):
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn(".loss-chart--bare .loss-track{position:relative}",
+        self.assertIn(".loss-chart--bare .loss-track{position:relative;"
+                      "grid-column:3;background:transparent;border:0}",
                       build.CSS)
         self.assertIn(
             ".loss-chart--bare .loss-track::after{content:\"\";"
@@ -4948,11 +4950,12 @@ class TestChecker(unittest.TestCase):
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn(".loss-chart--bare .loss-label{flex:0 0 8em}",
+        self.assertIn(".loss-chart--bare .loss-label{grid-column:1}",
                       build.CSS)
         self.assertIn(".loss-label{flex:0 0 22em;text-align:right;color:#374151}",
                       build.CSS)
-        self.assertIn(".loss-chart--bare .loss-label{flex:1 1 100%}",
+        self.assertIn(".loss-chart--bare{grid-template-columns:1fr;"
+                      "row-gap:.15em}",
                       build.CSS)
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
@@ -4962,6 +4965,86 @@ class TestChecker(unittest.TestCase):
                       "<span class='loss-value'>0.909091 USDC &middot; 909&times; the bound</span>"
                       "<span class='loss-track'><span class='loss-fill fail' style='width:100.0%'></span></span></div>",
                       html)
+
+    def test_loss_chart_axis_labels(self):
+        # Visual verdict #131 (2026-11-20): the chart had no axis —
+        # one green bar, three unlabelled gridlines, first glance
+        # read as a loading progress bar. The grid now aligns every
+        # track, so one axis row under the bars labels the gridlines
+        # with their USDC values (0 and the scale max at the ends,
+        # 25/50/75% between them). The axis is render-only: the
+        # numbers, verdicts and bar widths are pinned by the other
+        # chart tests and do not move.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # CSS: grid container, display:contents rows, axis rules.
+        self.assertIn(".loss-chart--bare{display:grid;"
+                      "grid-template-columns:8em auto 1fr;"
+                      "column-gap:.7em;row-gap:.25em;align-items:center}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-row{display:contents}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-head{grid-column:1/-1;"
+                      "margin-bottom:.25em}",
+                      build.CSS)
+        self.assertIn(".loss-axis{grid-column:3;position:relative;"
+                      "height:1.15em;font-size:.8em;color:#6b7280}",
+                      build.CSS)
+        self.assertIn(".loss-axis span{position:absolute;top:0;"
+                      "transform:translateX(-50%);white-space:nowrap}",
+                      build.CSS)
+        self.assertIn(".loss-axis span:nth-child(2),.loss-axis "
+                      "span:nth-child(3),.loss-axis span:nth-child(4)"
+                      "{display:none}",
+                      build.CSS)
+        # Default preset: bound scale 0.001 USDC — five ticks.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertEqual(html.count("loss-axis"), 1)
+        self.assertIn("<div class='loss-axis' aria-hidden='true'>"
+                      "<span style='left:0%'>0 USDC</span>"
+                      "<span style='left:25%'>0.00025</span>"
+                      "<span style='left:50%'>0.0005</span>"
+                      "<span style='left:75%'>0.00075</span>"
+                      "<span style='left:100%'>0.001</span></div>",
+                      html)
+        # Noprot: worst-row scale 0.909091 USDC — floored quarters.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<span style='left:25%'>0.227272</span>"
+                      "<span style='left:50%'>0.454545</span>"
+                      "<span style='left:75%'>0.681818</span>"
+                      "<span style='left:100%'>0.909091</span></div>",
+                      html)
+        # Degenerate scale (victim deposit 1 USDC, worst loss a
+        # single base unit): duplicate tick values are dropped,
+        # keeping the 100% tick — the axis never prints the same
+        # number twice.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                    victim_deposit=1_000_000),
+            vic=1_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<div class='loss-axis' aria-hidden='true'>"
+                      "<span style='left:0%'>0 USDC</span>"
+                      "<span style='left:100%'>0.000001</span></div>",
+                      html)
+        # No chart, no axis: offset 18 loses nothing.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertNotIn("loss-axis", html)
+        # The Worker-side template renders the same axis with the
+        # same floored-quarter logic (BigInt division).
+        js = build.checker_results_html_js()
+        self.assertIn("loss-axis", js)
+        self.assertIn("rawTicks", js)
+        self.assertIn("BigInt(scale)", js)
+        self.assertIn("sc/4n", js)
+        self.assertIn("3n*sc/4n", js)
 
     def test_loss_chart_omits_tiny_rows_and_charts_single_bar(self):
         # Visual verdict #123 (2026-11-20): a single drawable bar IS
@@ -5830,11 +5913,11 @@ class TestChecker(unittest.TestCase):
         m = re.search(r"\.loss-track\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".loss-track rule not found")
         self.assertIn("height:1.7em", m.group(0))
-        m = re.search(r"\.loss-row\{[^}]*\}", build.CSS)
+        m = re.search(r"\.loss-row\{display:flex;[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".loss-row rule not found")
         self.assertIn("margin:.25em 0", m.group(0))
-        self.assertIn(".loss-chart--bare .loss-track{background:transparent;"
-                      "border:0}",
+        self.assertIn(".loss-chart--bare .loss-track{position:relative;"
+                      "grid-column:3;background:transparent;border:0}",
                       build.CSS)
         self.assertNotIn(".loss-chart--bare .loss-track--empty{background:transparent;"
                          "border-color:",
