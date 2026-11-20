@@ -2661,19 +2661,22 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(len(expected), 41)
         self.assertEqual(track.count('<span class="track-date">'), 41)
         for slug, date in expected.items():
-            m = re.search(r'<li><a href="/research/%s/">.*?</li>'
-                          % re.escape(slug), track, re.S)
+            m = re.search(r'<li><span class="track-date">Reviewed %s</span>'
+                          r'<a href="/research/%s/">.*?</li>'
+                          % (re.escape(date), re.escape(slug)), track, re.S)
             self.assertIsNotNone(m, slug)
             self.assertIn('<span class="track-date">Reviewed %s</span>' % date,
                           m.group(0), slug)
         # The date is metadata, not a claim: muted grey, one size down,
         # and it never splits across lines (live render 2026-11-20
         # caught Thunder Loan wrapping as "Reviewed Nov 15," / "2026").
-        # Since 2026-11-21 (visual verdict #136 item 3) it is also its
-        # own line under the entry, not pasted at the end of the
-        # sentence — display:block, with a small gap above it.
-        self.assertIn(".track-date{display:block;color:#6b7280;font-size:.9em;"
-                      "white-space:nowrap;margin-top:.3em}", build.CSS)
+        # Since 2026-11-21 (visual verdict #137) it sits at the
+        # top-right of the title row — float:right, source-first in
+        # the <li>, a 1em gap to the lead text — not pasted at the end
+        # of the sentence and not on its own line under the entry
+        # (#136's own-line placement, superseded by this one).
+        self.assertIn(".track-date{float:right;color:#6b7280;font-size:.9em;"
+                      "white-space:nowrap;margin-left:1em}", build.CSS)
 
     def test_audit_track_record_entries_split_lead_and_detail(self):
         # Visual verdict #136 item 3 (2026-11-21): Track record entries
@@ -2681,8 +2684,9 @@ class TestChecker(unittest.TestCase):
         # tests in one run, the date pasted at the sentence end. Each
         # entry now splits at its first top-level ';' into a lead line
         # (title + counts + proof, a complete sentence) and a smaller,
-        # muted detail line; the date follows on its own line (see the
-        # CSS in test_audit_track_record_entries_carry_review_dates).
+        # muted detail line; the date floats at the top-right of the
+        # title row (visual verdict #137, 2026-11-21 — see the CSS in
+        # test_audit_track_record_entries_carry_review_dates).
         # Only the wording's punctuation changes: the split ';' becomes
         # the lead's final '.', nothing else is reworded.
         import re
@@ -2696,25 +2700,32 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(track.count('<span class="track-date">'), 41)
         # The two entries with no top-level ';' stay single-paragraph:
         # Gamma's only ';' sits inside a parenthesis, Dutch clock has
-        # none — their dates still drop to their own line via CSS.
+        # none — their dates still float to the title row's right via CSS.
         for slug in ("gamma", "dutch-clock"):
-            m = re.search(r'<li><a href="/research/%s/">.*?</li>'
+            m = re.search(r'<li><span class="track-date">Reviewed [^<]*</span>'
+                          r'<a href="/research/%s/">.*?</li>'
                           % re.escape(slug), track, re.S)
             self.assertIsNotNone(m, slug)
             self.assertNotIn('<span class="track-detail">', m.group(0), slug)
-        # Every split entry: lead ends with '.' right before the detail
-        # span, the detail ends with '.' right before the date span.
-        for m in re.finditer(r'<li><a href="/research/[^"]+/">.*?</li>',
+        # Every entry: the date span is source-first in the <li>
+        # (floated to the title row's right), and every split entry's
+        # lead ends with '.' right before the detail span, the detail
+        # ends with '.' and closes the entry.
+        for m in re.finditer(r'<li><span class="track-date">Reviewed [^<]*</span>'
+                             r'<a href="/research/[^"]+/">.*?</li>',
                              track, re.S):
             entry = m.group(0)
+            self.assertRegex(entry,
+                             r'<li><span class="track-date">Reviewed [^<]*'
+                             r'</span><a href="/research/',
+                             entry[:80])
             if '<span class="track-detail">' not in entry:
                 continue
             self.assertRegex(entry,
                              r'</a> — [^<]*\.\s<span class="track-detail">',
                              entry[:80])
             self.assertRegex(entry,
-                             r'<span class="track-detail">[^<]*\.</span> '
-                             r'<span class="track-date">Reviewed ',
+                             r'<span class="track-detail">[^<]*\.</span></li>',
                              entry[:80])
         # Spot checks: the leads are complete sentences, details intact.
         self.assertIn('<a href="/research/thunder-loan/">Thunder Loan</a> — '
