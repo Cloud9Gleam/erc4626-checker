@@ -3006,8 +3006,20 @@ class TestChecker(unittest.TestCase):
         # vertically centred, so the slack splits top and bottom
         # instead of reading as a dead band. At 1919px nothing wraps,
         # so this is a no-op there.
-        self.assertIn("display:flex;flex-direction:column;justify-content:center}",
-                      build.CSS)
+        # Visual verdict #136 (browser task 04:11-04:16, 2026-11-21,
+        # 1919px): the "dead bottom half" did NOT reproduce — top gap
+        # 13px, bottom gap 17px, content centred. The real emptiness
+        # is horizontal: left-aligned text leaves 121-201px of blank
+        # card on the right of steps 1 and 3, a third to a half of the
+        # card. The content is now centred in each card
+        # (align-items:center on the column flex, text-align:center
+        # so wrapped lines centre too), so the slack splits evenly
+        # left and right instead of pooling on the right. The shadow
+        # is also deepened (0 2px 8px / .08): the verdict read the
+        # cards as flat, almost shadowless rectangles.
+        self.assertIn("display:flex;flex-direction:column;justify-content:center;"
+                      "align-items:center;text-align:center}", build.CSS)
+        self.assertIn("box-shadow:0 2px 8px rgba(0,0,0,.08)", build.CSS)
         # The step arrows must be unmistakable on the dark hero — but
         # they must read as connectors, not as objects. The 15:07 fix
         # gave them a solid white disc (8.07:1 vs the hero, 5.27:1
@@ -3079,9 +3091,16 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".flow-step.loss strong{color:#b91c1c}", build.CSS)
         self.assertNotIn("width:48px;height:24px", build.CSS)
         self.assertNotIn("border-width:12px 0 12px 16px", build.CSS)
+        # Visual verdict #136 (browser task 04:11-04:16, 2026-11-21,
+        # 1919px): the 40px chevron filled ~75% of the 52-53px gap
+        # between cards, leaving ~7px of air on each side — squeezed
+        # in, nearly touching the card edges. The gap is now .9em
+        # (~15px of air per side); the arrow geometry itself is
+        # unchanged (verdict #123's 40x20 / 4px / solid-white
+        # chevron stands, and the disc stays forbidden per #59).
         self.assertIn(
             ".flow{display:flex;align-items:stretch;justify-content:center;"
-            "gap:.3em;max-width:1024px;margin:.9em auto}", build.CSS)
+            "gap:.9em;max-width:1024px;margin:.9em auto}", build.CSS)
         # No glyph left in the arrow spans, and no disc either: the
         # span itself has no background and no border-radius. (Scoped
         # to the flow diagram: the hero CTA below the flow legitimately
@@ -3606,10 +3625,10 @@ class TestChecker(unittest.TestCase):
         # in the left column. The fix is content, not width: a stat
         # strip under the CTA, inside the left column, with three
         # verifiable facts — the current *-model.py count in the site
-        # tree, 6 checks per run, and no wallet/signup/fee required
-        # (a checkmark since 2026-11-20, not a "0" — see the #131 note
-        # below). Numbers are facts about the product, not marketing
-        # claims.
+        # tree, 6 checks per run, and $0 to run the checker (a
+        # checkmark 2026-11-20–21, reverted to a number by verdict
+        # #136 — see the note below). Numbers are facts about the
+        # product, not marketing claims.
         # Visual verdict #66/#68: equal widths fixed the loose-left /
         # tight-right row, but left alignment still left the middle
         # label's short text ("checks per run") ~163px from the third
@@ -3641,12 +3660,22 @@ class TestChecker(unittest.TestCase):
         # still holds.
         # Visual verdict #131 (5), 2026-11-20: the third stat's big
         # "0" over "wallet, signup, or fee needed" reads like a score
-        # of zero — a big number that says nothing. The slot is now a
-        # checkmark over "No wallet, signup, or fee needed": same
+        # of zero — a big number that says nothing. The slot was then
+        # a checkmark over "No wallet, signup, or fee needed": same
         # verifiable fact (nothing is required to run the checker),
         # no number pretending to be a measurement. The checkmark
         # glyph is already site language (check-table cells, "✓ means
         # …" in the donation legend).
+        # Visual verdict #136 (browser task 04:11-04:16, 2026-11-21,
+        # 1919px): the checkmark did not hold up either — same height
+        # as the numbers and aligned, but a thin unbolded stroke with
+        # no badge behind it, breaking the number-plus-noun pattern
+        # of the other two slots and reading as a placeholder where a
+        # number should be. The slot is a number again, and an honest
+        # one: "$0" over "to run the checker" — the checker is free.
+        # The no-wallet/no-signup fact is not lost: it stays in the
+        # lead paragraph directly above the strip ("free, no wallet,
+        # no signup").
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -3682,7 +3711,7 @@ class TestChecker(unittest.TestCase):
                                .glob("*-model.py")))
         for fact in (f"<strong>{model_count}</strong> exact-integer worked examples",
                      "<strong>6</strong> checks per run",
-                     "<strong>✓</strong> No wallet, signup, or fee needed"):
+                     "<strong>$0</strong> to run the checker"):
             self.assertIn(fact, hero)
 
     def test_hero_model_count_is_derived_at_build_time(self):
