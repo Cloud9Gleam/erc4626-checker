@@ -2014,6 +2014,52 @@ class TestChecker(unittest.TestCase):
         self.assertIn("/og.png", checker)
         self.assertNotIn("audit-og.png", checker)
 
+    def test_checker_og_tags_follow_the_run(self):
+        # 2026-11-20: a FAIL link shared on X showed the generic checker
+        # card -- same title, description and URL as the tool itself --
+        # so the click carried no reason to open it. The five meta tags
+        # that carry the card (og:title, og:description, og:url,
+        # twitter:title, twitter:description) are now placeholders in
+        # the Worker checker template, filled per request by ogMeta:
+        # verdict + failed checks in plain words, worst measured victim
+        # loss when the donation check failed with a number, the run's
+        # own URL on the canonical host. The static page keeps the
+        # generic tags (it is the no-parameter page); the rendered
+        # values are verified by the og-dynamic node harness.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Full rendered pages, not raw PAGES bodies: the OG tags live in
+        # <head>, and the raw-body path has no head (worker_js is also
+        # called that way by other tests, but only for body placeholders).
+        pages = build.render_all()
+        worker = build.worker_js(pages)
+        self.assertIn("function ogMeta(results, vic, search)", worker)
+        self.assertIn("ogMeta(results, vic, u.search)", worker)
+        for ph in ("{{OG_TITLE}}", "{{OG_DESC}}", "{{OG_URL}}",
+                   "{{TW_TITLE}}", "{{TW_DESC}}"):
+            self.assertIn(ph, worker)
+        self.assertIn('.replace("{{OG_TITLE}}", esc(og.title))', worker)
+        self.assertIn('.replace("{{OG_DESC}}", esc(og.desc))', worker)
+        self.assertIn('.replace("{{OG_URL}}", esc(og.url))', worker)
+        self.assertIn('.replace("{{TW_TITLE}}", esc(og.title))', worker)
+        self.assertIn('.replace("{{TW_DESC}}", esc(og.desc))', worker)
+        # ogMeta must never invent a number: error rows carry null and
+        # the fallback is the failed titles, not a loss figure.
+        self.assertIn("row.victim_loss === null", worker)
+        self.assertIn("checks failed: ", worker)
+        static = pages["/checker/"]
+        self.assertIn(
+            '<meta property="og:title" content="ERC-4626 checker '
+            '\u2014 donation-inflation model \u2014 Hatch Worker">',
+            static)
+        self.assertIn(
+            '<meta property="og:url" content="https://check.n1netw3n.live/checker/">',
+            static)
+        self.assertNotIn("{{OG_", static)
+        self.assertNotIn("{{TW_", static)
+
     def test_nested_vault_fee_guide_numbers(self):
         # Nested-vault fee guide (site/nested-vault-fee-model.py):
         # a vault holding another vault's shares pays a 2%
