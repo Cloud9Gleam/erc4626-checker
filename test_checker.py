@@ -8914,7 +8914,8 @@ class TestChecker(unittest.TestCase):
         # Pins /guides/erc4626-empty-vault-reseed/ to its model: a
         # vault that emptied completely reopens the first-depositor
         # window. At offset 0 the re-seed attack is mutual destruction
-        # (attacker loses as much as the victim, a third locks); at
+        # (attacker loses a third — one base unit more than the
+        # victim — and a third locks); at
         # offset 6 the victim loses 0.25 on 1,000,000 while the
         # attacker eats ~500,000; a donation to an empty offset-0
         # vault bricks deposits outright. Importing the model re-runs
@@ -9020,6 +9021,32 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(vic_out, 999_999_500_000)
         self.assertEqual(1_000_000 * USDC - vic_out, 500_000)
         self.assertEqual(v.total_assets, 1_000_000_500_000)
+
+        # The guide's prose must not claim the split is exact: the
+        # attacker loses 333,333.333334, the victim 333,333.333333 —
+        # one base unit apart. Three spots used to say "exactly"
+        # (2026-11-21 fix): the body ("pays exactly what the victim
+        # pays" / "the split is exactly even"), the checklist
+        # ("333,333.333333 each"), and the /guides/ index
+        # ("exactly what it costs the victim").
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-empty-vault-reseed/"')
+        section = build[start:build.index('""")', start) + 4]
+        for needle in ("one base unit more than the victim",
+                       "even to within one base unit",
+                       "333,333.333333 for the victim and "
+                       "333,333.333334 for the attacker"):
+            self.assertIn(needle, section)
+        for stale in ("pays exactly what the victim pays",
+                      "the split is exactly even",
+                      "333,333.333333 each"):
+            self.assertNotIn(stale, section)
+        istart = build.index('add("/guides/", "Guides')
+        isection = build[istart:build.index('""")', istart) + 4]
+        self.assertIn("one base unit more than the victim's "
+                      "333,333.333333", isection)
+        self.assertNotIn("exactly what it costs the victim", isection)
 
     def test_fee_on_idle_cash_guide_numbers(self):
         # Pins /guides/erc4626-fee-on-idle-cash/ to its model: a 2%
