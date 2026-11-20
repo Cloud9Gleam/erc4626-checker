@@ -8097,10 +8097,23 @@ class TestChecker(unittest.TestCase):
         # ~1,280x less than the 1,000-dead loss.
         self.assertTrue(Fraction(898913, 702) > 1280)
         self.assertTrue(Fraction(898913, 702) < 1281)
-        # Case 3: cheapest all-scales pass is 478,178 USDC dead,
-        # locked forever; offset 6 passes the same scales for $0.
+        # Case 3: there is no threshold pile that buys a pass — the
+        # loss oscillates with the pile size, so the cheapest
+        # all-scales pass is 3,157 USDC dead (exhaustive scan: nothing
+        # in 1,000..3,156 passes; the model asserts that loop itself),
+        # while 120,000, 200,000 and 800,000 all fail and 50,000,
+        # 100,000, 350,000 and 1,000,000 pass. The old bisection
+        # (478,177 fails, 478,178 passes) found one crossing, not the
+        # cheapest. Offset 6 passes the same scales for $0.
+        self.assertEqual(model.verdict(3_157), (True, [0, 0, 72, 889]))
+        self.assertEqual(model.verdict(3_156), (False, [0, 0, 222, 1089]))
+        self.assertEqual(model.verdict(50_000), (True, [0, 0, 17, 52]))
+        self.assertEqual(model.verdict(120_000), (False, [1, 0, 6, 1241]))
+        self.assertEqual(model.verdict(200_000), (False, [1, 0, 1, 3801]))
+        self.assertEqual(model.verdict(350_000), (True, [1, 1, 3, 618]))
         self.assertEqual(model.verdict(478_177), (False, [1, 1, 2, 1065]))
         self.assertEqual(model.verdict(478_178), (True, [1, 1, 3, 865]))
+        self.assertEqual(model.verdict(800_000), (False, [1, 1, 2, 1251]))
         self.assertEqual(model.verdict(0, offset=6),
                          (True, [0, 0, 1, 900]))
         # Case 4: where the donation goes — 1,000 dead, 1M donation.
@@ -8117,6 +8130,30 @@ class TestChecker(unittest.TestCase):
                     + 100_000 * USDC)
         self.assertEqual(total_in, att_out + vic_out + left_a)
         self.assertEqual(left_a - 1_000 * USDC, 999_000_999_184)
+        # The corrected numbers must sit in the two guides' own text
+        # in build.py — and the stale six-figure claim must be gone
+        # from both (the model keeps 478,177/478,178 only as asserts
+        # for one crossing among many).
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-dead-shares/"')
+        section = build[start:build.index('""")', start) + 4]
+        for needle in ("3,157 USDC", "3,156 USDC", "120,000",
+                       "200,000", "800,000", "no threshold",
+                       "rounding luck"):
+            self.assertIn(needle, section)
+        for stale in ("478,178", "478,177",
+                      "Only 100,000 USDC of dead shares or more passes",
+                      "half a million dollars"):
+            self.assertNotIn(stale, section)
+        start2 = build.index(
+            'add("/guides/erc4626-donation-dead-shares/"')
+        section2 = build[start2:build.index('""")', start2) + 4]
+        for needle in ("3,157 USDC", "0.000889",
+                       "no pile size buys the offset"):
+            self.assertIn(needle, section2)
+        for stale in ("you must lock", "a million dollars locked"):
+            self.assertNotIn(stale, section2)
 
     def test_loss_recognition_guide_numbers(self):
         # Pins /guides/erc4626-loss-recognition/ to its model: a vault
