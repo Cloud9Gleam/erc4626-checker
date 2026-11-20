@@ -2949,7 +2949,8 @@ class TestChecker(unittest.TestCase):
         # the main card still sits in ~440px of margin on each side,
         # and the old body #f4f6f4 was so close to white that the
         # margins read as empty page. The "desk" treatment deepens
-        # the body to #dfe4df and lifts the card with a soft second
+        # the body to #c9d1c9 (via #dfe4df first, then deepened after
+        # verdict #126 found #dfe4df too faint) and lifts the card
         # shadow, so the column reads as a sheet on a desk — verdict
         # #119's "background colour block" option. Widening .wrap /
         # the card stays rejected (see test_page_column_is_layered_
@@ -2957,12 +2958,18 @@ class TestChecker(unittest.TestCase):
         # desk-bg.py: #e7eae7 was barely distinguishable from the old
         # colour; #dfe4df + the stronger shadow reads as a deliberate
         # backdrop in headless screenshots at 1919px.
+        # Verdict #126 (2026-11-20, real browser): #dfe4df still too
+        # faint — "almost light grey-white". Deepened to #c9d1c9
+        # after a second simulation (hidden_files/measure-desk-bg2.py):
+        # #d3d9d3 still faint, #c9d1c9 clearly a sage desk while
+        # staying light, #c2cec2 a touch heavier with no extra gain.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn("body{margin:0;background:#dfe4df;", build.CSS)
+        self.assertIn("body{margin:0;background:#c9d1c9;", build.CSS)
         self.assertNotIn("background:#f4f6f4", build.CSS)
+        self.assertNotIn("background:#dfe4df", build.CSS)
         self.assertIn(
             "box-shadow:0 1px 3px rgba(0,0,0,.08),"
             "0 12px 32px rgba(17,24,39,.07)", build.CSS)
