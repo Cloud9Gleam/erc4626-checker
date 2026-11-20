@@ -2512,6 +2512,20 @@ class TestChecker(unittest.TestCase):
         # so the open group scans instead of walling. All five groups
         # are now open by default; the added height still sits below
         # the order form, so the conversion path is unaffected.)
+        # (2026-11-21 update: visual verdict #138 reverses the #136
+        # expansion for the First Flight group ONLY — a fresh-eyes
+        # rendered look at the live page (browser-task:0e6384a5,
+        # 07:38-07:40) still calls the 33-card single column the
+        # ugliest problem on the site: a dense wall, hard to scan,
+        # burying "What you do not get" ~4-5 screens down. The
+        # lead/detail restructure did not save it; 33 cards are a
+        # wall at any density. The other four groups stay open (8
+        # proof entries visible without a click, strongest first),
+        # and the folded First Flight summary still proves the
+        # method at a glance — its preview line names three reviews
+        # and the toggle reads "Show 33 reviews". The added height
+        # still sits below the order form, so the conversion path
+        # is unaffected.)
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2520,11 +2534,11 @@ class TestChecker(unittest.TestCase):
         track = audit[audit.index("<h2>Track record</h2>"):]
         self.assertEqual(track.count('<details class="track-group"'), 5)
         self.assertEqual(track.count("<summary>"), 5)
-        self.assertEqual(track.count('<details class="track-group" open>'), 5)
+        self.assertEqual(track.count('<details class="track-group" open>'), 4)
         # Strongest proof first: the ended contests whose full awarded
         # sets were re-verified — open by default (see above), the
         # three short groups with them, and since 2026-11-21 the
-        # First Flight group too (verdict #136 item 3).
+        # First Flight group folded again (verdict #138 item 1).
         # Visual verdict #112 item 1: a folded row showed only its
         # title, so each summary now carries a one-line preview of the
         # strongest item(s) inside; the folded state still proves the
@@ -2548,13 +2562,14 @@ class TestChecker(unittest.TestCase):
                       '<span class="track-preview">RAAC 3 Highs + 1 Medium in 657 lines · '
                       'QuantAMM fee-logic Medium · Nexus 14 findings</span></summary>',
                       track)
-        # The 33-item First Flight group is open by default since
-        # 2026-11-21 (visual verdict #136 item 3 reversed the #131
-        # fold — see the comment above). Its heading count is honest:
+        # The 33-item First Flight group is folded by default since
+        # 2026-11-21 (visual verdict #138 reversed the #136 expansion
+        # — see the comment above). Its heading count is honest:
         # three reviews were added after the (30) heading was written
         # (Vyper Vested Claims, Curve Storage Proofs, SNARKeling), so
-        # it now says (33).
-        self.assertIn('<details class="track-group" open>\n'
+        # it now says (33). The folded summary still carries the
+        # preview line, so the proof signal survives the fold.
+        self.assertIn('<details class="track-group">\n'
                       '<summary>CodeHawks First Flight — practice and study reviews (33)'
                       '<span class="track-toggle"><span class="when-closed">Show 33 reviews</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
