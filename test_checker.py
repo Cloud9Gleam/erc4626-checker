@@ -9602,6 +9602,21 @@ class TestChecker(unittest.TestCase):
         self.assertAlmostEqual((burned - quote) * 2, shares_for_5000,
                                delta=2)
 
+        # The guide's prose must use the same number: the kept shares
+        # are worth 44,999.999999 USDC, not the nominal 45,000.000000
+        # the guide used to print (2026-11-21 fix) — the test above
+        # already pinned the model value, but nothing checked the
+        # guide text, so the two disagreed by one base unit.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-withdraw-slippage/"')
+        section = build[start:build.index('""")', start) + 4]
+        self.assertIn("worth 44,999.999999 USDC at the new $0.95 price",
+                      section)
+        self.assertIn("one base unit under 45,000.000000", section)
+        self.assertNotIn("worth 45,000.000000 USDC", section)
+
     def test_strategy_fot_guide_numbers(self):
         # Pins /guides/erc4626-strategy-fot/ to its model: a 10%
         # transfer tax on the vault -> strategy leg. The vault sends
