@@ -9254,6 +9254,125 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(10_000 * USDC + fa3, 19_900 * USDC)
         self.assertEqual(1_089_000 * USDC - 1_000_000 * USDC, 89_000 * USDC)
 
+    def test_donation_hurdle_rate_fee_guide_numbers(self):
+        # Pins /guides/erc4626-donation-hurdle-rate-fee/ to its
+        # model: a 20% performance fee above a 5% hurdle, vault
+        # 1,000,000 USDC / 1,000,000 shares at $1.00, Alice 100,000
+        # (10%), Carol 900,000 (90%). A donation that pushes
+        # totalAssets above base + hurdle accrues a fee on itself —
+        # the hurdle is a shield only up to 5%, it is spent once per
+        # crystallisation period, and a fresh hurdle each year halves
+        # the fee. Importing the model re-runs its assertions; the
+        # checks below independently re-derive the headline numbers
+        # with plain integer arithmetic, floor like Solidity, and
+        # pin the guide's prose to them.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-hurdle-rate-fee-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_hurdle_rate_fee_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        A0, S0 = 1_000_000 * USDC, 1_000_000 * USDC
+        ALICE, CAROL = 100_000 * USDC, 900_000 * USDC
+
+        def harvest(assets, base, supply):
+            hurdle = base * 500 // 10_000
+            excess = max(0, (assets - base) - hurdle)
+            fee = excess * 2_000 // 10_000
+            fee_shares = fee * supply // assets if assets else 0
+            return fee, fee_shares
+
+        def redeem(shares, assets, supply):
+            return shares * assets // supply
+
+        # S1: donation 100,000 alone — hurdle 50,000, excess 50,000,
+        # fee 10,000 nominal; fee shares 9,090.909090; manager
+        # redeems 9,909.909908 (dilution shaves 90.090092); Alice
+        # 109,009.009009 (pays 990.990991), Carol 981,081.081081;
+        # the three claims leave 2 base units of dust.
+        fa, fs = harvest(1_100_000 * USDC, A0, S0)
+        self.assertEqual((fa, fs), (10_000 * USDC, 9_090_909_090))
+        s1 = S0 + fs
+        mgr = redeem(fs, 1_100_000 * USDC, s1)
+        alice = redeem(ALICE, 1_100_000 * USDC, s1)
+        carol = redeem(CAROL, 1_100_000 * USDC, s1)
+        self.assertEqual((mgr, alice, carol),
+                         (9_909_909_908, 109_009_009_009,
+                          981_081_081_081))
+        self.assertEqual(1_100_000 * USDC - (mgr + alice + carol), 2)
+        self.assertEqual(110_000 * USDC - alice, 990_990_991)
+        self.assertEqual(10_000 * USDC - mgr, 90_090_092)
+
+        # S2: the hurdle shields up to 50,000 — 40,000 and exactly
+        # 50,000 pay 0; 50,005 pays exactly 1 USDC.
+        self.assertEqual(harvest(1_040_000 * USDC, A0, S0), (0, 0))
+        self.assertEqual(harvest(1_050_000 * USDC, A0, S0), (0, 0))
+        self.assertEqual(harvest(1_050_005 * USDC, A0, S0)[0],
+                         1 * USDC)
+
+        # S3: real yield 60,000 first, then the donation — fee
+        # 22,000; the yield alone would have paid only 2,000, so the
+        # donation's marginal fee is the full 20,000, double the
+        # 10,000 it paid landing alone. Fee shares 18,965.517241;
+        # Alice redeems 113,840.947546 and pays 2,159.052454.
+        fa3, fs3 = harvest(1_160_000 * USDC, A0, S0)
+        self.assertEqual((fa3, fs3), (22_000 * USDC, 18_965_517_241))
+        self.assertEqual(harvest(1_060_000 * USDC, A0, S0)[0],
+                         2_000 * USDC)
+        self.assertEqual(fa3 - 2_000 * USDC, 20_000 * USDC)
+        alice3 = redeem(ALICE, 1_160_000 * USDC, S0 + fs3)
+        self.assertEqual(alice3, 113_840_947_546)
+        self.assertEqual(116_000 * USDC - alice3, 2_159_052_454)
+
+        # S4: split across crystallisations — year 1 fee 10,000,
+        # year 2 (fresh 55,000 hurdle on the 1,100,000 base) fee
+        # 1,000, fee shares 869,905,956; total 11,000, exactly half
+        # the 22,000 single-year fee; the saving is 20% of the fresh
+        # hurdle.
+        fa4, fs4 = harvest(1_160_000 * USDC, 1_100_000 * USDC, s1)
+        self.assertEqual((fa4, fs4), (1_000 * USDC, 869_905_956))
+        self.assertEqual(10_000 * USDC + fa4, 11_000 * USDC)
+        self.assertEqual(22_000 * USDC - (10_000 * USDC + fa4),
+                         11_000 * USDC)
+        self.assertEqual(55_000 * USDC * 2_000 // 10_000,
+                         11_000 * USDC)
+
+        # S5: donation after a loss — vault 10,000 below its peak,
+        # hurdle 49,500, excess 50,500, fee 10,100; with a
+        # high-water mark at the 1,100,000 peak the same donation
+        # costs 0.
+        fa5, fs5 = harvest(1_090_000 * USDC, 990_000 * USDC, s1)
+        self.assertEqual((fa5, fs5), (10_100 * USDC, 9_350_291_909))
+        hwm = 1_100_000 * USDC
+        self.assertEqual(max(0, (1_090_000 * USDC - hwm)
+                             - hwm * 500 // 10_000), 0)
+
+        # The guide's prose must carry these numbers: S1 manager /
+        # Alice / Carol and the 2-base-unit dust, the S3 marginal
+        # fee and Alice's bill, the S4 halving, and the S5 10,100
+        # fee with the HWM-0 contrast.
+        build = (Path.home() / "workspace/taskmarket/site"
+                 / "build.py").read_text()
+        start = build.index(
+            'add("/guides/erc4626-donation-hurdle-rate-fee/"')
+        section = build[start:build.index('""")', start) + 4]
+        for needle in ("9,909.909908 USDC",
+                       "109,009.009009 USDC",
+                       "981,081.081081",
+                       "1,099,999.999998",
+                       "2 base units",
+                       "20,000, the full 20% of the gift",
+                       "18,965.517241 fee shares",
+                       "113,840.947546 USDC",
+                       "2,159.052454",
+                       "10,000 + 1,000 = 11,000",
+                       "10,100 USDC"):
+            self.assertIn(needle, section)
+
     def test_redeem_slippage_guide_numbers(self):
         # Pins /guides/erc4626-redeem-slippage/ to its model: a
         # previewRedeem quote is not a commitment — a loss landing
