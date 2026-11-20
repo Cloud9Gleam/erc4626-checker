@@ -3477,8 +3477,10 @@ class TestChecker(unittest.TestCase):
         # in the left column. The fix is content, not width: a stat
         # strip under the CTA, inside the left column, with three
         # verifiable facts — the current *-model.py count in the site
-        # tree, 6 checks per run, 0 wallet/signup/fee. Numbers are
-        # facts about the product, not marketing claims.
+        # tree, 6 checks per run, and no wallet/signup/fee required
+        # (a checkmark since 2026-11-20, not a "0" — see the #131 note
+        # below). Numbers are facts about the product, not marketing
+        # claims.
         # Visual verdict #66/#68: equal widths fixed the loose-left /
         # tight-right row, but left alignment still left the middle
         # label's short text ("checks per run") ~163px from the third
@@ -3508,6 +3510,14 @@ class TestChecker(unittest.TestCase):
         # evenly across the column's gaps; margin-bottom:0 on the
         # strip is unchanged, so the box-bottom alignment invariant
         # still holds.
+        # Visual verdict #131 (5), 2026-11-20: the third stat's big
+        # "0" over "wallet, signup, or fee needed" reads like a score
+        # of zero — a big number that says nothing. The slot is now a
+        # checkmark over "No wallet, signup, or fee needed": same
+        # verifiable fact (nothing is required to run the checker),
+        # no number pretending to be a measurement. The checkmark
+        # glyph is already site language (check-table cells, "✓ means
+        # …" in the donation legend).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -3543,7 +3553,7 @@ class TestChecker(unittest.TestCase):
                                .glob("*-model.py")))
         for fact in (f"<strong>{model_count}</strong> exact-integer worked examples",
                      "<strong>6</strong> checks per run",
-                     "<strong>0</strong> wallet, signup, or fee needed"):
+                     "<strong>✓</strong> No wallet, signup, or fee needed"):
             self.assertIn(fact, hero)
 
     def test_hero_model_count_is_derived_at_build_time(self):
