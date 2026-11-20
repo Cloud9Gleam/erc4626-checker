@@ -1040,6 +1040,33 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:460px){.twrap-hint{display:block",
                       build.CSS)
 
+    def test_run_checks_button_is_sticky(self):
+        # Headless measurement (2026-11-20, checker-improvement):
+        # at 1919x998 the submit button's natural top is 1124px
+        # (126px below the fold) and at 360x800 it is 1315px — the
+        # form's only action is invisible on first paint on every
+        # viewport, even after the #109 mobile compaction. The button
+        # now rides in a sticky bar at the form's bottom edge: visible
+        # on load, settling into its natural place once the form is
+        # fully scrolled into view. The bar bleeds to the card edges
+        # and carries the card's own background, so it reads as the
+        # card's foot, not a floating button.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        body = build.checker_body()
+        self.assertEqual(body.count(
+            '<div class="run-bar"><button type="submit">Run checks'
+            '</button></div>'), 1)
+        self.assertIn(
+            ".run-bar{grid-column:1 / -1;position:sticky;bottom:0;"
+            "z-index:5;background:#f9fafb;",
+            build.CSS)
+        self.assertIn("#checker-form .run-bar button{margin-top:0}",
+                      build.CSS)
+        self.assertEqual(body.count("Run checks"), 1)
+
     def test_verdict_strip_full_width(self):
         # Visual verdict #120 checker item 1 (2026-11-19): the strip is a
         # <p> inside <main>, so the 80ch prose cap clamped it to ~778px
