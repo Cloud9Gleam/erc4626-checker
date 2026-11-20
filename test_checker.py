@@ -1063,9 +1063,33 @@ class TestChecker(unittest.TestCase):
             ".run-bar{grid-column:1 / -1;position:sticky;bottom:0;"
             "z-index:5;background:#f9fafb;",
             build.CSS)
-        self.assertIn("#checker-form .run-bar button{margin-top:0}",
+        self.assertIn("#checker-form .run-bar button{margin-top:0;"
+                      "width:100%;box-sizing:border-box}",
                       build.CSS)
         self.assertEqual(body.count("Run checks"), 1)
+
+    def test_run_checks_button_fills_bar(self):
+        # 2026-11-20, checker-improvement: the button lost its
+        # full-width stretch when it was wrapped in .run-bar
+        # (verdict #76's justify-self:stretch only applies to grid
+        # items, and the button stopped being one) -- measured with
+        # hidden_files/measure-runbar-wide.py at 1919/1280/360px:
+        # 155px in a 944px bar at every width, a small button in a
+        # big empty grey strip. width:100% restores the stretch; the
+        # button's .65em/1.6em padding needs border-box or it
+        # overflows the bar. Bar height is untouched (89px desktop,
+        # 84px mobile), so the verdict #126 (b) occlusion numbers
+        # are unchanged by this fix.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "#checker-form .run-bar button{margin-top:0;"
+            "width:100%;box-sizing:border-box}",
+            build.CSS)
+        self.assertEqual(build.CSS.count(
+            "#checker-form .run-bar button{"), 1)
 
     def test_verdict_strip_full_width(self):
         # Visual verdict #120 checker item 1 (2026-11-19): the strip is a
