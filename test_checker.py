@@ -13521,6 +13521,31 @@ class TestChecker(unittest.TestCase):
         self.assertIn("0.099249 USDC of rounding dust", build)
         self.assertNotIn("within <strong>0.09 USDC</strong>", build)
 
+        # (10) The floor-dust explanation, fixed 2026-11-21: the
+        # 0.099... share that rounds away is worth 0.100000 at the
+        # post-donation price, NOT 0.091736 — the victim's loss is
+        # 0.091736 only after the 0.008264 price-lift gain on their
+        # own 99,099 minted shares. And the scope note is the
+        # sandwich's own, not the pending-fee guide's copy.
+        start = build.index('add("/guides/erc4626-donation-sandwich/"')
+        section = build[start:build.index('""")', start) + 4]
+        dust = Fraction(11, 111)
+        self.assertEqual(dust * Fraction(111, 110), Fraction(1, 10))
+        p2 = Fraction(111, 110)
+        p3 = Fraction(1_210_000, 1_199_099)
+        gain = Fraction(99_099) * (p3 - p2)
+        self.assertEqual(round(float(gain), 6), 0.008264)
+        self.assertEqual(round(float(Fraction(1, 10) - gain), 6), 0.091736)
+        self.assertIn("worth 0.100000 at the post-donation price", section)
+        self.assertIn("gain 0.008264 from that lift", section)
+        self.assertIn("leaving a net loss of 0.091736", section)
+        self.assertNotIn("worth 0.091736 at the post-donation price",
+                         section)
+        self.assertIn("a donation landing between a victim's quote and "
+                      "their deposit", section)
+        self.assertIn("slip in between a quote and its execution", section)
+        self.assertNotIn("do not model pending fees", section)
+
 
     def test_pending_fee_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-pending-fee/ to
