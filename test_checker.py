@@ -3364,7 +3364,7 @@ class TestChecker(unittest.TestCase):
         from pathlib import Path
         model_count = len(list((Path.home() / "workspace/taskmarket/site")
                                .glob("*-model.py")))
-        for fact in (f"<strong>{model_count}</strong> exact-integer vault models",
+        for fact in (f"<strong>{model_count}</strong> exact-integer worked examples",
                      "<strong>6</strong> checks per run",
                      "<strong>0</strong> wallet, signup, or fee needed"):
             self.assertIn(fact, hero)
@@ -3384,7 +3384,7 @@ class TestChecker(unittest.TestCase):
                          len(list(site.glob("*-model.py"))))
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn(
-            f"<strong>{build.MODEL_COUNT}</strong> exact-integer vault models",
+            f"<strong>{build.MODEL_COUNT}</strong> exact-integer worked examples",
             home)
 
     def test_hero_flow_step_bodies_are_single_line(self):
@@ -18460,7 +18460,7 @@ class TestChecker(unittest.TestCase):
                                 ).glob("*-model.py")))
         self.assertEqual(site_build.MODEL_COUNT, model_count)
         home = dict((p, b) for p, t, d, k, b in site_build.PAGES)["/"]
-        self.assertIn(f"<strong>{model_count}</strong> exact-integer vault models",
+        self.assertIn(f"<strong>{model_count}</strong> exact-integer worked examples",
                       home)
         for num in ("5,000.000000", "40,000.000000", "3,333,333,333",
                     "2,500.000000", "9,999,999,999", "10,000 USDC"):
