@@ -2602,8 +2602,10 @@ class TestChecker(unittest.TestCase):
             self.assertIsNotNone(m, slug)
             self.assertIn('<span class="track-date">Reviewed %s</span>' % date,
                           m.group(0), slug)
-        # The date is metadata, not a claim: muted grey, one size down.
-        self.assertIn(".track-date{color:#6b7280;font-size:.9em}", build.CSS)
+        # The date is metadata, not a claim: muted grey, one size down,
+        # and it never splits across lines (live render 2026-11-20
+        # caught Thunder Loan wrapping as "Reviewed Nov 15," / "2026").
+        self.assertIn(".track-date{color:#6b7280;font-size:.9em;white-space:nowrap}", build.CSS)
 
     def test_track_summary_toggle(self):
         # Visual verdict #115 (c) residual, measured 2026-11-19: the
@@ -5074,6 +5076,14 @@ class TestChecker(unittest.TestCase):
         # 25/50/75% between them). The axis is render-only: the
         # numbers, verdicts and bar widths are pinned by the other
         # chart tests and do not move.
+        # Visual verdict #132 (2026-11-20): only the first tick
+        # carried the unit ("0 USDC", the rest bare numbers). The
+        # unit is now a label of its own in the value column
+        # (loss-axis-unit, right-aligned, ending just before the
+        # 0 tick); the ticks are bare numbers. Moving the unit to
+        # the last tick was measured and rejected (16px overlap
+        # with the 75% tick at 1024px). Below 640px the label
+        # hides and the 0 tick gets its unit back via ::after.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5094,6 +5104,14 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-axis span{position:absolute;top:0;"
                       "transform:translateX(-50%);white-space:nowrap}",
                       build.CSS)
+        self.assertIn(".loss-axis-unit{grid-column:2;text-align:right;"
+                      "font-size:.8em;color:#6b7280;line-height:1.15em}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-axis-unit{display:none}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-axis "
+                      "span:first-child::after{content:\" USDC\"}",
+                      build.CSS)
         self.assertIn(".loss-axis span:nth-child(2),.loss-axis "
                       "span:nth-child(3),.loss-axis span:nth-child(4)"
                       "{display:none}",
@@ -5102,9 +5120,12 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
-        self.assertEqual(html.count("loss-axis"), 1)
-        self.assertIn("<div class='loss-axis' aria-hidden='true'>"
-                      "<span style='left:0%'>0 USDC</span>"
+        self.assertEqual(html.count("class='loss-axis'"), 1)
+        self.assertEqual(html.count("class='loss-axis-unit'"), 1)
+        self.assertIn("<span class='loss-axis-unit' aria-hidden='true'>"
+                      "USDC</span>"
+                      "<div class='loss-axis' aria-hidden='true'>"
+                      "<span style='left:0%'>0</span>"
                       "<span style='left:25%'>0.00025</span>"
                       "<span style='left:50%'>0.0005</span>"
                       "<span style='left:75%'>0.00075</span>"
@@ -5114,7 +5135,11 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("<span style='left:25%'>0.227272</span>"
+        self.assertIn("<span class='loss-axis-unit' aria-hidden='true'>"
+                      "USDC</span>"
+                      "<div class='loss-axis' aria-hidden='true'>"
+                      "<span style='left:0%'>0</span>"
+                      "<span style='left:25%'>0.227272</span>"
                       "<span style='left:50%'>0.454545</span>"
                       "<span style='left:75%'>0.681818</span>"
                       "<span style='left:100%'>0.909091</span></div>",
@@ -5127,8 +5152,10 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
                     victim_deposit=1_000_000),
             vic=1_000_000, off=0, mn=0, fee=0)
-        self.assertIn("<div class='loss-axis' aria-hidden='true'>"
-                      "<span style='left:0%'>0 USDC</span>"
+        self.assertIn("<span class='loss-axis-unit' aria-hidden='true'>"
+                      "USDC</span>"
+                      "<div class='loss-axis' aria-hidden='true'>"
+                      "<span style='left:0%'>0</span>"
                       "<span style='left:100%'>0.000001</span></div>",
                       html)
         # No chart, no axis: offset 18 loses nothing.
@@ -5140,6 +5167,8 @@ class TestChecker(unittest.TestCase):
         # same floored-quarter logic (BigInt division).
         js = build.checker_results_html_js()
         self.assertIn("loss-axis", js)
+        self.assertIn("loss-axis-unit", js)
+        self.assertNotIn('(pos===0?" USDC":"")', js)
         self.assertIn("rawTicks", js)
         self.assertIn("BigInt(scale)", js)
         self.assertIn("sc/4n", js)
