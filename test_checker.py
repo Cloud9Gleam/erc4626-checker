@@ -13114,15 +13114,25 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(FLAT / Fraction(1, 100), 1_000)
         self.assertEqual(Fraction(100) * Fraction(1, 100), 1)
 
-        # (h) Guide page carries the headline numbers.
+        # (h) The headline numbers must sit in THIS guide's own
+        # text in build.py — not just somewhere on the site. The
+        # old global pins were vacuous: "0.01%" occurs 12 times in
+        # build.py and "1,005.025126" 4 times, so deleting the
+        # flat-fee row would not have failed the test. Section-scope
+        # them the way the preview-rounding test does.
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
-        self.assertIn("/guides/erc4626-flat-fee/", build)
-        self.assertIn("1,005.025126", build)
-        self.assertIn("9.090992", build)
-        self.assertIn("0.909008", build)
-        self.assertIn("10.00%", build)
-        self.assertIn("0.01%", build)
+        start = build.index('add("/guides/erc4626-flat-fee/"')
+        section = build[start:build.index('""")', start) + 4]
+        for needle in ("10.00%", "1.00%", "0.01%", "1,005.025126",
+                       "9.090992", "0.909008", "99,980", "99,990",
+                       "1,990", "19.90", "width:100%", "width:75%",
+                       "width:25%", "11 USDC"):
+            self.assertIn(needle, section)
+        self.assertIn("Bar lengths use a log scale", section)
+        # Wrong roundings must not appear in this guide.
+        self.assertNotIn("1,005.025125", section)
+        self.assertNotIn("9.090991", section)
 
     def test_per_address_cap_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-per-address-cap/ to
@@ -13201,14 +13211,24 @@ class TestChecker(unittest.TestCase):
                                     / Fraction(100_000) * 100), 1),
                          50.0)
 
-        # (7) Guide page carries the headline numbers.
+        # (7) The headline numbers must sit in THIS guide's own
+        # text in build.py — not just somewhere on the site. The
+        # old global pins were vacuous: "50,000" occurs 402 times
+        # in build.py and "0.02%" 7 times, so deleting the whole
+        # per-address-cap guide would not have failed the test.
+        # Section-scope them the way the preview-rounding test does.
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
-        self.assertIn("/guides/erc4626-per-address-cap/", build)
-        self.assertIn("9,980", build)
-        self.assertIn("8,980", build)
-        self.assertIn("0.02%", build)
-        self.assertIn("50,000", build)
+        start = build.index('add("/guides/erc4626-per-address-cap/"')
+        section = build[start:build.index('""")', start) + 4]
+        for needle in ("9,980", "8,980", "0.02%", "2 bps", "50,000",
+                       "10,000", "90,000", "9,000", "500x",
+                       "200 USDC", "20 USDC", "6th reverts",
+                       "width:10%", "width:100%", "width:50%"):
+            self.assertIn(needle, section)
+        # Wrong break-even / wrong net must not appear in this guide.
+        self.assertNotIn("0.03%", section)
+        self.assertNotIn("9,981", section)
 
     def test_strategy_exit_fee_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-strategy-exit-fee/ to
