@@ -2944,6 +2944,31 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertNotIn(".wrap{max-width:1280px", build.CSS)
 
+    def test_desk_background_treatment(self):
+        # Visual verdict #124 (h) / #125 (g) (2026-11-20): at 1919px
+        # the main card still sits in ~440px of margin on each side,
+        # and the old body #f4f6f4 was so close to white that the
+        # margins read as empty page. The "desk" treatment deepens
+        # the body to #dfe4df and lifts the card with a soft second
+        # shadow, so the column reads as a sheet on a desk — verdict
+        # #119's "background colour block" option. Widening .wrap /
+        # the card stays rejected (see test_page_column_is_layered_
+        # wide_tier). Simulated first with hidden_files/measure-
+        # desk-bg.py: #e7eae7 was barely distinguishable from the old
+        # colour; #dfe4df + the stronger shadow reads as a deliberate
+        # backdrop in headless screenshots at 1919px.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn("body{margin:0;background:#dfe4df;", build.CSS)
+        self.assertNotIn("background:#f4f6f4", build.CSS)
+        self.assertIn(
+            "box-shadow:0 1px 3px rgba(0,0,0,.08),"
+            "0 12px 32px rgba(17,24,39,.07)", build.CSS)
+        self.assertNotIn(
+            "box-shadow:0 1px 3px rgba(0,0,0,.06)", build.CSS)
+
     def test_mobile_nav_is_one_scrollable_row(self):
         # Visual verdict #118 leftover, 2026-11-19: at 360px the header
         # nav wrapped into a ragged three-row block ("Checker Vault /
