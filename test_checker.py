@@ -1091,6 +1091,37 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(build.CSS.count(
             "#checker-form .run-bar button{"), 1)
 
+    def test_result_banner_contains_copy_button(self):
+        # 2026-11-20, checker-improvement: the copy-link button hung
+        # 27px below the FAIL banner (headless, 1919px: banner
+        # 1355-1435, button 1418-1462, first card at 1464). Root
+        # cause: float:right inside an h2 -- a float that drops to
+        # a second line does not expand its parent, so the button
+        # overflowed instead of stretching the banner. The PASS
+        # banner fit on one line and never showed it, which is why
+        # string checks and verdicts missed it for six days. Flex
+        # keeps the button on the banner's own line at every width;
+        # on mobile it wraps to its own full-width line.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".result-banner{font-size:1.45em;font-weight:700;"
+            "border-radius:8px;padding:.75em 1em;margin:1.2em 0;"
+            "display:flex;align-items:center;gap:.5em}",
+            build.CSS)
+        self.assertIn(
+            ".result-banner .copy-link-btn{flex:none;"
+            "font-size:.62em;font-weight:600;margin:0}",
+            build.CSS)
+        self.assertNotIn("float:right", build.CSS.split(
+            ".result-banner .copy-link-btn{")[1].split("}")[0])
+        self.assertIn(
+            "@media (max-width:640px){.result-banner{flex-wrap:wrap}"
+            ".result-banner .copy-link-btn{flex:1 1 100%;",
+            build.CSS)
+
     def test_verdict_strip_full_width(self):
         # Visual verdict #120 checker item 1 (2026-11-19): the strip is a
         # <p> inside <main>, so the 80ch prose cap clamped it to ~778px
@@ -3110,19 +3141,24 @@ class TestChecker(unittest.TestCase):
         # the banner is 163.5px tall. Fix: below 640px the button
         # is a full-width block (box-sizing:border-box so the
         # .55em 1.15em padding cannot overflow it), same stretch
-        # precedent as verdict #76's form button. Desktop float
-        # rule untouched.
+        # precedent as verdict #76's form button. Corrected
+        # 2026-11-20: the desktop float rule was not innocent --
+        # on the FAIL banner the button dropped to a second line
+        # and hung 27px below the banner (a float that drops does
+        # not expand its parent), so desktop is flex now and the
+        # mobile rule wraps to its own full-width line instead.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            "@media (max-width:640px){.result-banner .copy-link-btn"
-            "{float:none;display:block;width:100%;box-sizing:border-box;"
-            "margin:.6em 0 0;text-align:center}}", build.CSS)
+            "@media (max-width:640px){.result-banner{flex-wrap:wrap}"
+            ".result-banner .copy-link-btn{flex:1 1 100%;"
+            "box-sizing:border-box;margin:.6em 0 0;text-align:center}}",
+            build.CSS)
         self.assertIn(
-            ".result-banner .copy-link-btn{float:right;font-size:.62em;"
-            "font-weight:600;margin:.15em 0 0 .8em}", build.CSS)
+            ".result-banner .copy-link-btn{flex:none;font-size:.62em;"
+            "font-weight:600;margin:0}", build.CSS)
 
     def test_hero_cta_and_proof_use_nonbreaking_hyphens(self):
         # At 360px the hero CTA broke after the hyphen — "Run the
@@ -17713,9 +17749,14 @@ class TestChecker(unittest.TestCase):
         # the first card -- a stranded row; measured live at 1919px:
         # banner->card gap 95.3px, the row alone 48.7px + 22.1px
         # margins. The button now rides inside the banner h2
-        # (floated right on desktop, block below the text on
+        # (flex item on desktop, full-width wrapped line on
         # <=640px), so the stranded row and its gap are gone; the
         # copy script still ships once, right after the banner.
+        # Corrected 2026-11-20: the original float:right
+        # implementation only *looked* inside the banner -- on the
+        # FAIL banner the button dropped a line and hung 27px
+        # below it, because a dropped float does not expand its
+        # parent. Flex keeps it on the banner's own line.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -17744,9 +17785,9 @@ class TestChecker(unittest.TestCase):
         # 'copy-link-btn' appears 4x: CSS rule + mobile rule + Python
         # markup + JS mirror.
         self.assertEqual(src.count('copy-link-btn'), 4)
-        self.assertIn('.result-banner .copy-link-btn{float:right', src)
-        self.assertIn('@media (max-width:640px){.result-banner '
-                      '.copy-link-btn{float:none;display:block', src)
+        self.assertIn('.result-banner .copy-link-btn{flex:none', src)
+        self.assertIn('@media (max-width:640px){.result-banner{flex-wrap:wrap}'
+                      '.result-banner .copy-link-btn{flex:1 1 100%', src)
 
     def test_guide_link_is_named_and_at_card_bottom(self):
         # Visual verdict #54 item c (2026-11-17): "Read the guide
