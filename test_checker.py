@@ -5945,6 +5945,46 @@ class TestChecker(unittest.TestCase):
         # Global label rule untouched (audit form, guide pages).
         self.assertIn("label{display:block;margin:.7em 0;color:#111827}", build.CSS)
 
+    def test_checker_form_three_columns_above_1024px(self):
+        # 2026-11-20 checker-improvement (verdict #128 item 1, the
+        # thorough fix; measured with hidden_files/measure-3col.py,
+        # headless true render of the Worker-rendered page): the
+        # two-column desktop form ran 727px tall and the Run checks
+        # button sat ~18px below the 998px fold at 1919px, so the
+        # form's only action was invisible on first paint. Three
+        # columns put the six parameter fields in two even rows:
+        # form 727->654px, button top 1016->944px, bottom 996px --
+        # fully above the fold. Cost: hints wrap 3 lines -> 5-6
+        # lines in ~285px columns and rows grow 156->206px, but the
+        # rows stay even and the screenshots at 1919px and 1024px
+        # read clean, not cramped. Gated at min-width:1024px
+        # because below it three columns save almost nothing and
+        # balloon the rows (768px: -16px, tallest label 308px;
+        # 900px: 224px columns). No content, numbers, preset
+        # semantics, CTA or API change.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # The three-column rule exists exactly once, inside its
+        # min-width media query, and it comes after the base
+        # two-column rule so the cascade applies it at >=1024px.
+        rule = ("@media (min-width:1024px)"
+                "{#checker-form{grid-template-columns:1fr 1fr 1fr}}")
+        self.assertEqual(build.CSS.count(rule), 1)
+        base = "#checker-form{display:grid;grid-template-columns:1fr 1fr;"
+        self.assertEqual(build.CSS.count(base), 1)
+        self.assertLess(build.CSS.index(base), build.CSS.index(rule))
+        # Narrow widths keep their own layouts: two columns below
+        # 1024px, one column at <=640px.
+        self.assertIn("#checker-form{grid-template-columns:1fr}", build.CSS)
+        # Preset, run-bar and button still span all columns.
+        self.assertIn("#checker-form label:first-child{grid-column:1 / -1}",
+                      build.CSS)
+        self.assertIn(".run-bar{grid-column:1 / -1;", build.CSS)
+        self.assertIn("#checker-form button{grid-column:1 / -1;",
+                      build.CSS)
+
     def test_checker_perf_fee_hint_says_what_the_model_does(self):
         # Visual verdict #78: the min-height fix made the boxes equal,
         # but the Performance fee hint itself is still 1 line of text in
