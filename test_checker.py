@@ -19883,6 +19883,49 @@ class TestChecker(unittest.TestCase):
             lm5 = build.page_lastmods({"/a/": css_b}, state_file=state)
             self.assertEqual(lm4["/a/"], lm5["/a/"])
 
+    def test_preset_option_labels_fit_a_360px_select(self):
+        # 2026-11-20: mobile verdict (rendered 360px screenshots):
+        # every preset option label was cut off mid-word inside the
+        # <select> ("AlphaPrimer — offset 6, min 1 U…"), because the
+        # labels carried the min/fee numbers (up to 58 chars) while a
+        # 360px select shows ~35. The numbers live in the fields
+        # directly below and in the Parameters line, so the labels now
+        # carry only the preset name + offset. Both render paths
+        # (static checker_body and the Worker-side formHTML) must
+        # carry the same four short labels, and no long label may
+        # survive in either. ("no minimum, no fee" still appears in
+        # guide prose -- scope the absence checks to the option lists.)
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        labels = ("AlphaPrimer — offset 6",
+                  "No protection — offset 0",
+                  "Minimum + fee, no offset",
+                  "Offset 18")
+        html = build.checker_body()
+        form = html[html.index('<form id="checker-form"'):
+                    html.index("</form>")]
+        for label in labels:
+            self.assertIn(f">{label}</option>", form)
+        self.assertNotIn("min 1 USDC, fee 10%", form)
+        self.assertNotIn("no minimum, no fee", form)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        opts = re.search(r"const opts = \[(.*?)\];", worker, re.S).group(1)
+        for label in labels:
+            self.assertIn(f'"{label}"', opts)
+        self.assertNotIn("min 1 USDC, fee 10%", opts)
+        self.assertNotIn("no minimum, no fee", opts)
+        # Belt and braces: no option label in either path may exceed
+        # 28 chars -- the 360px select shows ~35, so 28 leaves room
+        # for wider real-browser fonts and the chevron.
+        for m in re.finditer(r"<option[^>]*>([^<]*)</option>", form):
+            self.assertLessEqual(len(m.group(1)), 28, m.group(1))
+        for m in re.finditer(r'"([^"]*)"\]', opts):
+            self.assertLessEqual(len(m.group(1)), 28, m.group(1))
+
     def test_sitemap_url_count_matches_pages(self):
         # 2026-11-20: four guide harnesses pinned the sitemap <url>
         # count exactly (130/131/234/238 -> 239) and expired on every
