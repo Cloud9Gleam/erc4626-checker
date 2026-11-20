@@ -19379,6 +19379,41 @@ class TestChecker(unittest.TestCase):
                      if "undefined" in p.read_text())
         self.assertEqual(bad, [])
 
+    def test_meta_descriptions_within_limits(self):
+        # 2026-11-20: the /guides/ index carried a 5,536-char meta
+        # description -- the whole guides index pasted into the
+        # description field, one topic appended per new guide until it
+        # became a keyword dump. It shipped verbatim into <meta
+        # name="description">, og:description, twitter:description and
+        # the JSON-LD TechArticle description; search engines truncate
+        # at ~160 chars, so the page showed as a truncated keyword
+        # list. Replaced with a 158-char summary. This test rebuilds
+        # from build.py and pins the invariant: no built page's meta
+        # description may exceed 1000 chars (the longest legitimate
+        # article summary today is 775), and the /guides/ index --
+        # the one page whose description is a summary, not an article
+        # abstract -- stays within 200.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        build.main()
+        site = Path.home() / "workspace/taskmarket/site"
+        pat = re.compile(r'<meta name="description" content="([^"]*)">')
+        too_long = []
+        for p in sorted(site.rglob("*.html")):
+            m = pat.search(p.read_text())
+            if m and len(m.group(1)) > 1000:
+                too_long.append((str(p.relative_to(site)), len(m.group(1))))
+        self.assertEqual(too_long, [])
+        guides = (site / "guides/index.html").read_text()
+        gm = pat.search(guides)
+        self.assertIsNotNone(gm)
+        self.assertLessEqual(len(gm.group(1)), 200)
+        self.assertIn("Plain-English guides to ERC-4626 vault accounting",
+                      gm.group(1))
+
 
 
 if __name__ == "__main__":
