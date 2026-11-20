@@ -19414,6 +19414,76 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Plain-English guides to ERC-4626 vault accounting",
                       gm.group(1))
 
+    def test_sitemap_lastmod_keeps_date_for_unchanged_pages(self):
+        # 2026-11-20: the sitemap stamped every page with the build date,
+        # so all 238 URLs claimed to have changed on every deploy. Now a
+        # page's date advances only when its content changes. This pins
+        # both directions with a seeded state file: an unchanged page
+        # keeps its old date, a changed page moves to today, and a new
+        # page starts at today. The hash strips the shared <style> and
+        # <script> blocks, so a one-line CSS tweak does not stamp the
+        # whole site as changed.
+        import json
+        import sys
+        import tempfile
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        html_a = "<html><head><title>A</title></head><body><main><p>alpha</p></main></body></html>"
+        html_b = "<html><head><title>B</title></head><body><main><p>beta</p></main></body></html>"
+        html_b2 = "<html><head><title>B</title></head><body><main><p>beta changed</p></main></body></html>"
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d) / "state.json"
+            seeded = {"/a/": {"hash": build._content_hash(html_a),
+                              "lastmod": "2026-11-01"},
+                      "/b/": {"hash": build._content_hash(html_b),
+                              "lastmod": "2026-11-02"}}
+            state.write_text(json.dumps(seeded))
+            lm = build.page_lastmods({"/a/": html_a, "/b/": html_b},
+                                     state_file=state)
+            self.assertEqual(lm["/a/"], "2026-11-01")
+            self.assertEqual(lm["/b/"], "2026-11-02")
+            build.save_lastmod_state({"/a/": html_a, "/b/": html_b}, lm,
+                                     state_file=state)
+            # Only B's content changes: only B's date advances.
+            lm2 = build.page_lastmods({"/a/": html_a, "/b/": html_b2},
+                                      state_file=state)
+            self.assertEqual(lm2["/a/"], "2026-11-01")
+            self.assertEqual(lm2["/b/"], build.BUILD_DATE)
+            build.save_lastmod_state({"/a/": html_a, "/b/": html_b2}, lm2,
+                                     state_file=state)
+            # A brand-new page starts at today.
+            lm3 = build.page_lastmods({"/a/": html_a, "/b/": html_b2,
+                                       "/c/": html_a},
+                                      state_file=state)
+            self.assertEqual(lm3["/c/"], build.BUILD_DATE)
+            # A shared CSS change alone must not move any page: the
+            # <style> block is stripped before hashing.
+            css_a = html_a.replace("</head>", "<style>p{color:red}</style></head>")
+            css_b = html_a.replace("</head>", "<style>p{color:blue}</style></head>")
+            lm4 = build.page_lastmods({"/a/": css_a}, state_file=state)
+            lm5 = build.page_lastmods({"/a/": css_b}, state_file=state)
+            self.assertEqual(lm4["/a/"], lm5["/a/"])
+
+    def test_worker_js_does_not_pollute_lastmod_state(self):
+        # 2026-11-20: worker_js()'s lastmods=None fallback called a
+        # page_lastmods() that WROTE the state file -- and tests call
+        # worker_js() with the raw build.PAGES bodies (unwrapped: no
+        # header, footer or OG tags), so a full test run overwrote the
+        # real state with hashes of unwrapped bodies. The next real
+        # build then saw every hash mismatch and re-stamped all 238
+        # pages today. Only main() may persist the state; worker_js()
+        # only reads it, so a test run must leave the state byte-identical.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        state_file = build.LASTMOD_STATE
+        before = state_file.read_bytes() if state_file.exists() else None
+        build.worker_js(dict((p, b) for p, t, d, k, b in build.PAGES))
+        after = state_file.read_bytes() if state_file.exists() else None
+        self.assertEqual(before, after)
+
 
 
 if __name__ == "__main__":
