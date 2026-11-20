@@ -4758,7 +4758,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
                       "grid-column:3;background:transparent;border:0}",
                       build.CSS)
-        self.assertIn("Bars are scaled to the worst row in this table", html)
+        # Visual verdict #136 (2026-11-21): the legend names the
+        # axis maximum now, not the worst row as the scale — the
+        # worst row's value is still named, as the axis reference.
+        self.assertIn("The axis runs 0–1 USDC (the worst row is 0.909091 USDC)", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
         self.assertEqual(html.count("loss-fill pass"), 0)
         # The two small rows (0 and 0.000006 USDC) would draw a 0.0%
@@ -4780,7 +4783,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #116 new finding (c): the legend is a list
         # now — one line per idea, each with a bold label — not one
         # paragraph of four sentences.
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> The axis runs 0–1 USDC (the worst row is 0.909091 USDC). Gridlines mark 25%, 50% and 75% of the axis.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertNotIn("<p class='loss-head'>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
@@ -4797,8 +4800,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn("loss-head", build.checker_results_html_js())
         self.assertNotIn("too small to draw", build.checker_results_html_js())
         self.assertNotIn("loss-track--tiny", build.checker_results_html_js())
-        self.assertIn("width:100.0%", html)
-        self.assertIn("width:11.0%", html)
+        # Visual verdict #136 (2026-11-21): bars are drawn against
+        # the 0–1 USDC axis now — worst bar 90.9%, 1B bar 10.0%.
+        self.assertIn("width:90.9%", html)
+        self.assertIn("width:10.0%", html)
         self.assertIn("0.909091", html)
         # Seeded vault: losses [1, 1, 1, 13] — all within bound, all green.
         A50 = 50_000_000_000_000
@@ -4808,10 +4813,14 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=0, fee=0, vassets=A50, vshares=A50)
         self.assertEqual(html.count("loss-fill fail"), 0)
         self.assertEqual(html.count("loss-fill pass"), 4)
-        self.assertIn("width:7.7%", html)
+        # Visual verdict #136 (2026-11-21): worst loss 13 base units
+        # against a 20-unit axis — the worst bar is 65.0% wide, the
+        # three 1-unit bars 5.0%.
+        self.assertIn("width:65.0%", html)
+        self.assertIn("width:5.0%", html)
         # No rows omitted here, yet the header is still present: the
         # scale/red legend is part of it now, not a footnote.
-        self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.000013 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> The axis runs 0–0.00002 USDC (the worst row is 0.000013 USDC). Gridlines mark 25%, 50% and 75% of the axis.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         # Offset 18: every loss is 0 — no row can draw a bar, so there
         # is no chart at all, just the one legend item (verdict #94:
         # four placeholder rows were the worst case of the broken-chart
@@ -4846,10 +4855,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertEqual(html.count("loss-fill fail"), 1)
         self.assertEqual(html.count("loss-row"), 1)
-        self.assertIn("width:100.0%", html)
+        self.assertIn("width:90.9%", html)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> The axis runs 0–1 USDC (the worst row is 0.909091 USDC). Gridlines mark 25%, 50% and 75% of the axis.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("too little to draw", html)
         self.assertNotIn("<p class='loss-note'>", html)
@@ -4867,7 +4876,7 @@ class TestChecker(unittest.TestCase):
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> Bars are scaled to the worst row in this table (0.909091 USDC). Gridlines mark 25%, 50% and 75% of that scale.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> The axis runs 0–1 USDC (the worst row is 0.909091 USDC). Gridlines mark 25%, 50% and 75% of the axis.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertLess(html.index("loss-head"), html.index("loss-row"))
         self.assertNotIn("<p class='loss-note'>", html)
         # Giant minimum deposit: every row errors, no number to chart.
@@ -4907,13 +4916,13 @@ class TestChecker(unittest.TestCase):
                       "1,000,000</span><span class='loss-value'>"
                       "0.909091 USDC &middot; 909&times; the bound</span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
-                      "style='width:100.0%'></span></span></div>", html)
+                      "style='width:90.9%'></span></span></div>", html)
         # Short bar: same value position, same colour, no --pct.
         self.assertIn("<div class='loss-row'><span class='loss-label'>"
                       "1,000,000,000</span><span class='loss-value'>"
                       "0.099890 USDC &middot; 99.9&times; the bound</span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
-                      "style='width:11.0%'></span></span></div>", html)
+                      "style='width:10.0%'></span></span></div>", html)
         # Visual verdict #124 new finding ③ (2026-11-20): the
         # legend no longer carries a ×N line — the bar value itself
         # says "909× the bound", so the legend line restated it.
@@ -4961,7 +4970,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn("&times;", js)
         self.assertIn("boundB", js)
         # Short-bar case: seeded vault, losses [1, 1, 1, 13] — three
-        # 7.7% bars and the 100% worst row all carry plain values.
+        # 5.0% bars and the 65.0% worst row all carry plain values
+        # (visual verdict #136: the axis maximum is 20 base units
+        # now, so the worst bar is 65% of the axis, not 100% of
+        # itself).
         A50 = 50_000_000_000_000
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
@@ -5075,10 +5087,15 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        # The legend Scale line says what the lines mark.
-        self.assertIn("Gridlines mark 25%, 50% and 75% of that scale.",
+        # The legend Scale line says what the lines mark — the axis
+        # maximum on a breaching chart (visual verdict #136), the
+        # pass bound on a bound-scaled one.
+        self.assertIn("Gridlines mark 25%, 50% and 75% of the axis.",
                       html)
-        # Worker-side template carries the same sentence.
+        # Worker-side template carries both sentences (one per scale
+        # branch).
+        self.assertIn("Gridlines mark 25%, 50% and 75% of the axis.",
+                      build.checker_results_html_js())
         self.assertIn("Gridlines mark 25%, 50% and 75% of that scale.",
                       build.checker_results_html_js())
         # Guide charts (plain .loss-chart) get no gridlines: the rule
@@ -5116,7 +5133,7 @@ class TestChecker(unittest.TestCase):
         # Row markup untouched: label, value, track in that order.
         self.assertIn("<div class='loss-row'><span class='loss-label'>1,000,000</span>"
                       "<span class='loss-value'>0.909091 USDC &middot; 909&times; the bound</span>"
-                      "<span class='loss-track'><span class='loss-fill fail' style='width:100.0%'></span></span></div>",
+                      "<span class='loss-track'><span class='loss-fill fail' style='width:90.9%'></span></span></div>",
                       html)
 
     def test_loss_chart_axis_labels(self):
@@ -5124,23 +5141,32 @@ class TestChecker(unittest.TestCase):
         # one green bar, three unlabelled gridlines, first glance
         # read as a loading progress bar. The grid now aligns every
         # track, so one axis row under the bars labels the gridlines
-        # with their USDC values (0 and the scale max at the ends,
+        # with their USDC values (0 and the axis max at the ends,
         # 25/50/75% between them). The axis is render-only: the
-        # numbers, verdicts and bar widths are pinned by the other
-        # chart tests and do not move.
-        # Visual verdict #132 (2026-11-20): only the first tick
-        # carried the unit ("0 USDC", the rest bare numbers). The
-        # unit is now a label of its own in the value column
-        # (loss-axis-unit, right-aligned, ending just before the
-        # 0 tick); the ticks are bare numbers. Moving the unit to
-        # the last tick was measured and rejected (16px overlap
-        # with the 75% tick at 1024px). Below 640px the label
-        # hides and the 0 tick gets its unit back via ::after.
+        # numbers and verdicts are pinned by the other chart tests
+        # and do not move; the bar widths move with the axis (see
+        # the width pins in the other chart tests).
+        # Visual verdict #136 (2026-11-21): the ticks were floored
+        # quarters of the raw scale — 0.227272 / 0.454545 / 0.681818
+        # on noprot, six-decimal noise no reader can use. The axis
+        # maximum is now rounded up to a 1-2-5 ladder value, so the
+        # quarter ticks are round numbers (0 / 0.25 / 0.5 / 0.75 /
+        # 1) and the bars are drawn against that axis maximum. The
+        # chart also has a title now, which carries the unit — the
+        # floating "USDC" label beside the 0 tick (verdict #132)
+        # is retired: no loss-axis-unit anywhere, in either
+        # renderer or the stylesheet.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        # CSS: grid container, display:contents rows, axis rules.
+        # The ladder itself: smallest 1-2-5 value >= scale, divisible
+        # by 4 so the quarter ticks are whole base units.
+        self.assertEqual([build._nice_axis_max(s) for s in
+                          (1, 13, 900, 999, 1000, 2500, 909091, 999001)],
+                         [20, 20, 1000, 1000, 1000, 5000, 1000000, 1000000])
+        # CSS: grid container, display:contents rows, axis rules,
+        # chart title rule; no trace of the retired unit label.
         self.assertIn(".loss-chart--bare{display:grid;"
                       "grid-template-columns:8em auto 1fr;"
                       "column-gap:.7em;row-gap:.25em;align-items:center}",
@@ -5150,79 +5176,77 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-head{grid-column:1/-1;"
                       "margin-bottom:.25em}",
                       build.CSS)
+        self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;"
+                      "font-weight:600;margin:0 0 .1em}",
+                      build.CSS)
         self.assertIn(".loss-axis{grid-column:3;position:relative;"
                       "height:1.15em;font-size:.8em;color:#6b7280}",
                       build.CSS)
         self.assertIn(".loss-axis span{position:absolute;top:0;"
                       "transform:translateX(-50%);white-space:nowrap}",
                       build.CSS)
-        self.assertIn(".loss-axis-unit{grid-column:2;text-align:right;"
-                      "font-size:.8em;color:#6b7280;line-height:1.15em}",
-                      build.CSS)
-        self.assertIn(".loss-chart--bare .loss-axis-unit{display:none}",
-                      build.CSS)
-        self.assertIn(".loss-chart--bare .loss-axis "
-                      "span:first-child::after{content:\" USDC\"}",
-                      build.CSS)
+        self.assertNotIn("loss-axis-unit", build.CSS)
         self.assertIn(".loss-axis span:nth-child(2),.loss-axis "
                       "span:nth-child(3),.loss-axis span:nth-child(4)"
                       "{display:none}",
                       build.CSS)
-        # Default preset: bound scale 0.001 USDC — five ticks.
+        # Default preset: bound scale 0.001 USDC — five ticks, axis
+        # maximum equals the bound, legend unchanged.
         html = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
         self.assertEqual(html.count("class='loss-axis'"), 1)
-        self.assertEqual(html.count("class='loss-axis-unit'"), 1)
-        self.assertIn("<span class='loss-axis-unit' aria-hidden='true'>"
-                      "USDC</span>"
-                      "<div class='loss-axis' aria-hidden='true'>"
+        self.assertEqual(html.count("class='loss-title'"), 1)
+        self.assertIn("<p class='loss-title'>Victim loss by donation size (USDC)</p>", html)
+        self.assertNotIn("loss-axis-unit", html)
+        self.assertIn("<div class='loss-axis' aria-hidden='true'>"
                       "<span style='left:0%'>0</span>"
                       "<span style='left:25%'>0.00025</span>"
                       "<span style='left:50%'>0.0005</span>"
                       "<span style='left:75%'>0.00075</span>"
                       "<span style='left:100%'>0.001</span></div>",
                       html)
-        # Noprot: worst-row scale 0.909091 USDC — floored quarters.
+        # Noprot: axis maximum 1 USDC — round quarter ticks.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("<span class='loss-axis-unit' aria-hidden='true'>"
-                      "USDC</span>"
-                      "<div class='loss-axis' aria-hidden='true'>"
+        self.assertIn("<div class='loss-axis' aria-hidden='true'>"
                       "<span style='left:0%'>0</span>"
-                      "<span style='left:25%'>0.227272</span>"
-                      "<span style='left:50%'>0.454545</span>"
-                      "<span style='left:75%'>0.681818</span>"
-                      "<span style='left:100%'>0.909091</span></div>",
+                      "<span style='left:25%'>0.25</span>"
+                      "<span style='left:50%'>0.5</span>"
+                      "<span style='left:75%'>0.75</span>"
+                      "<span style='left:100%'>1</span></div>",
                       html)
         # Degenerate scale (victim deposit 1 USDC, worst loss a
-        # single base unit): duplicate tick values are dropped,
-        # keeping the 100% tick — the axis never prints the same
-        # number twice.
+        # single base unit): axis maximum 20 base units, five
+        # distinct ticks — the dedup keeps the 100% tick, so the
+        # axis never prints the same number twice.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
                     victim_deposit=1_000_000),
             vic=1_000_000, off=0, mn=0, fee=0)
-        self.assertIn("<span class='loss-axis-unit' aria-hidden='true'>"
-                      "USDC</span>"
-                      "<div class='loss-axis' aria-hidden='true'>"
+        self.assertIn("<div class='loss-axis' aria-hidden='true'>"
                       "<span style='left:0%'>0</span>"
-                      "<span style='left:100%'>0.000001</span></div>",
+                      "<span style='left:25%'>0.000005</span>"
+                      "<span style='left:50%'>0.00001</span>"
+                      "<span style='left:75%'>0.000015</span>"
+                      "<span style='left:100%'>0.00002</span></div>",
                       html)
-        # No chart, no axis: offset 18 loses nothing.
+        # No chart, no axis, no title: offset 18 loses nothing.
         html = build.results_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
         self.assertNotIn("loss-axis", html)
+        self.assertNotIn("loss-title", html)
         # The Worker-side template renders the same axis with the
-        # same floored-quarter logic (BigInt division).
+        # same nice-axis logic (BigInt).
         js = build.checker_results_html_js()
         self.assertIn("loss-axis", js)
-        self.assertIn("loss-axis-unit", js)
+        self.assertIn("loss-title", js)
+        self.assertNotIn("loss-axis-unit", js)
         self.assertNotIn('(pos===0?" USDC":"")', js)
+        self.assertIn("niceAxisMax", js)
         self.assertIn("rawTicks", js)
-        self.assertIn("BigInt(scale)", js)
         self.assertIn("sc/4n", js)
         self.assertIn("3n*sc/4n", js)
 
@@ -5251,7 +5275,8 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         # noprot: the two small rows (0 and 0.000006 USDC) are omitted;
-        # the two real bars are unchanged.
+        # the two real bars are drawn against the 0–1 USDC axis now
+        # (visual verdict #136).
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
@@ -5259,8 +5284,10 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-track--tiny"), 0)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("width:100.0%", html)
-        self.assertIn("width:11.0%", html)
+        # Visual verdict #136 (2026-11-21): bars are drawn against
+        # the 0–1 USDC axis now — worst bar 90.9%, 1B bar 10.0%.
+        self.assertIn("width:90.9%", html)
+        self.assertIn("width:10.0%", html)
         # Default preset (offset 6): losses 0 / 0 / 1 / 900 base units —
         # a single drawable bar is a chart now (visual verdict #123,
         # 2026-11-20): one green bar, the three smaller donations
@@ -16354,10 +16381,10 @@ class TestChecker(unittest.TestCase):
 
 
     def test_loss_chart_head_names_worst_row_value(self):
-        # The bar chart is scaled to the worst row, and the 1B row's bar
-        # is shorter than the 1M row's — without the anchor value in the
-        # legend a reader misreads "bigger donation = safer". The header
-        # must name the worst row's loss in USDC. Where a single bar is
+        # The bar chart is scaled to a round axis maximum, and the 1B
+        # row's bar is shorter than the 1M row's — without the anchor
+        # value in the legend a reader misreads "bigger donation =
+        # safer". The header must name the worst row's loss in USDC. Where a single bar is
         # all there is (visual verdict #123, 2026-11-20: the one-bar
         # case is charted now, the Peak/Others sentence form retired),
         # the Scale line names the same value — except on a bound-scaled
@@ -16373,13 +16400,16 @@ class TestChecker(unittest.TestCase):
         build = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(build)
         # noprot: the chart is drawn, the note names the worst row.
+        # Visual verdict #136 (2026-11-21): the Scale line names the
+        # axis maximum and the worst row together — the axis runs
+        # 0–1 USDC, the worst row is 0.909091 of it.
         v = Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)
         html = build.results_html(run_all(v), off=0, mn=0, fee=0)
         self.assertIn(
-            "Bars are scaled to the worst row in this table "
-            "(0.909091 USDC)", html)
+            "The axis runs 0–1 USDC (the worst row is 0.909091 USDC)",
+            html)
         self.assertNotIn(
-            "Bars are scaled to the worst row in this table;", html)
+            "Bars are scaled to the worst row in this table", html)
         # Offset 6: a single drawable bar is a chart — bound-scaled
         # now, so the Scale line names the pass bound (0.001 USDC)
         # and the worst-row value (0.000900 USDC) is in the bar label.
