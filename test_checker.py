@@ -15163,7 +15163,8 @@ class TestChecker(unittest.TestCase):
                        "width:100.0%", "width:55.6%", "width:11.1%",
                        "width:0.0%"):
             self.assertIn(needle, build)
-        self.assertIn("The new content here is cases 2", build)
+        self.assertIn("The new content here is the early-exit transfer",
+                      build)
         self.assertNotIn("donation-smoothed-nav-model.py", build)
 
         # (11) The day-9 payout 109,000 must sit in THIS guide's own
@@ -15175,6 +15176,40 @@ class TestChecker(unittest.TestCase):
         section = build[start:start + 12000]
         self.assertIn("109,000", section)
         self.assertIn("On day 9 he would take", section)
+
+        # (12) The overlap note used to cite model case numbers
+        # ("case 1 below", "Case 3", "case 6", "cases 2 and 4",
+        # "case 5", "case 7", "case 8") that never appear as labels
+        # in this guide — its body is sections A-D, so a reader
+        # looking for "case 1 below" finds no case 1. The note now
+        # points at the sections instead, and the baseline is stated
+        # as the control the numbers are measured against, not as
+        # a section below.
+        for dead in ("case 1 below is the donation-attack",
+                     "Case 3 is the donation-attack",
+                     "Case 6 is the smoothed-nav",
+                     "The new content here is cases 2 and 4",
+                     "case 5: two early exits",
+                     "case 7: the day-9/day-10",
+                     "case 8: a second donation",
+                     "re-reported cases 1, 3 and 6"):
+            self.assertNotIn(dead, section)
+        for live in ("the baseline — a full exit at 1.00 with no "
+                     "donation — is the donation-attack guide's "
+                     "first case, relabelled",
+                     "Waiting until the glide catches up and taking "
+                     "the full 110,000 (§B)",
+                     "the loss mirror (§C) is the smoothed-nav "
+                     "loss-lag mirror",
+                     "two early exits stacking, Carol gaining "
+                     "<strong>14,000</strong> (§B)",
+                     "a second donation mid-glide restarting the "
+                     "lag, so a day-6 redeemer leaves "
+                     "<strong>13,500</strong> (§D)",
+                     "A guide that only re-reported the baseline, "
+                     "the wait, and the loss mirror would be a "
+                     "relabel, not a finding"):
+            self.assertIn(live, section)
 
     def test_donation_deposit_bonus_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-donation-deposit-bonus/
