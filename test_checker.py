@@ -5024,13 +5024,13 @@ class TestChecker(unittest.TestCase):
         # carries its unit and the multiple's referent inline, so it
         # no longer duplicates the table's bare number.
         self.assertIn("<div class='loss-row'><span class='loss-label'>"
-                      "1,000,000</span><span class='loss-value'>"
+                      "1,000,000 USDC</span><span class='loss-value'>"
                       "0.909091 USDC &middot; 909&times; the bound</span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:90.9%'></span></span></div>", html)
         # Short bar: same value position, same colour, no --pct.
         self.assertIn("<div class='loss-row'><span class='loss-label'>"
-                      "1,000,000,000</span><span class='loss-value'>"
+                      "1,000,000,000 USDC</span><span class='loss-value'>"
                       "0.099890 USDC &middot; 99.9&times; the bound</span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:10.0%'></span></span></div>", html)
@@ -5150,7 +5150,7 @@ class TestChecker(unittest.TestCase):
              "attacker_net": -1}]}]
         html = build.results_html(mixed_share, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("<div class='loss-row'><span class='loss-label'>"
-                      "1,000</span><span class='loss-value'>"
+                      "1,000 USDC</span><span class='loss-value'>"
                       "0.000900 USDC &middot; 90% of the bound</span>"
                       "<span class='loss-track'><span class='loss-fill pass' "
                       "style='width:0.9%'></span></span></div>", html)
@@ -5246,7 +5246,11 @@ class TestChecker(unittest.TestCase):
         # the 100% bar (239px) was shorter than its own label column.
         # The bare chart's labels are only the four fixed donation
         # sizes, so 8em (~125px) leaves ~23px of slack and the track
-        # takes the freed width. Guide charts (plain .loss-chart)
+        # takes the freed width. Visual verdict #140 item 3
+        # (2026-11-21): the label now carries its unit ("1,000,000
+        # USDC"), so the column widens 8em -> 10em (~160px) for the
+        # added " USDC" — longest label ~137px of text, same ~23px
+        # of slack. Guide charts (plain .loss-chart)
         # keep the 22em column — their labels are words — so the
         # rule is scoped to --bare. Below 640px the bare label is
         # full-width too: the two-class desktop rule would otherwise
@@ -5267,7 +5271,7 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         # Row markup untouched: label, value, track in that order.
-        self.assertIn("<div class='loss-row'><span class='loss-label'>1,000,000</span>"
+        self.assertIn("<div class='loss-row'><span class='loss-label'>1,000,000 USDC</span>"
                       "<span class='loss-value'>0.909091 USDC &middot; 909&times; the bound</span>"
                       "<span class='loss-track'><span class='loss-fill fail' style='width:90.9%'></span></span></div>",
                       html)
@@ -5312,7 +5316,7 @@ class TestChecker(unittest.TestCase):
         # CSS: grid container, display:contents rows, axis rules,
         # chart title rule; no trace of the retired unit label.
         self.assertIn(".loss-chart--bare{display:grid;"
-                      "grid-template-columns:8em auto 1fr;"
+                      "grid-template-columns:10em auto 1fr;"
                       "column-gap:.7em;row-gap:.25em;align-items:center}",
                       build.CSS)
         self.assertIn(".loss-chart--bare .loss-row{display:contents}",
