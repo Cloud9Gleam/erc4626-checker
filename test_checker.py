@@ -3224,6 +3224,42 @@ class TestChecker(unittest.TestCase):
             self.assertEqual(tuple(p + m for p, m in zip(pill, miss)),
                              contest)
 
+    def test_research_index_miss_severities_are_stated(self):
+        # Same treatment as test_track_record_miss_severities_are_stated
+        # (2026-11-22 04:07 round, /audit/): the /research/ index lines
+        # for Gamma and Zaros said "two/four presented as MISSes" with
+        # only the date — the reader still had to open each review page
+        # to learn the misses were 1M+1L and 1H+3M. The severities are
+        # now in the index sentence itself. Ground truth is the review
+        # pages' own MISS sections, not just the arithmetic: Gamma's
+        # page accounts for "two (M-05, L-12) presented as MISSes"
+        # (M-05 Medium, L-12 Low); Zaros names H-LPREDEEM (High) and
+        # M-FEEDIST, M-OWNABLEINIT, M-CONNVAULT (Mediums) as MISSes.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        index = pages["/research/"]
+        self.assertIn("two presented as MISSes (1 Medium, 1 Low; "
+                      "Nov 2026)", index)
+        self.assertIn("four presented as MISSes (1 High, 3 Medium; "
+                      "Nov 2026)", index)
+        # The bare date-only wording is gone from both lines.
+        self.assertNotIn("two presented as MISSes (Nov 2026)", index)
+        self.assertNotIn("four presented as MISSes (Nov 2026)", index)
+        # Ground truth on the review pages themselves.
+        gamma = pages["/research/gamma/"]
+        self.assertIn("two (M-05, L-12)\npresented as MISSes", gamma)
+        self.assertIn("M-05 — presented as a MISS, not a finding", gamma)
+        self.assertIn("L-12 — presented as a MISS, not a finding", gamma)
+        zaros = pages["/research/zaros/"]
+        self.assertIn("H-LPREDEEM", zaros)
+        for mid in ("M-FEEDIST", "M-OWNABLEINIT", "M-CONNVAULT"):
+            self.assertIn(mid, zaros)
+        self.assertIn("Four groups are presented as <strong>MISSes</strong>",
+                      zaros)
+
     def test_thunder_loan_canonical_counts_reconcile(self):
         # Visual verdict #146 (2026-11-21): the /audit/ line said "4
         # findings" and then "6 of 7 canonical High+Medium findings
