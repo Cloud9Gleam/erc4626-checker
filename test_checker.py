@@ -14730,11 +14730,29 @@ class TestChecker(unittest.TestCase):
                        "width:96.0%"):
             self.assertIn(needle, build)
 
-        # (9) The guide states the honest overlap (cases 2-3 are the
-        # donation-attack pro-rata split, relabelled) and that the
-        # new content is cases 4-7; it never claims the queued
-        # depositor captures a donation under execution pricing.
-        self.assertIn("The new content here is cases 4", build)
+        # (9) The overlap note no longer cites numbered cases:
+        # this guide has sections A-D, not "case 2" or "case 6",
+        # and the donation-attack guide it mirrors has an opening
+        # example, not numbered cases either. Scoped to this
+        # guide's own section so the neighbouring tranche note
+        # (which still cites cases) cannot mask a miss.
+        section = build[build.index(
+            'add("/guides/erc4626-donation-deposit-queue/"'):build.index(
+            'add("/guides/erc4626-donation-tranche/"')]
+        for old in ("cases 2–3 below are the donation-attack",
+                    "The new content here is cases 4–7",
+                    "re-reported cases 2–3"):
+            self.assertNotIn(old, section)
+        for new in ("the execution-time pricing in §A",
+                    "is the donation-attack guide's pro-rata split",
+                    "The new content here is §B: the lock-in design "
+                    "hands Alice back exactly the shortfall's value",
+                    "§C: half-processing splits the difference",
+                    "§D: the same donation one block later moves "
+                    "<strong>9,090.909091</strong>",
+                    "A guide that only re-reported §A would be a "
+                    "relabel"):
+            self.assertIn(new, section)
         self.assertNotIn("Alice captures the donation under "
                          "execution pricing", build)
 
