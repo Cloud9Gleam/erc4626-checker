@@ -2777,8 +2777,9 @@ class TestChecker(unittest.TestCase):
                       'four flash-loan findings, all forge-proven (3 High, '
                       '1 Medium graded High by the canonical report). '
                       '<span class="track-detail">6 of 7 canonical High+Medium '
-                      'findings independently reproduced, 15/15 tests passing.'
-                      '</span>', track)
+                      'findings independently reproduced, the seventh — the '
+                      'fee-on-transfer Medium — never considered, 15/15 tests '
+                      'passing.</span>', track)
         self.assertIn('<a href="/research/zaros/">Zaros Part 2</a>'
                       '<span class="track-findings">66 findings · 15H 32M 19L</span> — '
                       '66 of 70 '
@@ -2786,8 +2787,8 @@ class TestChecker(unittest.TestCase):
                       '19 Low; $70,000 pool), four presented as MISSes. '
                       '<span class="track-detail">forge PoCs for M-NEGCAP 2/2, '
                       'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
-        # Visual verdict #145 (2026-11-21): Gamma was the only "N of M"
-        # entry that left the missing findings' fate unstated — the
+        # Visual verdict #145 (2026-11-21): Gamma was the first "N of M"
+        # entry found leaving the missing findings' fate unstated — the
         # reader had to compute 27-25=2 and guess what happened to
         # them. Zaros already said "four presented as MISSes"; Gamma
         # now says the same for its two (M-05 and L-12, per the Gamma
@@ -2800,6 +2801,31 @@ class TestChecker(unittest.TestCase):
             r'25 of 27 validated\s+contest findings re-verified '
             r'\(5 High, 9 Medium, 13 Low; \$50,000 pool\), two presented '
             r'as MISSes, four with\s+forge PoCs, one live on-chain\.</li>')
+        # 2026-11-21 22:37, full audit of all 41 Track record entries:
+        # the 21:37 round's "Gamma was the only one" was incomplete —
+        # Thunder Loan's "6 of 7" also left the seventh's fate
+        # unstated. The seventh is canonical M-03, the fee-on-transfer
+        # Medium (CodeHawks record: validated Medium — deposit mints
+        # on the nominal amount while a fee token delivers less); the
+        # Thunder Loan page's own "Missed" section says it was never
+        # considered. The /audit/ line, the /research/ index line,
+        # and the Thunder Loan page's summary + intro now all say so.
+        # Every other "N of M" entry already states the remainder's
+        # fate (Zaros MISSes; BattleChain 9/9 complete; Puppy/Santa/
+        # Beatland/DatingDapp/Algo/Rust Fund name the missed finding;
+        # Snowman says the two missed were packaged with fresh PoCs;
+        # MyCut says 6 missed in return; AirDropper says
+        # judge-invalidated).
+        self.assertRegex(
+            track,
+            r'<a href="/research/thunder-loan/">Thunder Loan</a>'
+            r'<span class="track-findings">4 findings · 3H 1M</span> — '
+            r'four flash-loan findings, all forge-proven \(3 High, '
+            r'1 Medium graded High by the canonical report\)\. '
+            r'<span class="track-detail">6 of 7 canonical High\+Medium '
+            r'findings independently reproduced, the seventh — the '
+            r'fee-on-transfer Medium — never considered, 15/15 tests '
+            r'passing\.</span>')
         self.assertIn(".track-detail{display:block;font-size:.92em;"
                       "color:#4b5563;margin-top:.25em}", build.CSS)
 
