@@ -14961,8 +14961,9 @@ class TestChecker(unittest.TestCase):
         # the claim-time price; Alice 100,000 shares (10%), Bob
         # 900,000 (90%). Importing the model re-runs its assertions;
         # the checks below independently re-derive the headline
-        # numbers (cases 3, 6, 8 are the headline; cases 1 and 7 are
-        # the stated overlap anchors, not new numbers).
+        # numbers (cases 3, 6, 8 are the headline; the baseline and
+        # the round trip are the stated overlap anchors, not new
+        # numbers).
         import importlib.util
         from fractions import Fraction
         from pathlib import Path
@@ -14975,7 +14976,8 @@ class TestChecker(unittest.TestCase):
 
         F = Fraction
         T = F(9, 10)
-        # (1) Baseline, no tax (overlap: withdrawal-queue case 1):
+        # (1) Baseline, no tax (overlap: the withdrawal-queue
+        # "no queue, paid now" rule, applied to Alice/Bob):
         # Alice 100,000, Bob 900,000, paid in full.
         self.assertEqual(F(100_000) * 1, 100_000)
         self.assertEqual(F(900_000) * 1, 900_000)
@@ -15017,7 +15019,8 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(100_000 * T, 90_000)
         self.assertEqual(90_000 - 81_000, 9_000)
         self.assertEqual(900_000 - 90_000, 810_000)
-        # (7) Round trip (overlap: fot-claim-window number): Dave
+        # (7) Round trip (overlap: the fot-claim-window §D round
+        # trip, restated as the queue anchor): Dave
         # 100,000 -> 90,000 shares -> net 81,000; loss 19,000 = 19%
         # = 1 - 0.9^2.
         self.assertEqual(100_000 * T, 90_000)
@@ -15062,11 +15065,42 @@ class TestChecker(unittest.TestCase):
                        "width:90.0%", "width:81.0%", "width:100.0%"):
             self.assertIn(needle, build)
 
-        # (10) The guide states the honest overlap (case 1 is the
-        # withdrawal-queue case 1, case 7 the fot-claim-window
-        # round trip) and that the new content is cases 2-6 and 8.
-        self.assertIn("The new content here is cases 2", build)
-        self.assertIn("case 8: a taxed donation repricing", build)
+        # (10) The guide states the honest overlap (the baseline
+        # is the withdrawal-queue "no queue, paid now" rule applied
+        # to Alice/Bob, the round trip is the fot-claim-window §D
+        # round trip) and that the new content is sections A-D.
+        self.assertIn("The new content here is §A: the 0.9", build)
+        self.assertIn("§D: a taxed donation repricing", build)
+
+        # (11) The overlap note no longer cites numbered cases:
+        # neither this guide (sections A-D) nor the withdrawal-queue
+        # guide (worked examples, no case numbers) has a "case 1",
+        # and the withdrawal-queue guide's first example is a single
+        # 50,000 request, not Alice/Bob; the fot-claim-window guide
+        # likewise has sections A-D, its round trip in §D, not a
+        # "case 7". Scoped to this guide's own section so the
+        # neighbouring donation-queue / deposit-queue / tranche
+        # notes (which still cite cases) cannot mask a miss.
+        section = build[build.index(
+            'add("/guides/erc4626-fot-withdrawal-queue/"'):build.index(
+            'add("/guides/erc4626-donation-idle-cash/"')]
+        for old in ("case 1 below is the withdrawal-queue guide's first case",
+                    "Case 7 is the fot-claim-window guide's round-trip number",
+                    "The new content here is cases 2",
+                    "case 8: a taxed donation repricing",
+                    "cases 1 and 7 would be a relabel"):
+            self.assertNotIn(old, section)
+        for new in ("the baseline — Alice's 100,000 and Bob's 900,000 paid in full "
+                    "with no tax in the vault — is the control this guide measures against",
+                    "the withdrawal-queue guide's \"no queue, paid now\" rule applied to their shares",
+                    "The round trip in §C",
+                    "the fot-claim-window guide's §D round trip",
+                    "The new content here is §A: the 0.9",
+                    "§B: a 500,000 harvest pays Bob 450,000 net",
+                    "§C: Carol's 100,000 lands 90,000",
+                    "§D: a taxed donation repricing",
+                    "A guide that only re-reported the baseline and the round trip"):
+            self.assertIn(new, section)
 
     def test_donation_smoothed_nav_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-donation-smoothed-nav/
