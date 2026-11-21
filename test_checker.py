@@ -5292,6 +5292,14 @@ class TestChecker(unittest.TestCase):
         # floating "USDC" label beside the 0 tick (verdict #132)
         # is retired: no loss-axis-unit anywhere, in either
         # renderer or the stylesheet.
+        # Visual verdict #140 (2026-11-21): the title alone was
+        # not enough — a first-time reader still could not tell
+        # what the bare tick numbers meant. The last tick now
+        # carries the unit ("1 USDC"); the other four stay bare.
+        # The #132 overlap rejection does not apply: the last
+        # tick is a short 1-2-5 ladder value ("0.1", "1", "10",
+        # "100" USDC), right-aligned, with 25% of the track to
+        # the 75% tick.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5337,7 +5345,8 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("loss-chart", html)
         self.assertNotIn("loss-axis-unit", html)
         self.assertIn("the worst victim loss is 0.000900 USDC, 90% of the 0.001 USDC pass bound.", html)
-        # Noprot: axis maximum 1 USDC — round quarter ticks.
+        # Noprot: axis maximum 1 USDC — round quarter ticks, the
+        # last one carrying the unit (visual verdict #140).
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
@@ -5346,8 +5355,14 @@ class TestChecker(unittest.TestCase):
                       "<span style='left:25%'>0.25</span>"
                       "<span style='left:50%'>0.5</span>"
                       "<span style='left:75%'>0.75</span>"
-                      "<span style='left:100%'>1</span></div>",
+                      "<span style='left:100%'>1 USDC</span></div>",
                       html)
+        # Only the last tick carries the unit — the other four
+        # stay bare numbers.
+        self.assertNotIn("<span style='left:0%'>0 USDC</span>", html)
+        self.assertNotIn("<span style='left:25%'>0.25 USDC</span>", html)
+        self.assertNotIn("<span style='left:50%'>0.5 USDC</span>", html)
+        self.assertNotIn("<span style='left:75%'>0.75 USDC</span>", html)
         # Degenerate scale (victim deposit 1 USDC, worst loss a
         # single base unit): nothing breaches, so no chart and no
         # axis at all (visual verdict #137, 2026-11-21) — the
@@ -5376,6 +5391,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("loss-title", js)
         self.assertNotIn("loss-axis-unit", js)
         self.assertNotIn('(pos===0?" USDC":"")', js)
+        self.assertIn('(pos===4?" USDC":"")', js)
         self.assertIn("niceAxisMax", js)
         self.assertIn("rawTicks", js)
         self.assertIn("sc/4n", js)
