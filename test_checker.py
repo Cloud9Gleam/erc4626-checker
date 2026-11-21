@@ -4144,12 +4144,14 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #57 remainder: the Free tool card's body was
         # ~2 lines while Paid service and Research were ~4, so the
         # bottom links sat at different heights. Fix: the Free tool
-        # body now names the six checks (same list as the /checker/
-        # page description), so all three bodies are in the same
-        # length band. Still matters after verdict #112 item 2
-        # removed the margin-top:auto pinning: unpinned links follow
-        # their body text, so balanced bodies keep the three links
-        # at near-equal heights instead of drifting apart.
+        # body used to name the six checks (same list as the /checker/
+        # page description) to reach the same length band; since
+        # visual verdict #146 (2026-11-21) the names live only in the
+        # hero aside, which already lists them, and the card lead says
+        # what the checks do instead. Still matters after verdict #112
+        # item 2 removed the margin-top:auto pinning: unpinned links
+        # follow their body text, so balanced bodies keep the three
+        # links at near-equal heights instead of drifting apart.
         # Visual verdict #145 (2026-11-21): the cards were single
         # dense paragraphs, so each card is now a lead paragraph plus
         # a short bullet list. The body is measured across the whole
@@ -4172,9 +4174,20 @@ class TestChecker(unittest.TestCase):
                                     "%s card has fewer than 2 bullets" % title)
             text = re.sub(r"<[^>]+>", "", body)
             bodies[title] = len(text)
-        self.assertIn("rounding, donation inflation, preview consistency, "
-                      "fee conservation, share-price sanity, minimum viable "
-                      "deposit", home)
+        # The six check names are listed once, in the hero aside —
+        # not repeated in the Free tool card (verdict #146 dedup).
+        # The comma-joined list still lives in the /checker/ page
+        # description, which is a different page, not the homepage.
+        self.assertNotIn("rounding, donation inflation, preview consistency, "
+                         "fee conservation, share-price sanity, minimum viable "
+                         "deposit", home)
+        for name in ("Rounding", "Donation inflation", "Preview consistency",
+                     "Fee conservation", "Share-price sanity",
+                     "Minimum viable deposit"):
+            self.assertIn("<li>%s</li>" % name, home,
+                          "hero aside no longer lists %s" % name)
+        self.assertIn("the donation check shows exactly what a donation does "
+                      "to the next depositor", home)
         for title, n in bodies.items():
             self.assertGreaterEqual(n, 180, "%s body too short: %d" % (title, n))
         self.assertLessEqual(max(bodies.values()) / min(bodies.values()), 1.4,
