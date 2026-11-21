@@ -5458,11 +5458,30 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;"
                       "font-weight:600;margin:0 0 .1em}",
                       build.CSS)
+        # Visual verdict #141 (2026-11-21): the axis was bare
+        # numbers floating under the bars — no baseline, no drawn
+        # ticks. It now has a 1px baseline and five 1px x 6px ticks
+        # at 0/25/50/75/100%; the labels drop .55em to clear them.
+        # On mobile the three middle labels hide, and the middle
+        # ticks hide with them (only 0 and scale-max ticks remain).
         self.assertIn(".loss-axis{grid-column:3;position:relative;"
-                      "height:1.15em;font-size:.8em;color:#6b7280}",
+                      "height:1.6em;font-size:.8em;color:#6b7280;"
+                      "border-top:1px solid #9ca3af;"
+                      "background-image:linear-gradient(#9ca3af,#9ca3af),"
+                      "linear-gradient(#9ca3af,#9ca3af),"
+                      "linear-gradient(#9ca3af,#9ca3af),"
+                      "linear-gradient(#9ca3af,#9ca3af),"
+                      "linear-gradient(#9ca3af,#9ca3af);"
+                      "background-size:1px 6px;background-repeat:no-repeat;"
+                      "background-position:0 0,25% 0,50% 0,75% 0,100% 0}",
                       build.CSS)
-        self.assertIn(".loss-axis span{position:absolute;top:0;"
+        self.assertIn(".loss-axis span{position:absolute;top:.55em;"
                       "transform:translateX(-50%);white-space:nowrap}",
+                      build.CSS)
+        self.assertIn(".loss-axis{background-image:"
+                      "linear-gradient(#9ca3af,#9ca3af),"
+                      "linear-gradient(#9ca3af,#9ca3af);"
+                      "background-position:0 0,100% 0}",
                       build.CSS)
         self.assertNotIn("loss-axis-unit", build.CSS)
         self.assertIn(".loss-axis span:nth-child(2),.loss-axis "
