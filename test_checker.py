@@ -1008,7 +1008,7 @@ class TestChecker(unittest.TestCase):
         fn = js[js.index("function resultsHTML"):]
         self.assertLess(fn.index("let n=\"<div class='notice'>"),
                         fn.index("for(const r of ordered){"))
-        self.assertLess(fn.index("else h+=\"<div class='notice'>"),
+        self.assertLess(fn.index("else h+=\"<div class='notice notice-pass'>"),
                         fn.index("for(const r of ordered){"))
 
     def test_failing_checks_render_first(self):
@@ -1270,6 +1270,44 @@ class TestChecker(unittest.TestCase):
         self.assertIn("What to do next", nofix)
         self.assertIn("Get the vault micro-audit</a>", nofix)
         self.assertNotIn("Run the same checks with offset 6</a>", nofix)
+
+    def test_pass_notice_is_green(self):
+        # Visual verdict #148 item 3 (2026-11-22): on a passing run
+        # the amber "What to do next" box sat directly under the green
+        # result banner and read as a warning against a pass. The pass
+        # notice now reuses the pass banner's palette; the fail notice
+        # keeps the amber warning box. Worker rendering is verified by
+        # the /tmp pass-notice node harness.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn("<div class='notice notice-pass'>", passed)
+        self.assertIn("This preset passes the model", passed)
+        self.assertNotIn("<div class='notice'><h3>What to do next</h3>",
+                         passed)
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<div class='notice'><h3>What to do next</h3>", failed)
+        self.assertNotIn("notice-pass", failed)
+        # The green box reuses the pass banner's exact palette.
+        self.assertIn(".notice-pass{background:#e6f4ea;border-color:#bbe0c6}",
+                      build.CSS)
+        # Worker JS renderer: the pass branch carries the class, the
+        # fail branch keeps the plain amber box.
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        self.assertIn(
+            "<div class='notice notice-pass'><h3>What to do next</h3>"
+            "<p>This preset passes the model", fn)
+        self.assertIn(
+            "<div class='notice'><h3>What to do next</h3><p>A check failed.",
+            fn)
 
     def test_api_params_table_has_scroll_hint(self):
         # Mobile-360 render (2026-11-20, checker-improvement): the
@@ -7280,7 +7318,10 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #147 (2026-11-22): the result notice opens
         # with a "What to do next" heading now; the plain .notice
         # class (not .notice-top) is what this test pins.
-        self.assertIn("<div class='notice'><h3>What to do next</h3>"
+        # Visual verdict #148 item 3 (2026-11-22): the PASS notice is
+        # green now (.notice-pass), so this pin carries the new class;
+        # the FAIL notice below still pins the plain amber box.
+        self.assertIn("<div class='notice notice-pass'><h3>What to do next</h3>"
                       "<p>This preset passes", body)
         self.assertIn("<div class='notice'><h3>What to do next</h3>"
                       "<p>A check failed.",
