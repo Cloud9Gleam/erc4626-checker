@@ -7338,6 +7338,9 @@ class TestChecker(unittest.TestCase):
         # the hint on every viewport and the dual-span structure is
         # gone. Both render paths (static checker_body and the
         # Worker-side formHTML) must carry the same six one-liners.
+        # 2026-11-22: the shares hint now states the 6-decimal
+        # convention ("counted at 6 decimals") — the API table already
+        # said so, but the form where the number is typed did not.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -7350,7 +7353,7 @@ class TestChecker(unittest.TestCase):
                   "The smallest deposit the vault accepts.",
                   "The deposit made after the donation.",
                   "Assets already in the vault. 0 = a new vault.",
-                  "Shares already issued. 0 = a new vault.",
+                  "Shares already issued, counted at 6 decimals (0 = a new vault).",
                   "The cut from the yield. 1000 bps = 10%.")
         html = build.checker_body()
         worker = build.worker_js(
@@ -7728,7 +7731,10 @@ class TestChecker(unittest.TestCase):
         # (Step 1 / Step 3, pinned by the four *_says_what_the_model_does
         # tests and test_vault_state_hint_names_both_checks). This test
         # pins the six one-liners in both render copies (Python
-        # template + Worker JS mirror).
+        # template + Worker JS mirror). 2026-11-22: the shares
+        # one-liner gained "counted at 6 decimals" — the model
+        # multiplies displayed shares by 1e6, and the form never said
+        # so while the API table did; still one sentence, per #139.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -7739,7 +7745,7 @@ class TestChecker(unittest.TestCase):
             "The smallest deposit the vault accepts.",
             "The deposit made after the donation.",
             "Assets already in the vault. 0 = a new vault.",
-            "Shares already issued. 0 = a new vault.",
+            "Shares already issued, counted at 6 decimals (0 = a new vault).",
             "The cut from the yield. 1000 bps = 10%.",
         ]
         for hint in hints:
