@@ -1702,6 +1702,60 @@ class TestChecker(unittest.TestCase):
         mailed = unquote(mb.group(1)).strip().split("\n")
         self.assertEqual(mailed, shown)
 
+    def test_vault_shares_unit_note_on_api_sentence_and_email_para(self):
+        # Checker-improvement 2026-11-22: the 6-decimal shares
+        # convention was stated in the form hint (07:07 round) and the
+        # API table (06:37 round), but two secondary entry points still
+        # showed bare shares with no unit note: the "Vault state ..."
+        # sentence under the API table, and the 'Prefer email?'
+        # paragraph, where a visitor pasting a raw totalSupply into an
+        # email would get a reply computed for the wrong vault. Both
+        # now carry the same sentence. The note must stay OUTSIDE the
+        # copyable parameter block and the mailto body — the block must
+        # still be exactly the six parameters (pinned by
+        # test_api_section_code_blocks) — or a pasted email gains a
+        # non-parameter line. The how-to guide Step 1 already said it
+        # ("The model counts 6-decimal shares."), so it is pinned here
+        # as covered, not changed.
+        import sys, re
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        USDC = 1_000_000
+        body = build.checker_body()
+        self.assertIn(
+            "<p>Vault state (assets and shares) seeds the donation and "
+            "minimum-viable-deposit checks; 0 and 0 mean a new vault. "
+            "Shares are counted at 6 decimals, as displayed.</p>", body)
+        self.assertNotIn(
+            "minimum-viable-deposit checks; 0 and 0 mean a new vault.</p>",
+            body)
+        # Both render paths of the email paragraph carry the note.
+        note = ("Shares are counted at 6 decimals, as displayed. Enter "
+                "the shares the vault shows, not the raw totalSupply.")
+        para = build.email_para(0, 0, 0, 100_000_000_000,
+                                1_000_000 * USDC, 1_000_000)
+        self.assertEqual(para.count(note), 1)
+        # The note is outside the copyable block and the mailto body.
+        m = re.search(r'<pre><code id="email-params">(.*?)</code></pre>',
+                      para, re.DOTALL)
+        self.assertIsNotNone(m)
+        self.assertNotIn("counted at 6 decimals", m.group(1))
+        self.assertNotIn("counted at 6 decimals",
+                         para[para.index("body="):para.index('">outreach@')])
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # Twice, not once: the baked pre-rendered checker page (the
+        # static default view) and emailParaHTML (parameterized runs)
+        # are separate copies in the Worker bundle, and both reach
+        # users — a visitor on either path must see the note.
+        self.assertEqual(worker.count(note), 2)
+        # The how-to guide Step 1 already states the convention (the
+        # sentence wraps across a line break in the source).
+        guide = dict((p, b) for p, t, d, k, b in build.PAGES)[
+            "/guides/how-to-use-the-erc4626-checker/"]
+        self.assertIn("The model counts\n6-decimal shares.", guide)
+
     def test_exit_fee_guide_numbers(self):
         # Exit-fee guide (site/exit-fee-model.py): a 5% fee on redemption.
         # Re-derived here with plain integer arithmetic, independent of
