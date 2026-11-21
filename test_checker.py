@@ -14844,8 +14844,10 @@ class TestChecker(unittest.TestCase):
         spec.loader.exec_module(model)
 
         F = Fraction
-        # (1) Baseline, no donation (overlap: maxWithdraw case 1):
-        # Alice book 100,000, maxWithdraw 100,000, full exit.
+        # (1) Baseline, no donation (overlap: the maxWithdraw
+        # honest cap, min(book value, liquid cash), applied to
+        # Alice's 100,000 shares): Alice book 100,000,
+        # maxWithdraw 100,000, full exit.
         self.assertEqual(min(100_000, 100_000), 100_000)
         # (2) Donation 100,000 lands in the strategy: total 1,100,000,
         # price 11/10, Alice book 110,000, maxWithdraw 100,000,
@@ -14910,12 +14912,45 @@ class TestChecker(unittest.TestCase):
                        "width:100.0%", "width:90.9%", "width:0.0%"):
             self.assertIn(needle, build)
 
-        # (10) The guide states the honest overlap (case 1 is the
-        # maxWithdraw case 1, relabelled) and that the new content
-        # is cases 2-8; it never claims the strategy-landing donation
-        # is withdrawable in full.
-        self.assertIn("The new content here is cases 2", build)
+        # (10) The guide states the honest overlap (the baseline
+        # is the maxWithdraw honest cap applied to Alice) and that
+        # the new content is sections A-D; it never claims the
+        # strategy-landing donation is withdrawable in full.
+        self.assertIn("The new content here is the two landings in §A",
+                      build)
         self.assertNotIn("Alice can withdraw the full 110,000", build)
+
+        # (11) The overlap note no longer cites numbered cases:
+        # neither this guide (sections A-D) nor the maxWithdraw
+        # guide (three worked examples, no case numbers) has a
+        # "case 1", and the maxWithdraw guide has no Alice at all
+        # — its first example is a sole holder of the whole vault.
+        # The note now names the baseline as the maxWithdraw honest
+        # cap applied to Alice and points at sections A-D. Scoped
+        # to this guide's own section so the neighbouring
+        # fot-withdrawal-queue note (which still cites cases)
+        # cannot mask a miss.
+        section = build[build.index(
+            'add("/guides/erc4626-donation-liquidity/"'):build.index(
+            'add("/guides/erc4626-fot-withdrawal-queue/"')]
+        for old in ("case 1 below is the maxWithdraw guide's first case",
+                    "The new content here is cases 2",
+                    "case 4: a harvest unlocks",
+                    "case 5: Bob redeems first",
+                    "case 6: a partial harvest",
+                    "case 7: a harvest of exactly",
+                    "case 8: the maxWithdraw view",
+                    "re-reported case 1"):
+            self.assertNotIn(old, section)
+        for new in ("the baseline — Alice withdrawing her full 100,000 "
+                    "with no donation in the vault — is the maxWithdraw "
+                    "guide's honest cap",
+                    "The new content here is the two landings in §A",
+                    "§B: a harvest unlocks the full exit",
+                    "§C: Bob redeems first and drains",
+                    "§D: the maxWithdraw view overstates",
+                    "A guide that only re-reported the baseline"):
+            self.assertIn(new, section)
 
     def test_fot_withdrawal_queue_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-fot-withdrawal-queue/
