@@ -18173,6 +18173,16 @@ class TestChecker(unittest.TestCase):
         # link line-height 1.65 -> 1.35. Leftover space lands below
         # the link, inside the card's bottom padding. One footer
         # link per card, each pointing at the card's own destination.
+        # Visual verdict #147 (2026-11-22, checker-improvement)
+        # reverses the margin-top:0 pin, not the #113 diagnosis:
+        # the three cards were already equal height (grid stretch,
+        # 573px at 1919px headless) but the links sat at three
+        # heights (tops 1273/1362/1334, spread 89px) because each
+        # link was glued to its own body text. margin-top:auto on
+        # the flex column pins every link to the card bottom, on one
+        # line — and the tallest card's body->link gap stays ~9px
+        # element because the #113 cuts above still hold; auto only
+        # fills the shorter cards' slack (89px / 28px at 1919px).
         import re
         from pathlib import Path
         build_text = (Path.home() / "workspace/taskmarket/site"
@@ -18180,15 +18190,21 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(build_text.count('class="card-link"'), 3)
         self.assertIn('"display:flex;flex-direction:column}"',
                       build_text)
+        # Precondition for equal-height cards: .cards is a 3-column
+        # grid, so the row stretches all three cards to one height
+        # and the auto margin has slack to distribute.
+        self.assertIn('.cards{display:grid;grid-template-columns:'
+                      'repeat(3,1fr)', build_text)
         self.assertIn('.card p:not(.card-link){margin-bottom:.3em}',
                       build_text)
-        self.assertIn('.card .card-link{margin-top:0;'
+        self.assertIn('.card .card-link{margin-top:auto;'
                       'padding-top:0;line-height:1.35;'
                       'margin-bottom:0;font-weight:700}',
                       build_text)
         rule = re.search(r'\.card \.card-link\{[^}]*\}',
                          build_text).group(0)
-        self.assertNotIn('margin-top:auto', rule)
+        self.assertIn('margin-top:auto', rule)
+        self.assertNotIn('margin-top:0', rule)
         self.assertIn(
             '<p class="card-link"><a href="/checker/">'
             'Run the checker &rarr;</a></p>', build_text)
