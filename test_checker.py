@@ -1054,6 +1054,14 @@ class TestChecker(unittest.TestCase):
         self.assertIn("see the full results", failed)
         self.assertIn('<span class="nowrap">below &darr;</span>', failed)
         self.assertNotIn("Donation inflation &darr;", failed)
+        # Visual verdict #147 (2026-11-22): the whole strip used to be
+        # one underlined link on the red background, so the verdict
+        # itself read as a hyperlink. Only the jump phrase is a link
+        # now — the verdict (and its number) precedes the anchor as
+        # plain text.
+        self.assertLess(failed.index("SOME FAILED"),
+                        failed.index('href="#results"'))
+        self.assertIn('<a href="#results">see the full results', failed)
         passed = build.verdict_strip_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
@@ -1063,6 +1071,11 @@ class TestChecker(unittest.TestCase):
         self.assertIn("see the full results", passed)
         self.assertIn('<span class="nowrap">below &darr;</span>', passed)
         self.assertNotIn("checks passed &darr;", passed)
+        # Visual verdict #147 (2026-11-22): same de-linking on the
+        # passing strip — the verdict precedes the anchor as plain text.
+        self.assertLess(passed.index("ALL PASS"),
+                        passed.index('href="#results"'))
+        self.assertIn('<a href="#results">see the full results', passed)
         # An ALL PASS strip carries no loss number: the donation check
         # passed, so quoting its (nonzero but within-bound) worst loss
         # next to a pass would read as a failure.
@@ -1098,6 +1111,108 @@ class TestChecker(unittest.TestCase):
         self.assertIn("ALL PASS", body)
         self.assertIn(".verdict-strip.fail", build.CSS)
         self.assertIn(".verdict-strip a", build.CSS)
+
+    def test_results_banner_carries_loss_sentence(self):
+        # Visual verdict #147 (2026-11-22): the strip above the form
+        # already carried the headline number, but a visitor landing
+        # on #results (the demo link, a shared run link) arrives below
+        # the strip and reads the results banner instead — and the
+        # banner had no number. The banner now carries the same
+        # sentence, same guards as the strip: donation failed with a
+        # measured loss over zero. The Worker JS renderer carries the
+        # same banner; it is verified by the /tmp single-banner node
+        # harness, not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        banner = failed[failed.index('<h2 id="results"'):
+                        failed.index("</h2>")]
+        self.assertIn("SOME FAILED", banner)
+        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
+                      "loses 0.909091 USDC", banner)
+        # The banner and the strip agree wherever the visitor lands.
+        strip = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
+        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
+                      "loses 0.909091 USDC", strip)
+        # A custom victim deposit re-words the sentence around the
+        # deposit actually run.
+        custom = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                    victim_deposit=1_000_000_000),
+            vic=1_000_000_000, off=0, mn=0, fee=0)
+        cbanner = custom[custom.index('<h2 id="results"'):
+                         custom.index("</h2>")]
+        self.assertIn("1,000,000 USDC donation: a 1,000 USDC deposit "
+                      "loses 0.999001 USDC", cbanner)
+        # A donation failure with no measured loss invents no number.
+        errored = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=10**15,
+                          perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=10**15, fee=0)
+        ebanner = errored[errored.index('<h2 id="results"'):
+                          errored.index("</h2>")]
+        self.assertIn("SOME FAILED", ebanner)
+        self.assertNotIn("loses", ebanner)
+        # An ALL PASS banner carries no loss number.
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        pbanner = passed[passed.index('<h2 id="results"'):
+                         passed.index("</h2>")]
+        self.assertIn("ALL PASS", pbanner)
+        self.assertNotIn("loses", pbanner)
+
+    def test_results_notice_is_action_box(self):
+        # Visual verdict #147 (2026-11-22): the results notice used to
+        # be three paragraphs with the actions buried as inline green
+        # links — the visitor read prose, not a next step. It is now
+        # an action box: a "What to do next" heading and the two
+        # primary actions as solid buttons. The Worker JS renderer
+        # carries the same box; it is verified by the /tmp
+        # single-banner node harness, not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<h3>What to do next</h3>", failed)
+        self.assertIn("class='notice-actions'", failed)
+        self.assertIn("Get the vault micro-audit</a>", failed)
+        self.assertIn("Run the same checks with offset 6</a>", failed)
+        self.assertIn("/audit/?result=failed", failed)
+        # The actions sit under the banner, before the evidence cards.
+        self.assertLess(failed.index("What to do next"),
+                        failed.index("check-card"))
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn("<h3>What to do next</h3>", passed)
+        self.assertIn("Get the vault micro-audit</a>", passed)
+        self.assertIn("See what a failing vault looks like</a>", passed)
+        self.assertIn("/audit/?result=passed", passed)
+        self.assertLess(passed.index("What to do next"),
+                        passed.index("check-card"))
+        # The buttons wrap, not overflow, at 360px.
+        self.assertIn(".notice-actions a{white-space:normal}", build.CSS)
+        self.assertIn(".notice p.notice-actions{display:flex", build.CSS)
+        self.assertIn(".notice h3{margin:.1em 0 .4em", build.CSS)
+        # A failing run at offset >= 6 offers no offset-6 button.
+        nofix = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=10**15,
+                          perf_fee_bps=0)),
+            vic=100_000_000_000, off=6, mn=10**15, fee=0)
+        self.assertIn("What to do next", nofix)
+        self.assertIn("Get the vault micro-audit</a>", nofix)
+        self.assertNotIn("Run the same checks with offset 6</a>", nofix)
 
     def test_api_params_table_has_scroll_hint(self):
         # Mobile-360 render (2026-11-20, checker-improvement): the
@@ -7045,8 +7160,13 @@ class TestChecker(unittest.TestCase):
         # the preset name alone does not drive the numbers).
         body = build.checker_body()
         self.assertIn('class="notice notice-top"', body)
-        self.assertIn("<div class='notice'><p>This preset passes", body)
-        self.assertIn("<div class='notice'><p>A check failed.",
+        # Visual verdict #147 (2026-11-22): the result notice opens
+        # with a "What to do next" heading now; the plain .notice
+        # class (not .notice-top) is what this test pins.
+        self.assertIn("<div class='notice'><h3>What to do next</h3>"
+                      "<p>This preset passes", body)
+        self.assertIn("<div class='notice'><h3>What to do next</h3>"
+                      "<p>A check failed.",
                       build.checker_body(off=0, mn=0, fee=0,
                                          preset="noprot"))
         # Form card top padding tightened; the audit form untouched.
