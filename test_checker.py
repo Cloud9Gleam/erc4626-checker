@@ -14586,13 +14586,44 @@ class TestChecker(unittest.TestCase):
                        "width:100.0%", "width:80.0%"):
             self.assertIn(needle, build)
 
-        # (9) The guide states the honest overlap (cases 2-5 are the
-        # queue-loss mirror) and that the new content is cases 6-7;
-        # it never claims a between-fulfillments donation splits
-        # pro-rata.
-        self.assertIn("The new content here is cases 6", build)
+        # (9) The guide states the honest overlap (the §A donation
+        # split and §B are the queue-loss mirror) and that the new
+        # content is §C and §D; it never claims a
+        # between-fulfillments donation splits pro-rata.
+        self.assertIn("The new content here is §C: a queue that pays "
+                      "both requests in halves", build)
+        self.assertIn("§D: a donation that lands after the queue has "
+                      "fully drained goes wholly to the holder who "
+                      "never queued", build)
         self.assertNotIn("the donation splits pro-rata between "
                          "fulfillments", build)
+
+        # (10) The overlap note no longer cites numbered cases:
+        # this guide has sections A-D, not "case 2" or "case 6",
+        # and the queue-loss guide it mirrors has sections A-E, not
+        # numbered cases either. Scoped to this guide's own section
+        # so the neighbouring deposit-queue / tranche notes (which
+        # still cite cases) cannot mask a miss.
+        section = build[build.index(
+            'add("/guides/erc4626-donation-queue/"'):build.index(
+            'add("/guides/erc4626-donation-deposit-queue/"')]
+        for old in ("cases 2–5 below are the donation mirror",
+                    "The new content here is cases 6",
+                    "cases 6–7: a queue that pays both requests",
+                    "re-reported cases 2–5"):
+            self.assertNotIn(old, section)
+        for new in ("the donation-before-fulfillment split in §A and "
+                    "the between-fulfillments analysis in §B are the "
+                    "donation mirror",
+                    "the queue-loss guide's request-price / claim-price "
+                    "analysis (§A–§C)",
+                    "The new content here is §C: a queue that pays both "
+                    "requests in halves restores the pro-rata split",
+                    "§D: a donation that lands after the queue has fully "
+                    "drained goes wholly to the holder who never queued",
+                    "A guide that only re-reported §A's donation split "
+                    "and §B would be a relabel"):
+            self.assertIn(new, section)
 
     def test_donation_deposit_queue_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-donation-deposit-queue/
