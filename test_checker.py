@@ -1335,6 +1335,44 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:460px){.twrap-hint{display:block",
                       build.CSS)
 
+    def test_api_params_table_states_ranges_and_defaults(self):
+        # Checker-improvement 2026-11-22: the API table's Values column
+        # said "number" for min_usdc, victim_usdc, vault_assets_usdc and
+        # vault_shares, while offset and fee_bps had real ranges — the
+        # four silent clamps in parseParams were invisible to API users.
+        # A caller passing victim_usdc=0 got a 1-base-unit victim and a
+        # FAIL with no hint why; min_usdc above 1e9 USDC was silently
+        # capped. Ranges below are the live-verified clamps (curl
+        # /api/check 2026-11-22: min 2e9 -> 1e9, victim 2e9 -> 1e9,
+        # vault assets/shares 2e12 -> 1e12, negatives -> 0 / 1 base
+        # unit), and the defaults are the parseParams fallbacks.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        body = build.checker_body()
+        self.assertEqual(body.count("<td>number</td>"), 0)
+        self.assertIn("<td>0–1,000,000,000</td><td>Smallest deposit the "
+                      "vault accepts, in USDC. Default 1.</td>", body)
+        self.assertIn("<td>0.000001–1,000,000,000</td><td>Deposit the "
+                      "donation attacker targets, in USDC. "
+                      "Default 100,000.</td>", body)
+        self.assertIn("<td>0–1,000,000,000,000</td><td>Vault assets, in "
+                      "USDC. Seeds the donation and minimum-viable-deposit "
+                      "checks. Default 0.</td>", body)
+        self.assertIn("<td>0–1,000,000,000,000</td><td>Shares already "
+                      "issued, as displayed. Counted at 6 decimals, the "
+                      "OpenZeppelin default for a USDC vault. "
+                      "Default 0.</td>", body)
+        # Docs and code must agree: the Worker clamps are 1e15 base
+        # units for min/victim, 1e18 for vault assets, 1e12 shares.
+        src = (Path.home() / "workspace/taskmarket/site/build.py"
+               ).read_text()
+        self.assertIn("Math.max(0, Math.min(mn, 1e15))", src)
+        self.assertIn("vic = Math.max(1, Math.min(vic, 1e15))", src)
+        self.assertIn("va = Math.max(0, Math.min(va, 1e18))", src)
+        self.assertIn("vs = Math.max(0, Math.min(vs, 1e12))", src)
+
     def test_checker_hint_rows_align(self):
         # Visual verdict #142 item 4 (2026-11-21): in the 3-column form
         # the offset and vault-assets hints wrap to 2 lines while the
