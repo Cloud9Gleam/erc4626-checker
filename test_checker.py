@@ -6346,16 +6346,22 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(
             ".check-card p.check-detail{background:#f9fafb;", build.CSS)
         # Visual verdict #106 item 2: the table rules — label left
-        # and muted, value right-aligned, hairline between rows,
-        # stacked rows under 640px.
+        # and muted, value right-aligned, stacked rows under 640px.
+        # Visual verdict #149 supersedes the hairline-only rows: the
+        # table now carries the donation table's #e5e7eb grid, so the
+        # desktop row-separator rule is deleted, not kept alongside.
         self.assertIn(".check-table{margin:0;font-size:1em}", build.CSS)
+        self.assertIn(
+            ".check-table td{border:1px solid #e5e7eb;"
+            "padding:.28em .5em;vertical-align:top}", build.CSS)
         self.assertIn(
             ".check-table td.check-label{text-align:left;color:#4b5563}",
             build.CSS)
         self.assertIn(".check-table td.check-value{text-align:right}",
                       build.CSS)
-        self.assertIn(".check-table tr+tr td{border-top:1px solid #f3f4f6}",
-                      build.CSS)
+        self.assertNotIn(
+            ".check-table tr+tr td{border-top:1px solid #f3f4f6}",
+            build.CSS)
         self.assertIn("@media (max-width:640px){.check-table tr{display:block}",
                       build.CSS)
         # Row counts per preset: rounding 1 sentence row; MVD 4 rows
@@ -6405,6 +6411,45 @@ class TestChecker(unittest.TestCase):
                       build.checker_results_html_js())
         self.assertNotIn("<p class='check-detail'>",
                          build.checker_results_html_js())
+
+    def test_check_table_has_gridlines(self):
+        # Visual verdict #149 (2026-11-22): the five small
+        # label/value tables on the checker page read as bare text
+        # lines without gridlines. They now take the donation
+        # table's grid: every cell bordered #e5e7eb, collapsed,
+        # zebra-striped by the generic tr rule — same language as
+        # the donation table, not a new look. Under 640px the rows
+        # still stack borderless (the mobile rule is untouched).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".check-table td{border:1px solid #e5e7eb;"
+            "padding:.28em .5em;vertical-align:top}", build.CSS)
+        self.assertNotIn(
+            ".check-table td{border:0;padding:.28em .5em;",
+            build.CSS)
+        self.assertNotIn(
+            ".check-table tr+tr td{border-top:1px solid #f3f4f6}",
+            build.CSS)
+        # The mobile stacked rule is untouched: rows stack, cells
+        # borderless, hairline between rows.
+        self.assertIn(
+            "@media (max-width:640px){.check-table tr{display:block}"
+            ".check-table td{display:block;border:0;"
+            "padding:.1em .5em}.check-table td.check-value"
+            "{text-align:right}.check-table tr+tr{border-top:1px "
+            "solid #f3f4f6}}", build.CSS)
+        # Rendered markup is unchanged: five small tables, one per
+        # non-donation card, both presets.
+        for v in (Vault(decimals_offset=6, min_deposit=1_000_000,
+                        perf_fee_bps=1000),
+                  Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)):
+            html = build.results_html(run_all(v))
+            self.assertEqual(html.count("<table class='check-table'>"), 5)
+        self.assertIn("<table class='check-table'>",
+                      build.checker_results_html_js())
 
     def test_split_detail_line(self):
         # The render-time splitter behind the check-table: every model
