@@ -15320,7 +15320,8 @@ class TestChecker(unittest.TestCase):
                        "100,909", "1,090,008.347647",
                        "width:0.8%", "width:9.9%", "width:100.0%"):
             self.assertIn(needle, build)
-        self.assertIn("The new content here is cases 2", build)
+        self.assertIn("The new content here is the counterintuitive part",
+                      build)
 
         # (8) The capture numbers must sit in THIS guide's own text:
         # "80.908345" and "9,909.909909" appear nowhere else, but
@@ -15332,6 +15333,46 @@ class TestChecker(unittest.TestCase):
                        "901.734998", "99,919.091655"):
             self.assertIn(needle, section)
         self.assertIn("on the <strong>assets deposited</strong>", section)
+
+        # (9) The overlap note used to cite model case numbers
+        # ("case 1 below", "cases 2-3", "case 4", "case 5") that
+        # never appear as labels in this guide — its body is
+        # sections A-D, so a reader looking for "case 1 below"
+        # finds no case 1. The note now points at the sections
+        # instead, and the baseline is stated as the control the
+        # numbers are measured against, not as a case below.
+        # Slice to the next guide's add( exactly: the deposit-fee
+        # guide reuses the identical closing sentence "A guide
+        # that only re-reported case 1 would be a relabel", so a
+        # 12000-char slice that bled into it would fail the
+        # negative check for the wrong reason.
+        section = build[start:build.index(
+            'add("/guides/erc4626-donation-deposit-fee/"', start)]
+        for dead in ("case 1 below is the deposit-bonus",
+                     "The new content here is cases 2",
+                     "case 4: the bonus's own dollar value",
+                     "case 5: a bonus computed on",
+                     "A guide that only re-reported case 1 would be"):
+            self.assertNotIn(dead, section)
+        for live in ("the baseline — a 10% bonus with no donation "
+                     "at all, diluting the existing holder by "
+                     "<strong>9,009.009009</strong> — is the "
+                     "deposit-bonus guide's first case, relabelled",
+                     "80.908345</strong> donate-first against "
+                     "<strong>9,909.909909</strong> deposit-first "
+                     "(§A–B)",
+                     "the bonus's own dollar value is <em>higher"
+                     "</em> donation-first, not lower — "
+                     "<strong>9,089.917354</strong> against "
+                     "<strong>9,009.009009</strong> (§C)",
+                     "a bonus computed on <strong>assets</strong> "
+                     "instead of <strong>shares</strong> pays "
+                     "<strong>901.735</strong> more for the same "
+                     "deposit once a donation has moved the price "
+                     "(§D)",
+                     "A guide that only re-reported the baseline "
+                     "would be a relabel, not a finding"):
+            self.assertIn(live, section)
 
     def test_donation_deposit_fee_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-donation-deposit-fee/
