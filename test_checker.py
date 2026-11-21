@@ -14999,9 +14999,11 @@ class TestChecker(unittest.TestCase):
                        "810,000", "0.888889", "8,100", "19,000",
                        "width:100.0%", "width:90.0%", "width:82.6%",
                        "1 &minus; 0.9&sup2;",
-                       # Round-trip cross-reference: the FoT guide
-                       # proves the 19% tax at 11,000 scale, which
-                       # is a 190,000 floor on a 1,000,000 trip.
+                       # Round-trip cross-reference: the
+                       # FoT-underlying guide proves the 19% tax at
+                       # 11,000 scale; the FoT donation-attack
+                       # guide prices it as a 190,000 floor on a
+                       # 1,000,000 trip.
                        "11,000 in and 8,910 out", "190,000 floor",
                        "19% round-trip tax"):
             self.assertIn(needle, section)
@@ -15013,6 +15015,19 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("0.888888", section)
         self.assertNotIn("guide's 190,000 floor on a 1,000,000 "
                          "round trip", section)
+        # The 190,000 floor must be attributed to the FoT
+        # donation-attack guide IN the round-trip paragraph itself,
+        # not just somewhere in the guide: the intro already links
+        # that guide, so a section-level assertIn would be vacuous.
+        # The old loose clause ("on a 1,000,000 round trip that is
+        # a 190,000 floor") read as if the FoT-underlying guide
+        # proved the floor — it does not.
+        rt = section.index("The round trip.")
+        para = section[rt:section.index("</p>", rt)]
+        self.assertIn("/guides/erc4626-fot-donation-attack/", para)
+        self.assertIn("prices the same tax as a 190,000 floor", para)
+        self.assertNotIn("on a 1,000,000 round trip that is a "
+                         "190,000 floor", section)
 
         # (10) The guide states the honest overlap (gross figures are
         # the donation-claim-window numbers repriced) and that the
@@ -15022,14 +15037,18 @@ class TestChecker(unittest.TestCase):
         self.assertIn("it is not a transfer to Bob", section)
 
         # (11) The model's own case-8 comment must carry the same
-        # attribution as the guide: the FoT guide proves the 19%
-        # round-trip tax at 11,000 in / 8,910 out; the 190,000
-        # floor on a 1,000,000 round trip is the fot-donation-attack
-        # guide's ("The floor first"), not the FoT guide's.
+        # attribution as the guide: the FoT-underlying guide proves
+        # the 19% round-trip tax at 11,000 in / 8,910 out; the
+        # 190,000 floor on a 1,000,000 round trip is the
+        # fot-donation-attack guide's ("The floor first"), not the
+        # FoT-underlying guide's.
         model_text = model_path.read_text()
         self.assertNotIn("the FoT guide's 190,000 floor", model_text)
         self.assertIn("proved as 11,000 in and 8,910 out", model_text)
         self.assertIn("190,000 floor", model_text)
+        self.assertIn("donation-attack guide prices the same tax as "
+                      "a 190,000 floor", model_text)
+        self.assertNotIn("on a 1,000,000 round trip that", model_text)
 
     def test_rebase_collateral_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-rebase-collateral/
