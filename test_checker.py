@@ -2786,6 +2786,20 @@ class TestChecker(unittest.TestCase):
                       '19 Low; $70,000 pool), four presented as MISSes. '
                       '<span class="track-detail">forge PoCs for M-NEGCAP 2/2, '
                       'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
+        # Visual verdict #145 (2026-11-21): Gamma was the only "N of M"
+        # entry that left the missing findings' fate unstated — the
+        # reader had to compute 27-25=2 and guess what happened to
+        # them. Zaros already said "four presented as MISSes"; Gamma
+        # now says the same for its two (M-05 and L-12, per the Gamma
+        # page table — see
+        # test_audit_track_record_entries_carry_findings_labels).
+        self.assertRegex(
+            track,
+            r'<a href="/research/gamma/">Gamma Perpetual Vault</a>'
+            r'<span class="track-findings">25 findings · 5H 8M 12L</span> — '
+            r'25 of 27 validated\s+contest findings re-verified '
+            r'\(5 High, 9 Medium, 13 Low; \$50,000 pool\), two presented '
+            r'as MISSes, four with\s+forge PoCs, one live on-chain\.</li>')
         self.assertIn(".track-detail{display:block;font-size:.92em;"
                       "color:#4b5563;margin-top:.25em}", build.CSS)
 
