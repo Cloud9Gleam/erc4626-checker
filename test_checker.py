@@ -14402,6 +14402,16 @@ class TestChecker(unittest.TestCase):
         self.assertIn("The new content here is the tax wedge", section)
         self.assertIn("it is not a transfer to Bob", section)
 
+        # (11) The model's own case-8 comment must carry the same
+        # attribution as the guide: the FoT guide proves the 19%
+        # round-trip tax at 11,000 in / 8,910 out; the 190,000
+        # floor on a 1,000,000 round trip is the fot-donation-attack
+        # guide's ("The floor first"), not the FoT guide's.
+        model_text = model_path.read_text()
+        self.assertNotIn("the FoT guide's 190,000 floor", model_text)
+        self.assertIn("proved as 11,000 in and 8,910 out", model_text)
+        self.assertIn("190,000 floor", model_text)
+
     def test_rebase_collateral_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-rebase-collateral/
         # to its model: a 1,000,000 unit / 1,000,000 share vault at
