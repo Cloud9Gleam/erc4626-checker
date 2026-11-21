@@ -19078,11 +19078,25 @@ class TestChecker(unittest.TestCase):
         a3 = Fraction(2_000_000_000_001, 1) - out_others
         self.assertEqual(a3 / (1_000_000 * USDC + 1 - 900_000 * USDC),
                          p2)
-        # Case 3: the attacker's 1 seed share redeems for 2 base
-        # units ($0.000002) on a $1,000,001.000001 outlay.
+        # Case 3: the attacker's 1 seed share redeems for a hair
+        # under 2 base units ($0.000002) on a $1,000,000.000001
+        # outlay (1 base unit seed + 1,000,000 USDC donation).
+        # The old pin said "2 base units" and "$1,000,001.000001":
+        # both were wrong -- the exact redemption is
+        # 2000000000001/1000000000001 base units (a hair under 2,
+        # and a real redeem floors to 1), and the outlay is one
+        # dollar less than the guide used to say.
         self.assertEqual(1 * p2, Fraction(2_000_000_000_001,
                                           1_000_000_000_001))
-        self.assertEqual((1 + 1_000_000 * USDC) - 2, 999_999_999_999)
+        self.assertLess(1 * p2, 2)  # a hair under 2 base units
+        self.assertEqual((1 * p2).numerator // (1 * p2).denominator,
+                         1)  # a real redeem floors to 1 base unit
+        outlay = 1 + 1_000_000 * USDC
+        self.assertEqual(outlay, 1_000_000_000_001)  # $1,000,000.000001
+        # Net: outlay minus the hair-under-2 redemption, exact.
+        self.assertEqual(Fraction(outlay, 1) - 1 * p2,
+                         Fraction(1_000_000_000_000_000_000_000_000,
+                                  1_000_000_000_001))
         # Case 4: contrast -- a -20% rebase at the stale $1.00
         # oracle puts the same $80,000 loan at exactly 100% LTV.
         self.assertEqual(100_000 * USDC * Fraction(4, 5), 80_000 * USDC)
@@ -19098,6 +19112,13 @@ class TestChecker(unittest.TestCase):
             build.count('/guides/erc4626-donation-rebase-collateral/'),
             3)  # add() + guides-index <li> + cross-link in the
         # donation-underlying-depeg guide (2026-11-17)
+        # The guide text itself carries the corrected figures:
+        # no "$1,000,001.000001" anywhere in build.py, the
+        # redemption is a hair under 2 base units, and the
+        # donation pays back two trillionths of itself.
+        self.assertEqual(build.count("$1,000,001.000001"), 0)
+        self.assertIn("a hair under 2 base units", build)
+        self.assertIn("two trillionths of itself", build)
         # Pins the donation x underlying-depeg model: a 1,000,000
         # sUSDS / 1,000,000 share vault, unit price 1 sUSDS, peg
         # $1.00 -> $0.90, a 100,000 sUSDS donation, a 1% holder
