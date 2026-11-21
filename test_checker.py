@@ -5180,8 +5180,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #120 checker item 3 (2026-11-19): the donation
         # chart had no axis — the 11% bar could only be read via the
         # legend. Gridlines at 25/50/75% of the scale (worst row),
-        # drawn as a ::after overlay above the fills so they stay
-        # visible across a 100% bar too. The overlay is positioned, so
+        # drawn as a ::after overlay. The overlay is positioned, so
         # the track carries position:relative again — for the overlay
         # only; the value stays a static flex item (see the #110 test
         # above), never absolutely positioned inside the track.
@@ -5199,6 +5198,17 @@ class TestChecker(unittest.TestCase):
         # did not fix noticeability, so alpha goes .5 -> .8 here;
         # the red-bar lines go near-black, which is their already
         # accepted look, not a regression.
+        # Visual verdict #140 item 2 (2026-11-21): #120 drew the
+        # lines ABOVE the fills so they stayed visible across a 100%
+        # bar — and the near-black lines cut every long red bar into
+        # segments. The lines now sit BEHIND the fills: the fill is
+        # positioned with z-index:1, so it paints above the
+        # z-index:auto ::after and covers the lines where the bar
+        # is; the lines stay visible on the white track beyond each
+        # bar's end and on empty rows. Alpha and width are untouched
+        # (.8, 2px) — lightening them would reopen #121–#123. The
+        # axis (#131) carries the scale reading, so the lines no
+        # longer need to cross a 100% bar.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5206,6 +5216,15 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
                       "grid-column:3;background:transparent;border:0}",
                       build.CSS)
+        # The fill sits above the gridlines: positioned, z-index:1,
+        # over the z-index:auto ::after (pinned in full below, with
+        # no z-index of its own — that absence is what makes the
+        # fill's 1 win). Scoped to --bare: guide charts have no
+        # gridlines, so their fills stay unpositioned.
+        self.assertIn(".loss-chart--bare .loss-fill{position:relative;"
+                      "z-index:1}", build.CSS)
+        self.assertNotIn(".loss-chart .loss-fill{position:relative",
+                         build.CSS)
         self.assertIn(
             ".loss-chart--bare .loss-track::after{content:\"\";"
             "position:absolute;inset:0;pointer-events:none;"
