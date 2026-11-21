@@ -992,6 +992,20 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Donation inflation", failed)
         self.assertIn("verdict-strip fail", failed)
         self.assertIn('href="#results"', failed)
+        # Visual verdict #146 (2026-11-21): the verdict sat a screen
+        # and a half above its evidence — the failing table is below
+        # the form. The strip now carries the headline number itself,
+        # in the exact words the share card (ogMeta) uses, so the two
+        # agree: the worst measured victim loss and the donation that
+        # caused it. A custom victim deposit re-words the sentence
+        # around the deposit actually run.
+        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
+                      "loses 0.909091 USDC", failed)
+        custom = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                    victim_deposit=1_000_000_000), vic=1_000_000_000)
+        self.assertIn("1,000,000 USDC donation: a 1,000 USDC deposit "
+                      "loses 0.999001 USDC", custom)
         # Visual verdict #124 (g) (2026-11-20): a bare "&darr;" at the
         # end read as expand / decoration / jump-to-the-failed-item.
         # The strip must say in words where it goes — the full results
@@ -1012,6 +1026,34 @@ class TestChecker(unittest.TestCase):
         self.assertIn("see the full results", passed)
         self.assertIn('<span class="nowrap">below &darr;</span>', passed)
         self.assertNotIn("checks passed &darr;", passed)
+        # An ALL PASS strip carries no loss number: the donation check
+        # passed, so quoting its (nonzero but within-bound) worst loss
+        # next to a pass would read as a failure.
+        self.assertNotIn("loses", passed)
+
+    def test_verdict_strip_no_number_when_no_measured_loss(self):
+        # Visual verdict #146 (2026-11-21): a donation failure with no
+        # measured loss must not invent one. A minimum deposit above
+        # the victim deposit makes every donation row error (the
+        # deposit reverts before any loss exists), so victim_loss is
+        # None on all four rows — the strip falls back to the bare
+        # failed titles, exactly like the share card does.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        results = run_all(Vault(decimals_offset=0, min_deposit=10**15,
+                                perf_fee_bps=0))
+        failed = build.verdict_strip_html(results)
+        don = next(r for r in results
+                   if r["name"] == "donation_inflation")
+        self.assertFalse(don["pass"])
+        self.assertTrue(all(row.get("victim_loss") is None
+                            for row in don["detail"]))
+        self.assertIn("SOME FAILED", failed)
+        self.assertIn("Donation inflation", failed)
+        self.assertNotIn("loses", failed)
+        self.assertNotIn("donation:", failed)
         body = build.checker_body()
         self.assertEqual(body.count("verdict-strip"), 1)
         self.assertLess(body.index("verdict-strip"),
