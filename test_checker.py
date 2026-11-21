@@ -14806,6 +14806,25 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("a donation in a tranched vault is split "
                          "pro-rata", build)
 
+        # (11) Checklist counterfactual: a coupon fixed on the
+        # impaired senior value (50,000) would be 2,500, not
+        # 3,000, so senior takes 500 less and junior resurrects
+        # to 97,500 (2.4375) — LARGER than 97,000, not smaller.
+        # The guide used to say the opposite ("would be
+        # smaller"); the direction is pinned here so the error
+        # cannot come back.
+        self.assertEqual(50_000 * 5 // 100, 2_500)
+        self.assertEqual(100_000 - 2_500, 97_500)
+        self.assertGreater(97_500, 97_000)
+        self.assertEqual(F(97_500, 40_000), F(39, 16))
+        self.assertIn("the coupon would be 2,500 instead of 3,000, "
+                      "so junior's resurrection would be 97,500 "
+                      "rather than 97,000", build)
+        self.assertNotIn("junior's resurrection would be smaller",
+                         build)
+        self.assertNotIn("case 1 below is the tranched-vault",
+                         build)
+
     def test_donation_liquidity_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-donation-liquidity/ to
         # its model: a 1,000,000 USDC / 1,000,000 share vault at $1.00,
