@@ -14064,12 +14064,17 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(round(float(small - 10_000), 6), 101.010101)
         self.assertEqual(F(100_000, 9) / F(10_000, 99), 110)
 
-        # (10) Guide page carries the headline numbers and the
-        # chart widths (Alice's claim by design: 100,000 / 110,000
-        # / 122,222.222222 -> 81.8 / 90.0 / 100.0).
+        # (10) The headline numbers must sit in THIS guide's own
+        # text in build.py — not just somewhere on the site. The
+        # old global pins were vacuous: "110,000" occurs 214 times
+        # in build.py and "90,000" 358 times, so deleting the
+        # donation-claim-window row would not have failed the test.
+        # Section-scope them the way the preview-rounding test does.
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
         self.assertIn("/guides/erc4626-donation-claim-window/", build)
+        start = build.index('add("/guides/erc4626-donation-claim-window/"')
+        section = build[start:build.index('""")', start) + 4]
         for needle in ("110,000", "990,000", "1.111111", "90,000",
                        "810,000", "0.888889", "111,111.111111",
                        "11,111.111111", "888,888.888889",
@@ -14077,15 +14082,18 @@ class TestChecker(unittest.TestCase):
                        "977,777.777778", "77,777.777778",
                        "88,888.888889", "10,101.010101", "101.010101",
                        "width:81.8%", "width:90.0%", "width:100.0%",
-                       "R&sup2; / (S0 &minus; R)"):
-            self.assertIn(needle, build)
+                       "R&sup2; / (S0 &minus; R)", "110&times;",
+                       "nothing is created, it is all transferred "
+                       "from Bob"):
+            self.assertIn(needle, section)
+        # Wrong roundings must not appear in this guide.
+        self.assertNotIn("111,111.111112", section)
+        self.assertNotIn("122,222.222223", section)
 
         # (11) The guide never claims the donation is stolen, and
         # states plainly that the naive overpay is a transfer,
         # not new money.
-        self.assertNotIn("the donation is stolen", build)
-        self.assertIn("nothing is created, it is all transferred "
-                      "from Bob", build)
+        self.assertNotIn("the donation is stolen", section)
 
 
     def test_fot_claim_window_guide_numbers(self):
