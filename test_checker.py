@@ -4885,16 +4885,18 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.", html)
         # Visual verdict #114 new finding (d): the chart legend lived
         # in two places — the omitted-rows header above the bars and
-        # the scale/red footnote below them. It is now one block:
-        # the header above the bars carries the omitted-rows sentence
-        # plus the scale/red explanation, and there is no footnote
-        # below the chart at all.
+        # the scale/red footnote below them. It is now one block.
+        # Visual verdict #139 (2026-11-21): that one block moved
+        # below the axis — the title sits directly above the bars,
+        # and the legend reads as the chart's key, not its preamble.
+        # There is still no footnote below the chart at all.
         # Visual verdict #116 new finding (c): the legend is a list
         # now — one line per idea, each with a bold label — not one
         # paragraph of four sentences.
         self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> The axis runs 0–1 USDC (the worst row is 0.909091 USDC). Gridlines mark 25%, 50% and 75% of the axis.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertNotIn("<p class='loss-head'>", html)
-        self.assertLess(html.index("loss-head"), html.index("loss-row"))
+        self.assertLess(html.index("loss-title"), html.index("loss-row"))
+        self.assertLess(html.index("loss-axis"), html.index("loss-head"))
         self.assertNotIn("<p class='loss-note'>", html)
         self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;padding-left:1.2em}", build.CSS)
         self.assertIn(".loss-head li{margin:.15em 0}", build.CSS)
@@ -4983,7 +4985,10 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> The axis runs 0–1 USDC (the worst row is 0.909091 USDC). Gridlines mark 25%, 50% and 75% of the axis.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
-        self.assertLess(html.index("loss-head"), html.index("loss-row"))
+        # Visual verdict #139 (2026-11-21): the legend follows the
+        # axis now — title, bars, axis, then the key.
+        self.assertLess(html.index("loss-title"), html.index("loss-row"))
+        self.assertLess(html.index("loss-axis"), html.index("loss-head"))
         self.assertNotIn("<p class='loss-note'>", html)
         # Giant minimum deposit: every row errors, no number to chart.
         html = build.results_html(
@@ -5305,7 +5310,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-row{display:contents}",
                       build.CSS)
         self.assertIn(".loss-chart--bare .loss-head{grid-column:1/-1;"
-                      "margin-bottom:.25em}",
+                      "margin:.45em 0 0}",
                       build.CSS)
         self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;"
                       "font-weight:600;margin:0 0 .1em}",
