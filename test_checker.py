@@ -14776,8 +14776,9 @@ class TestChecker(unittest.TestCase):
         spec.loader.exec_module(model)
 
         F = Fraction
-        # (1) Baseline yield +10,000 (overlap: tranched-vault case
-        # 1): senior takes coupon 3,000, junior residual 7,000;
+        # (1) Baseline yield +10,000 (overlap: the tranched-vault
+        # opening example): senior takes coupon 3,000, junior
+        # residual 7,000;
         # senior 63,000 at 21/20, junior 47,000 at 47/40.
         self.assertEqual(min(10_000, 3_000), 3_000)
         self.assertEqual(60_000 + 3_000, 63_000)
@@ -14847,11 +14848,11 @@ class TestChecker(unittest.TestCase):
                        "width:29.2%"):
             self.assertIn(needle, build)
 
-        # (10) The guide states the honest overlap (case 1 is the
-        # tranched-vault case 1, relabelled) and that the new
-        # content is cases 2-8; it never claims the donation is
-        # split pro-rata in a tranched vault.
-        self.assertIn("The new content here is cases 2", build)
+        # (10) The guide states the honest overlap (the baseline
+        # is the tranched-vault opening example, relabelled) and
+        # that the new content is §A-§D; it never claims the
+        # donation is split pro-rata in a tranched vault.
+        self.assertIn("The new content here is §A:", build)
         self.assertNotIn("a donation in a tranched vault is split "
                          "pro-rata", build)
 
@@ -14873,6 +14874,43 @@ class TestChecker(unittest.TestCase):
                          build)
         self.assertNotIn("case 1 below is the tranched-vault",
                          build)
+
+        # (12) The overlap note cites the guide's own §A-§D, not
+        # the model-only case numbers: the tranched-vault guide
+        # has no numbered cases (its opening section is "The
+        # yield split: senior 1.05, junior 1.175"), and this
+        # guide's own sections are A-D. Section-scoped so the
+        # pins cannot bleed into the next guide.
+        start = build.find('add("/guides/erc4626-donation-tranche/"')
+        end = build.find('\nadd("/guides/', start + 10)
+        section = build[start:end]
+        for old in ("is the tranched-vault guide's first case",
+                    "The new content here is cases 2",
+                    "case 4: a sub-coupon donation",
+                    "cases 5–6: the loss waterfall",
+                    "case 7: a donation resurrects",
+                    "case 8: splitting one donation",
+                    "A guide that only re-reported case 1 would be "
+                    "a relabel"):
+            self.assertNotIn(old, section)
+        for new in ("is the tranched-vault guide's opening example",
+                    "§A: the",
+                    "§B: a sub-coupon donation goes entirely to "
+                    "senior",
+                    "§C: the loss waterfall",
+                    "§D: splitting one donation across two accrual "
+                    "periods",
+                    "A guide that only re-reported the baseline "
+                    "would be a relabel"):
+            self.assertIn(new, section)
+        # The model docstring had the same misattribution: case 4's
+        # senior price is 31/30, not 1.05 — 1.05 is case 2's (and
+        # case 1's) senior price. (The "coupon" needle stops
+        # before the docstring's line wrap.)
+        self.assertIn("case 2's senior price 1.05 repeats the same "
+                      "coupon", model.__doc__)
+        self.assertNotIn("case 4's senior price 1.05",
+                         model.__doc__)
 
     def test_donation_liquidity_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-donation-liquidity/ to
