@@ -4063,6 +4063,11 @@ class TestChecker(unittest.TestCase):
         # removed the margin-top:auto pinning: unpinned links follow
         # their body text, so balanced bodies keep the three links
         # at near-equal heights instead of drifting apart.
+        # Visual verdict #145 (2026-11-21): the cards were single
+        # dense paragraphs, so each card is now a lead paragraph plus
+        # a short bullet list. The body is measured across the whole
+        # card (lead + bullets, bottom link excluded) — the first
+        # paragraph alone no longer holds the body.
         import re
         import sys
         from pathlib import Path
@@ -4070,11 +4075,14 @@ class TestChecker(unittest.TestCase):
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         cards = re.findall(
-            r'<section class="card"><h2>([^<]*)</h2>\s*<p>(.*?)</p>',
+            r'<section class="card"><h2>([^<]*)</h2>(.*?)<p class="card-link">',
             home, re.S)
         self.assertEqual(len(cards), 3)
         bodies = {}
         for title, body in cards:
+            self.assertIn("<ul>", body, "%s card has no bullet list" % title)
+            self.assertGreaterEqual(body.count("<li>"), 2,
+                                    "%s card has fewer than 2 bullets" % title)
             text = re.sub(r"<[^>]+>", "", body)
             bodies[title] = len(text)
         self.assertIn("rounding, donation inflation, preview consistency, "
