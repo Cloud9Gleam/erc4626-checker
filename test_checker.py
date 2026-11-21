@@ -1439,9 +1439,16 @@ class TestChecker(unittest.TestCase):
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
+        # Checker-improvement (2026-11-22): the banner margin was
+        # 1.2em (30px top and bottom) — dead space in the form ->
+        # banner stack, measured 141px desktop / 234px at 360px
+        # (2026-11-22 02:37). Halved to .6em; the banner is a result
+        # box directly after the Parameters box, not a section
+        # heading, and the notice below it tightens by the same
+        # amount. The 1.2em pin below is intentionally overturned.
         self.assertIn(
             ".result-banner{font-size:1.45em;font-weight:700;"
-            "border-radius:8px;padding:.75em 1em;margin:1.2em 0;"
+            "border-radius:8px;padding:.75em 1em;margin:.6em 0;"
             "display:flex;align-items:center;gap:.5em}",
             build.CSS)
         self.assertIn(
@@ -1454,6 +1461,34 @@ class TestChecker(unittest.TestCase):
             "@media (max-width:640px){.result-banner{flex-wrap:wrap}"
             ".result-banner .copy-link-btn{flex:1 1 100%;",
             build.CSS)
+
+    def test_form_to_banner_stack_is_tight(self):
+        # Checker-improvement (2026-11-22): the form -> banner stack
+        # measured 141px at desktop width and 234px at 360px
+        # (2026-11-22 02:37, hidden_files/measure-form-banner-gap.py).
+        # Two of its layers were slack: the Parameters box forced
+        # three lines with <br> (101px desktop / 196px mobile) and
+        # the banner carried a 1.2em (30px) top margin. Both halves
+        # are pinned here together — the params sentences flow and
+        # the banner margin is .6em — in the Python render and the
+        # Worker render. Numbers and wording are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        html = build.checker_body()
+        params = html.split("<p class='params'>")[1].split("</p>")[0]
+        self.assertNotIn("<br>", params)
+        self.assertIn("fee 1000 bps.", params)
+        self.assertIn("Victim deposit 100,000 USDC", params)
+        self.assertIn("Vault state 0 USDC", params)
+        self.assertIn("margin:.6em 0;display:flex", build.CSS)
+        self.assertNotIn("margin:1.2em 0;display:flex", build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("margin:.6em 0;display:flex", worker)
+        self.assertIn("bps. Victim deposit", worker)
+        self.assertIn("USDC. Vault state", worker)
 
     def test_verdict_strip_full_width(self):
         # Visual verdict #120 checker item 1 (2026-11-19): the strip is a
@@ -6695,13 +6730,26 @@ class TestChecker(unittest.TestCase):
         # two lines at desktop width. Each of the three parameter
         # groups now gets its own line (<br> between groups); the
         # numbers and the wording are untouched.
-        self.assertIn("fee 1000 bps.<br>\nVictim deposit", html)
-        self.assertIn("1,000,000,000 USDC.<br>\nVault state", html)
+        # Checker-improvement (2026-11-22): that decision is
+        # overturned. The forced breaks cost a full line at desktop
+        # and ~2.5 lines at 360px in the form -> banner stack
+        # (measured 2026-11-22 02:37: params box 101px desktop /
+        # 196px mobile, form -> banner 141px / 234px) — and the box
+        # has been a light card with padding and a border since
+        # verdict #99, so the card itself separates the groups now;
+        # flowing text inside it reads fine. The three sentences
+        # stay in the same order with the same words and numbers,
+        # only the <br>s are gone.
+        self.assertIn("fee 1000 bps.\nVictim deposit", html)
+        self.assertIn("1,000,000,000 USDC.\nVault state", html)
+        self.assertNotIn("<br>", html.split("<p class='params'>")[1].split("</p>")[0])
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".params{background:#f9fafb;", worker)
-        self.assertIn("bps.<br>Victim deposit", worker)
-        self.assertIn("USDC.<br>Vault state", worker)
+        self.assertIn("bps. Victim deposit", worker)
+        self.assertIn("USDC. Vault state", worker)
+        self.assertNotIn("bps.<br>Victim deposit", worker)
+        self.assertNotIn("USDC.<br>Vault state", worker)
         # JS twin of the Python template must carry the same short
         # wording (verdict #100 follow-up): no duplicated base-units
         # figure, no "in the donation check" filler.
