@@ -3116,7 +3116,8 @@ class TestChecker(unittest.TestCase):
                       '<span class="track-findings">66 findings · 15H 32M 19L</span> — '
                       '66 of 70 '
                       'awarded findings re-derived (16 High, 35 Medium, '
-                      '19 Low; $70,000 pool), four presented as MISSes. '
+                      '19 Low; $70,000 pool), four presented as MISSes (1 High, '
+                      '3 Medium). '
                       '<span class="track-detail">forge PoCs for M-NEGCAP 2/2, '
                       'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
         # Visual verdict #145 (2026-11-21): Gamma was the first "N of M"
@@ -3132,7 +3133,7 @@ class TestChecker(unittest.TestCase):
             r'<span class="track-findings">25 findings · 5H 8M 12L</span> — '
             r'25 of 27 validated\s+contest findings re-verified '
             r'\(5 High, 9 Medium, 13 Low; \$50,000 pool\), two presented '
-            r'as MISSes, four with\s+forge PoCs, one live on-chain\.</li>')
+            r'as MISSes \(1 Medium, 1 Low\), four with\s+forge PoCs, one live on-chain\.</li>')
         # 2026-11-21 22:37, full audit of all 41 Track record entries:
         # the 21:37 round's "Gamma was the only one" was incomplete —
         # Thunder Loan's "6 of 7" also left the seventh's fate
@@ -3161,6 +3162,67 @@ class TestChecker(unittest.TestCase):
             r'passing\.</span>')
         self.assertIn(".track-detail{display:block;font-size:.92em;"
                       "color:#4b5563;margin-top:.25em}", build.CSS)
+
+    def test_track_record_miss_severities_are_stated(self):
+        # Visual verdict #144 (2026-11-21): the Track record entries
+        # said "two/four presented as MISSes" but not WHICH severities
+        # — the reader still had to subtract the pill split from the
+        # contest split (Gamma 27-25, Zaros 70-66) to learn the misses
+        # were 1M+1L and 1H+3M. Verdict #145 had already fixed the
+        # misses' FATE (presented as MISSes, not silently dropped);
+        # this states their severities in the sentence itself.
+        # Ground truth is the review pages' own MISS sections, not
+        # just the arithmetic: Gamma names M-05 (Medium) and L-12
+        # (Low); Zaros names H-LPREDEEM (High) and M-FEEDIST,
+        # M-OWNABLEINIT, M-CONNVAULT (Mediums).
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        self.assertIn("two presented as MISSes (1 Medium, 1 Low)", audit)
+        self.assertIn("four presented as MISSes (1 High, 3 Medium)", audit)
+        # The severities must reconcile: pill split + miss split =
+        # contest split, so a future edit cannot silently break the
+        # count the entry itself states.
+        gamma = pages["/research/gamma/"]
+        self.assertIn("M-05 — presented as a MISS, not a finding", gamma)
+        self.assertIn("L-12 — presented as a MISS, not a finding", gamma)
+        zaros = pages["/research/zaros/"]
+        self.assertIn("H-LPREDEEM", zaros)
+        for mid in ("M-FEEDIST", "M-OWNABLEINIT", "M-CONNVAULT"):
+            self.assertIn(mid, zaros)
+        self.assertIn("Four groups are presented as <strong>MISSes</strong>", zaros)
+        # The severities must reconcile against the page itself: pill
+        # split (re-verified) + miss split = contest split, so a future
+        # edit cannot silently break the count the entry itself states.
+        def splits(slug, miss_re, miss_map):
+            m = re.search(
+                r'<a href="/research/%s/">.*?<span class="track-findings">'
+                r'(\d+) findings · (\d+)H (\d+)M (\d+)L</span>'
+                % re.escape(slug), audit, re.S)
+            self.assertIsNotNone(m, slug)
+            pill = tuple(int(x) for x in m.groups()[1:])
+            m = re.search(
+                r'(\d+) High, (\d+) Medium, (\d+) Low', audit[m.start():])
+            self.assertIsNotNone(m, slug)
+            contest = tuple(int(x) for x in m.groups())
+            m = re.search(miss_re, audit[m.start():])
+            self.assertIsNotNone(m, slug)
+            miss = miss_map(tuple(int(x) for x in m.groups()))
+            return pill, miss, contest
+        for slug, miss_re, miss_map in (
+                ("gamma",
+                 r'two presented as MISSes \((\d+) Medium, (\d+) Low\)',
+                 lambda g: (0, g[0], g[1])),
+                ("zaros",
+                 r'four presented as MISSes \((\d+) High, (\d+) Medium\)',
+                 lambda g: (g[0], g[1], 0))):
+            pill, miss, contest = splits(slug, miss_re, miss_map)
+            self.assertEqual(tuple(p + m for p, m in zip(pill, miss)),
+                             contest)
 
     def test_thunder_loan_canonical_counts_reconcile(self):
         # Visual verdict #146 (2026-11-21): the /audit/ line said "4
