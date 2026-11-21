@@ -3622,6 +3622,39 @@ class TestChecker(unittest.TestCase):
                       build.CSS)
         self.assertEqual(track.count('<a href="/research/'), 41)
 
+    def test_audit_track_cards_have_breathing_room(self):
+        # Visual verdict 2026-11-22 (desktop 1919x998, real render):
+        # the Track record cards read as one continuous grey-edged
+        # text wall — .6em gaps and .6em/.8em padding packed 3-4
+        # dense entries into a single block, far denser than the
+        # site's otherwise sparse pages. Both card lists (--long for
+        # First Flight, --cards for the short groups) now carry more
+        # air inside (.9em/1em) and between (1em) the cards, so each
+        # entry scans as its own card. Copy and structure untouched;
+        # .track-detail's .25em top margin stays (#136's deliberate
+        # lead/detail split). Last-child keeps margin-bottom:0.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".track-list--long li{background:#fff;border:1px solid #e5e7eb;"
+                      "border-left:3px solid #0a7d2c;"
+                      "border-radius:8px;padding:.9em 1em;margin-bottom:1em}",
+                      build.CSS)
+        self.assertIn(".track-list--cards li{background:#fff;border:1px solid #e5e7eb;"
+                      "border-left:3px solid #0a7d2c;"
+                      "border-radius:8px;padding:.9em 1em;margin-bottom:1em}",
+                      build.CSS)
+        self.assertIn(".track-group .track-list--long li:last-child{border:1px solid #e5e7eb;"
+                      "border-left:3px solid #0a7d2c;"
+                      "padding:.9em 1em;margin-bottom:0}", build.CSS)
+        self.assertIn(".track-group .track-list--cards li:last-child{border:1px solid #e5e7eb;"
+                      "border-left:3px solid #0a7d2c;"
+                      "padding:.9em 1em;margin-bottom:0}", build.CSS)
+        self.assertNotIn("padding:.6em .8em;margin-bottom:.6em}", build.CSS)
+        self.assertIn(".track-detail{display:block;font-size:.92em;"
+                      "color:#4b5563;margin-top:.25em}", build.CSS)
+
     def test_audit_what_you_get_is_a_list(self):
         # /audit/ "What you get" was one dense paragraph — the section
         # that sells the deliverable buried its four facts in a single
