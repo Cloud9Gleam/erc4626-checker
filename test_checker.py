@@ -1046,6 +1046,24 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:460px){.twrap-hint{display:block",
                       build.CSS)
 
+    def test_checker_hint_rows_align(self):
+        # Visual verdict #142 item 4 (2026-11-21): in the 3-column form
+        # the offset and vault-assets hints wrap to 2 lines while the
+        # other four stay on 1, so the 1-line fields carried ~25px of
+        # dead space below their hint (headless-shell measurement at
+        # 1919px: hint bottoms 575 vs 599 in the same row). The hint is
+        # pinned to exactly two lines above 640px (line-height 1.5 makes
+        # 2 lines = 3em); below 640px the form is a single column, so
+        # the rule must not apply there. Exactly one occurrence: the
+        # scoped rule, not a second unscoped copy.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        rule = "#checker-form .hint{line-height:1.5;min-height:3em}"
+        self.assertIn("@media (min-width:641px){" + rule + "}", build.CSS)
+        self.assertEqual(build.CSS.count(rule), 1)
+
     def test_run_checks_button_is_sticky(self):
         # Headless measurement (2026-11-20, checker-improvement):
         # at 1919x998 the submit button's natural top is 1124px
