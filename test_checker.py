@@ -14175,14 +14175,34 @@ class TestChecker(unittest.TestCase):
         # (5) Oracle catches up after the -10% rebase: oracle $0.90,
         # capacity 72,000, excess debt 8,000. Repay 9,000, seize
         # 9,000 / 0.90 = 10,000 shares. After: debt 71,000, 90,000
-        # shares worth 81,000, LTV 71/81, debt back under capacity.
+        # shares worth 81,000, LTV 71/81 -- but NOT healthy: the
+        # seizure shrinks the capacity it is measured on, to
+        # 90,000 x 0.90 x 0.80 = 64,800, so the debt is still
+        # 6,200 over and the LTV is still above the 80% factor.
+        # Restoring health takes a further 34,445 shares seized
+        # (44,445 total): each seized share repays $0.90 of debt
+        # but removes $0.90 of collateral, so the gap closes only
+        # $0.18 a share and 6,200 / 0.18 = 34,444.44... rounds up
+        # to a whole share. An earlier version of this test
+        # asserted 71,000 <= 72,000 -- post-seizure debt against
+        # pre-seizure capacity -- and the guide claimed the
+        # seizure restored health; both were wrong.
         self.assertEqual(100_000 * F(9, 10) * CF, 72_000)
         self.assertEqual(80_000 - 72_000, 8_000)
         self.assertEqual(F(9_000, 1) / F(9, 10), 10_000)
         self.assertEqual(80_000 - 9_000, 71_000)
         self.assertEqual(90_000 * F(9, 10), 81_000)
         self.assertEqual(F(71_000, 81_000), F(71, 81))
-        self.assertLessEqual(71_000, 72_000)
+        self.assertGreater(F(71, 81), CF)
+        self.assertEqual(90_000 * F(9, 10) * CF, 64_800)
+        self.assertEqual(71_000 - 64_800, 6_200)
+        from math import ceil
+        self.assertEqual(ceil(F(6_200, 1) / F(9, 50)), 34_445)
+        self.assertEqual(10_000 + 34_445, 44_445)
+        self.assertGreater(F(71_000, 1) - F(9, 10) * 34_444,
+                           (F(81_000, 1) - F(9, 10) * 34_444) * CF)
+        self.assertLessEqual(F(71_000, 1) - F(9, 10) * 34_445,
+                             (F(81_000, 1) - F(9, 10) * 34_445) * CF)
         # (6) Timing: +10% rebase, oracle updates to $1.10, capacity
         # rises to 88,000, Alice draws the extra 8,000 (debt
         # 88,000). Then -20% from 1,100,000 leaves 880,000, price
@@ -14210,9 +14230,17 @@ class TestChecker(unittest.TestCase):
                        "72,000", "71,000", "81,000", "88,000",
                        "880,000", "10,000", "4,000", "8/9", "8/11",
                        "71/81", "22/25", "88.89%", "72.73%",
-                       "87.65%", "width:100.0%", "width:81.8%",
+                       "87.65%", "64,800", "6,200", "34,445",
+                       "44,445", "width:100.0%", "width:81.8%",
                        "width:72.7%"):
             self.assertIn(needle, build)
+
+        # (8b) The old false health claim is gone: post-seizure debt
+        # was never "back under" the pre-seizure 72,000 capacity,
+        # and one 10,000-share seizure never restored health.
+        for gone in ("back under the 72,000 capacity",
+                     "One 10,000-share seizure restores health"):
+            self.assertNotIn(gone, build)
 
         # (9) The guide states the honest overlap (rebase price moves
         # are the rebasing-underlying numbers; the 80% factor and
