@@ -15524,7 +15524,9 @@ class TestChecker(unittest.TestCase):
                        "0.407916",
                        "width:0.4%", "width:0.0%", "width:100.0%"):
             self.assertIn(needle, build)
-        self.assertIn("The new content here is cases 2", build)
+        self.assertIn("The new content here is §C: a fee paid to the "
+                      "manager or taken in shares is donation-invariant "
+                      "to within a dollar", build)
 
         # (9) The headline numbers must sit in THIS guide's own
         # text: "36.947463" and "8,675.799087" appear in the index
@@ -15537,6 +15539,49 @@ class TestChecker(unittest.TestCase):
             self.assertIn(needle, section)
         self.assertIn("the recapture channel does not exist", section)
         self.assertIn("A donation by itself never bills", section)
+
+        # (10) The overlap note used to cite model case numbers
+        # ("case 1 below", "cases 2 and 5", "case 3", "case 4",
+        # "case 6") that never appear as labels in this guide — its
+        # body is sections A-D, so a reader looking for "case 1
+        # below" finds no case 1. The deposit-fee guide it cites
+        # has no numbered cases either — its retained-fee case is
+        # "Design (b)". The note now points at the sections
+        # instead, and the baseline is stated as the deposit-fee
+        # guide's retained-fee design (b) at the same 1,000,000
+        # scale — not "relabelled", the numbers are identical.
+        # Slice to the next guide's add( exactly: the 12000-char
+        # slice above bleeds into the exit-fee guide.
+        section = build[start:build.index(
+            'add("/guides/erc4626-donation-exit-fee/"', start)]
+        for dead in ("case 1 below is the deposit-fee",
+                     "The new content here is cases 2 and 5",
+                     "case 3: under a retained fee",
+                     "case 4: the same gift, deposit first",
+                     "case 6, the control: with no fee",
+                     "relabelled at the 1,000,000 vault scale",
+                     "A guide that only re-reported case 1 would be"):
+            self.assertNotIn(dead, section)
+        for live in ("the baseline — a 5% retained fee with no "
+                     "donation at all costs the depositor "
+                     "<strong>4,566.210046</strong>, not 5,000 — is the "
+                     "deposit-fee guide's retained-fee design (b), "
+                     "unchanged",
+                     "The new content here is §C: a fee paid to the "
+                     "manager or taken in shares is donation-invariant "
+                     "to within a dollar",
+                     "§A: under a retained fee the donation bills the "
+                     "later depositor <strong>36.947463</strong>, "
+                     "through a smaller recapture",
+                     "§B: the same gift, deposit first, pays her "
+                     "<strong>8,675.799087</strong> — an "
+                     "<strong>8,712.746550</strong> ordering swing",
+                     "§D, the control: with no fee at all the donation "
+                     "costs the later depositor <strong>0.091667</strong> "
+                     "of dust",
+                     "A guide that only re-reported the baseline "
+                     "would be a relabel, not a finding"):
+            self.assertIn(live, section)
 
     def test_donation_exit_fee_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-donation-exit-fee/
