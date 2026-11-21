@@ -1064,6 +1064,34 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (min-width:641px){" + rule + "}", build.CSS)
         self.assertEqual(build.CSS.count(rule), 1)
 
+    def test_footer_contrast_on_sage(self):
+        # Visual verdict #142 item 13 (2026-11-21): the footer sits
+        # outside <main>, directly on the sage body background
+        # #c9d1c9 — the old #6b7280 footer text was ~3.1:1, below
+        # WCAG AA 4.5:1 for normal text. Both the footer text and
+        # its links must clear 4.5:1 against the sage, computed
+        # from the colours actually in build.CSS (not hardcoded
+        # here), so a future grey swap that breaks AA fails loudly.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+
+        def lum(hexs):
+            rgb = [int(hexs[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+            lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+                   for c in rgb]
+            return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+        bg = re.search(r"body\{[^}]*background:(#[0-9a-f]{6})", build.CSS).group(1)
+        self.assertEqual(bg, "#c9d1c9")
+        for rule in (r"footer\{[^}]*color:(#[0-9a-f]{6})",
+                     r"footer a\{[^}]*color:(#[0-9a-f]{6})"):
+            fg = re.search(rule, build.CSS).group(1)
+            ratio = (lum(bg[1:]) + 0.05) / (lum(fg[1:]) + 0.05)
+            self.assertGreaterEqual(ratio, 4.5, f"{rule} {fg} vs {bg}: {ratio:.2f}:1")
+
     def test_run_checks_button_is_sticky(self):
         # Headless measurement (2026-11-20, checker-improvement):
         # at 1919x998 the submit button's natural top is 1124px
