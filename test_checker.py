@@ -974,6 +974,43 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
 
+    def test_results_notice_sits_under_banner(self):
+        # Visual verdict #146 (2026-11-22, checker-improvement): the
+        # failure notice — audit CTA, offset-6 re-run, slippage bound —
+        # sat after all six check cards: on the live noprot page it was
+        # ~28KB below the first card, so a visitor who stopped at the
+        # failing table never saw the next step. The notice is the
+        # interpretation of the verdict, so it goes directly under the
+        # result banner, before the evidence cards. Content unchanged —
+        # only the position moves, in both renderers.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertLess(failed.index("A check failed"),
+                        failed.index("check-card"))
+        self.assertIn("/audit/?result=failed", failed)
+        self.assertIn("offset 6</a>", failed)
+        self.assertIn("/guides/erc4626-slippage-bounds/", failed)
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertLess(passed.index("This preset passes"),
+                        passed.index("check-card"))
+        self.assertIn("/audit/?result=passed", passed)
+        # Worker JS renderer: the notice block must precede the cards
+        # loop in resultsHTML, not trail it.
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        self.assertLess(fn.index("let n=\"<div class='notice'>"),
+                        fn.index("for(const r of results){"))
+        self.assertLess(fn.index("else h+=\"<div class='notice'>"),
+                        fn.index("for(const r of results){"))
+
     def test_verdict_strip_above_form(self):
         # Visual verdict #119 item 2 (2026-11-19): the result banner
         # sits below the form, so a visitor arriving on
