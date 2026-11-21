@@ -14158,24 +14158,46 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(F(19_000, 100_000), F(19, 100))
         self.assertEqual(F(1, 1) - F(9, 10) ** 2, F(19, 100))
 
-        # (9) Guide page carries the headline numbers and the chart
-        # widths (Alice's claim by design: gross 109,000 / net 98,100
-        # / fixed net 90,000 -> 100.0 / 90.0 / 82.6).
+        # (9) The headline numbers must sit in THIS guide's own
+        # text in build.py — not just somewhere on the site. The
+        # old global pins were vacuous: "90,000" occurs 358 times
+        # in build.py, "1.10" 250 times, "990,000" 79 times and
+        # "width:100.0%" 53 times, so deleting the whole
+        # fot-claim-window row would not have failed the test.
+        # Section-scope them the way the donation-claim-window
+        # test does. Chart widths (gross 109,000 / net 98,100 /
+        # fixed net 90,000 -> 100.0 / 90.0 / 82.6).
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
         self.assertIn("/guides/erc4626-fot-claim-window/", build)
+        start = build.index('add("/guides/erc4626-fot-claim-window/"')
+        section = build[start:build.index('""")', start) + 4]
         for needle in ("109,000", "98,100", "10,900", "981,000",
                        "90,000", "990,000", "1.09", "1.10", "81,000",
                        "810,000", "0.888889", "8,100", "19,000",
                        "width:100.0%", "width:90.0%", "width:82.6%",
-                       "1 &minus; 0.9&sup2;"):
-            self.assertIn(needle, build)
+                       "1 &minus; 0.9&sup2;",
+                       # Round-trip cross-reference: the FoT guide
+                       # proves the 19% tax at 11,000 scale, which
+                       # is a 190,000 floor on a 1,000,000 trip.
+                       "11,000 in and 8,910 out", "190,000 floor",
+                       "19% round-trip tax"):
+            self.assertIn(needle, section)
+        # Wrong roundings and the old misattribution (the FoT guide
+        # never states a 190,000 figure — it proves 19% at 11,000
+        # scale) must not appear in this guide.
+        self.assertNotIn("98,101", section)
+        self.assertNotIn("10,901", section)
+        self.assertNotIn("0.888888", section)
+        self.assertNotIn("guide's 190,000 floor on a 1,000,000 "
+                         "round trip", section)
 
         # (10) The guide states the honest overlap (gross figures are
         # the donation-claim-window numbers repriced) and that the
-        # wedge leaves the system, not to Bob.
-        self.assertIn("The new content here is the tax wedge", build)
-        self.assertIn("it is not a transfer to Bob", build)
+        # wedge leaves the system, not to Bob — in this guide's
+        # own text.
+        self.assertIn("The new content here is the tax wedge", section)
+        self.assertIn("it is not a transfer to Bob", section)
 
     def test_rebase_collateral_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-rebase-collateral/
