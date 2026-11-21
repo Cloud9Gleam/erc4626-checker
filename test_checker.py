@@ -1007,9 +1007,66 @@ class TestChecker(unittest.TestCase):
         js = build.checker_results_html_js()
         fn = js[js.index("function resultsHTML"):]
         self.assertLess(fn.index("let n=\"<div class='notice'>"),
-                        fn.index("for(const r of results){"))
+                        fn.index("for(const r of ordered){"))
         self.assertLess(fn.index("else h+=\"<div class='notice'>"),
-                        fn.index("for(const r of results){"))
+                        fn.index("for(const r of ordered){"))
+
+    def test_failing_checks_render_first(self):
+        # Visual verdict #147 follow-up (2026-11-22,
+        # checker-improvement): on the live noprot page the donation
+        # table sat 951px below the banner at desktop width (1,673px
+        # at 360px), behind the passing Rounding card — the verdict
+        # was a screen and a half above its evidence. Failing checks
+        # render first, in both renderers; the canonical order
+        # survives within each group (stable sort), the banner still
+        # names the failures, and an ALL PASS run is unchanged.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+
+        def card_titles(html):
+            cards = html.split("<section class='check-card'>")[1:]
+            return [c.split("</span> ", 1)[1].split("</h3>", 1)[0]
+                    for c in cards]
+
+        # One failure: the donation card jumps from 2nd to 1st.
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertEqual(
+            card_titles(failed),
+            ["Donation inflation", "Rounding directions",
+             "Minimum viable deposit", "Preview consistency",
+             "Fee conservation", "Share-price sanity"])
+        # Two failures: both lead, in canonical order, then passes.
+        two = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=10**15,
+                          perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=10**15, fee=0)
+        self.assertEqual(
+            card_titles(two),
+            ["Donation inflation", "Minimum viable deposit",
+             "Rounding directions", "Preview consistency",
+             "Fee conservation", "Share-price sanity"])
+        # ALL PASS: order unchanged.
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertEqual(
+            card_titles(passed),
+            ["Rounding directions", "Donation inflation",
+             "Minimum viable deposit", "Preview consistency",
+             "Fee conservation", "Share-price sanity"])
+        # Worker JS renderer: resultsHTML sorts the same way.
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        self.assertIn(
+            "const ordered=[...results].sort((a,b)=>(a.pass?1:0)-(b.pass?1:0));",
+            fn)
+        self.assertIn("for(const r of ordered){", fn)
+        self.assertNotIn("for(const r of results){", fn)
 
     def test_verdict_strip_above_form(self):
         # Visual verdict #119 item 2 (2026-11-19): the result banner
