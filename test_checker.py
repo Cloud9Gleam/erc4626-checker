@@ -2719,25 +2719,137 @@ class TestChecker(unittest.TestCase):
             if '<span class="track-detail">' not in entry:
                 continue
             self.assertRegex(entry,
-                             r'</a> — [^<]*\.\s<span class="track-detail">',
+                             r'</a>(?:<span class="track-findings">[^<]*</span>)?'
+                             r' — [^<]*\.\s<span class="track-detail">',
                              entry[:80])
             self.assertRegex(entry,
                              r'<span class="track-detail">[^<]*\.</span></li>',
                              entry[:80])
         # Spot checks: the leads are complete sentences, details intact.
-        self.assertIn('<a href="/research/thunder-loan/">Thunder Loan</a> — '
+        self.assertIn('<a href="/research/thunder-loan/">Thunder Loan</a>'
+                      '<span class="track-findings">4 findings · 3H 1M</span> — '
                       'four flash-loan findings, all forge-proven (3 High, '
                       '1 Medium graded High by the canonical report). '
                       '<span class="track-detail">6 of 7 canonical High+Medium '
                       'findings independently reproduced, 15/15 tests passing.'
                       '</span>', track)
-        self.assertIn('<a href="/research/zaros/">Zaros Part 2</a> — 66 of 70 '
+        self.assertIn('<a href="/research/zaros/">Zaros Part 2</a>'
+                      '<span class="track-findings">66 findings · 15H 32M 19L</span> — '
+                      '66 of 70 '
                       'awarded findings re-derived (16 High, 35 Medium, '
                       '19 Low; $70,000 pool), four presented as MISSes. '
                       '<span class="track-detail">forge PoCs for M-NEGCAP 2/2, '
                       'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
         self.assertIn(".track-detail{display:block;font-size:.92em;"
                       "color:#4b5563;margin-top:.25em}", build.CSS)
+
+    def test_audit_track_record_entries_carry_findings_labels(self):
+        # Visual verdict #137 second half (2026-11-21): the First Flight
+        # wall is 33 cards whose severity only shows inside the lead
+        # sentence — a buyer scanning the wall cannot tell at a glance
+        # which reviews found Highs. Each entry now carries a small pill
+        # right after its title with the finding count and severity
+        # split. Every label was cross-checked against the review's own
+        # page table (not just the lead) before it was written:
+        # - Gamma: the lead's split (5H 9M 13L) is of the 27 validated;
+        #   the page table lists only the 25 re-verified rows (5H 8M
+        #   12L; the two MISSes are M-05 and L-12).
+        # - Zaros: same shape — 70 rows (16H 35M 19L), four MISS rows
+        #   (1 High + 3 Medium), so the re-verified 66 are 15H 32M 19L.
+        # - Algo: the table has 4 rows but M-1 is a documented MISS
+        #   (dismissed, later recognised as a canonical High), not one
+        #   of the 3 submitted findings (1H 2L).
+        # - Nexus: L-1–L-6 share one table row; 4 + 4 + 6 = 14.
+        # - Dutch clock: no table; the page intro states "Severity:
+        #   Medium", so the single finding is 1M.
+        # - The patterns playbook gets NO label: 77 patterns are not
+        #   findings, and a "77 findings" pill would be false.
+        # - Thunder Loan / MyCut / AirDropper / Rust Fund have a second
+        #   canonical-mapping table that inflates raw severity-cell
+        #   counts; their finding-id cells match the lead.
+        # Zero severities are omitted from a label (Beatland has no H,
+        # OpenEden no H, Vyper Vested Claims no H); Info counts
+        # show as "N Info" only where the lead states them.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        expected = {
+            "gamma": "25 findings · 5H 8M 12L",
+            "battlechain-confidence-pools": "9 findings · 3M 6L",
+            "zaros": "66 findings · 15H 32M 19L",
+            "thunder-loan": "4 findings · 3H 1M",
+            "puppy-raffle": "9 findings · 2H 2M 5L",
+            "santa": "6 findings · 4H 1M 1L",
+            "beatland": "6 findings · 2M 4L",
+            "snowman": "5 findings · 1H 2M 2L",
+            "datingdapp": "7 findings · 1H 1M 3L · 2 Info",
+            "mycut": "6 findings · 2H 2M 2L",
+            "algo": "3 findings · 1H 2L",
+            "airdropper": "6 findings · 3H 1M 2L",
+            "rust-fund": "8 findings · 2H 2M 4L",
+            "stratax": "7 findings · 1H 3M 3L",
+            "nft-dealers": "5 findings · 2H 1M 2L",
+            "vanguard": "6 findings · 1H 2M 3L",
+            "multisig-timelock": "7 findings · 1H 3M 3L",
+            "rebatefi-hook": "6 findings · 1H 2M 3L",
+            "token-0x": "6 findings · 1H 3M 2L",
+            "brivault": "7 findings · 3H 2M 2L",
+            "raisebox-faucet": "5 findings · 1H 2M 2L",
+            "president-elector": "7 findings · 1H 2M 4L",
+            "bid-beasts": "7 findings · 2H 1M 4L",
+            "last-man-standing": "7 findings · 1H 2M 4L",
+            "orderbook": "6 findings · 1H 2M 3L",
+            "weather-witness": "9 findings · 2H 3M 4L",
+            "company-simulator": "9 findings · 3H 3M 3L",
+            "eggstravaganza": "5 findings · 1H 2M 2L",
+            "rock-paper-scissors": "10 findings · 1H 4M 5L",
+            "hawk-high": "10 findings · 3H 3M 4L",
+            "ssswap": "6 findings · 1H 1M 2L · 2 Info",
+            "inheritable-smart-contract-wallet": "15 findings · 2H 8M 5L",
+            "open-eden": "10 findings · 2M 4L · 4 Info",
+            "vyper-vested-claims": "7 findings · 2M 5L",
+            "curve-storage-proofs": "11 findings · 6L · 5 Info",
+            "snarkeling": "7 findings · 1H 2M 4L",
+            "raac": "4 findings · 3H 1M",
+            "quantamm": "1 finding · 1M",
+            "nexus": "14 findings · 4H 4M 6L",
+            "dutch-clock": "1 finding · 1M",
+        }
+        self.assertEqual(len(expected), 40)
+        self.assertEqual(track.count('<span class="track-findings">'), 40)
+        for slug, label in expected.items():
+            m = re.search(r'<a href="/research/%s/">[^<]*</a>'
+                          r'<span class="track-findings">%s</span>'
+                          % (re.escape(slug), re.escape(label)), track)
+            self.assertIsNotNone(m, slug)
+            # The severity parts add up to the stated total — a label
+            # whose split sums past its total (Gamma/Zaros as written
+            # in the lead, 5+9+13=27 against 25) would be the exact
+            # misread this pill exists to prevent.
+            total = int(label.split(" ", 1)[0])
+            parts = sum(int(n) for n in
+                        re.findall(r"(\d+)[HML]", label))
+            parts += sum(int(n) for n in
+                         re.findall(r"(\d+) Info", label))
+            self.assertEqual(parts, total, slug)
+        # The playbook entry carries no findings label: 77 patterns.
+        m = re.search(r'<a href="/research/patterns/">[^<]*</a>(.{0,80})',
+                      track)
+        self.assertIsNotNone(m)
+        self.assertNotIn("track-findings", m.group(1))
+        # Neutral grey pill, not severity colours: the numbers carry
+        # the signal, and a red pill would over-signal on a page whose
+        # point is the method, not the alarm. Small, inline after the
+        # title, never wrapping mid-number.
+        self.assertIn(".track-findings{display:inline-block;font-size:.8em;"
+                      "color:#374151;background:#f3f4f6;"
+                      "border:1px solid #e5e7eb;border-radius:999px;"
+                      "padding:.05em .55em;margin-left:.5em;white-space:nowrap;"
+                      "vertical-align:.15em}", build.CSS)
 
     def test_track_summary_toggle(self):
         # Visual verdict #115 (c) residual, measured 2026-11-19: the
