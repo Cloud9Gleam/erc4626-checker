@@ -2426,31 +2426,16 @@ class TestChecker(unittest.TestCase):
         # the model docstring says the donation AND minimum-viable-deposit
         # checks use it. Both render paths (Python form + Worker JS form)
         # and the API table must say so; the old wording must be gone.
-        # 2026-11-20 (visual verdict #122 item 2): the sentence now
-        # continues with the victim-loss clause -- the Vault assets now
-        # hint was lengthened so it renders 4 lines like its row partner
-        # (Victim deposit), evening row 2 of the form at desktop.
-        # 2026-11-20 (1024px follow-up): the clause was trimmed from
-        # "and the victim loss is measured against this state." to
-        # "and victim loss is measured against it." -- at 1024px the
-        # tail "this state." orphaned onto a 5th line while Victim
-        # stayed at 4; the shorter tail pulls it back to 4 lines at
-        # 1024 with no change at 1919/1600/1280/800.
-        # 2026-11-20 (visual verdict #127): the assets hint was
-        # trimmed again -- "before the attack", "deposits from
-        # existing holders" and "Give both, or leave both at 0."
-        # dropped (the pairing rule stays in the Vault shares hint
-        # and the how-to guide). The pinned sentence below is
-        # unchanged; all six hints now render 3 lines at desktop (see
-        # test_checker_hints_render_three_lines).
+        # 2026-11-21 (visual verdict #139): the form hint is one line
+        # now ("Assets already in the vault. 0 = a new vault."); the
+        # both-checks fact moved to the how-to guide Step 1, which the
+        # checker notice already links. The API table note is unchanged
+        # and still carries the claim on the checker page itself.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         checker = dict((p, b) for p, t, d, k, b in build.PAGES)["/checker/"]
-        self.assertIn("The donation and minimum-viable-deposit checks use this, "
-                      "and victim loss is measured against it.",
-                      checker)
         # The API note ends with a period now: its "; 0 = a new vault"
         # tail was dropped (visual verdict #105 item 5) so the note fits
         # one line at desktop -- the paragraph below the table and the
@@ -2461,20 +2446,17 @@ class TestChecker(unittest.TestCase):
                          checker)
         self.assertNotIn("Only the donation check uses", checker)
         self.assertNotIn("Seeds only the donation check", checker)
-        self.assertNotIn("minimum-viable-deposit checks use this.</span>",
-                         checker)
-        # Regression guard (2026-11-20): the Worker-side form is a
-        # single-quoted JS string -- an apostrophe in any hint breaks
-        # worker.js at node --check. The first version of the
-        # victim-loss clause used "victim's loss" and broke the build;
-        # the clause must stay apostrophe-free ("victim loss").
-        self.assertNotIn("'", "The donation and minimum-viable-deposit "
-                              "checks use this, and victim loss is "
-                              "measured against it.")
-        self.assertIn("The donation and minimum-viable-deposit checks use this, "
-                      "and victim loss is measured against it.",
-                      build.worker_js(
-                          dict((p, b) for p, t, d, k, b in build.PAGES)))
+        # The old form sentence is gone entirely (its facts live in the
+        # how-to guide now); the guide carries both halves.
+        src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        self.assertNotIn("The donation and minimum-viable-deposit checks use this, "
+                         "and victim loss is measured against it.", src)
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        guide = " ".join(
+            pages["/guides/how-to-use-the-erc4626-checker/"].split())
+        self.assertIn("Only the donation and minimum-viable-deposit checks use them",
+                      guide)
+        self.assertIn("Victim loss is measured against that state.", guide)
 
     def test_audit_track_record_groups_fold(self):
         # /audit/ Track record was 40 items in 5 groups rendered as one
@@ -6376,24 +6358,21 @@ class TestChecker(unittest.TestCase):
         self.assertIn("justify-self:stretch", rule)
         self.assertNotIn("justify-self:start", rule)
 
-    def test_checker_form_hints_share_one_height(self):
-        # Visual verdict #77, premise corrected 2026-11-18 by pixel
-        # measurement: the #77/#78 claim that 'Performance fee' renders
-        # as 1 line while 'Vault shares now' renders 3 lines was wrong
-        # -- all six hints render as 3 lines at desktop, and the gaps
-        # below them are 31-42px across all six (fee 31px, 4px LESS than
-        # Vault shares now). The 3-line min-height on the checker hints
-        # (3 x 1.65 unitless line-height = 4.95em in hint-local em, hint
-        # font-size .88em) is kept as a floor so a shorter hint can never
-        # leave a row short, not because any hint is 1 line. Scoped to
-        # #checker-form so the audit form's hints are untouched. The form
-        # visual loop is closed on this measurement: do not reopen it on
-        # a new "ugliest point" without a fresh pixel measurement.
+    def test_checker_hints_have_no_height_floor(self):
+        # Visual verdict #139 (2026-11-21): the 4.95em min-height floor
+        # existed only to keep the old 3-line hints even across the
+        # form's two columns; the hints are one line now (see
+        # test_checker_hints_are_one_sentence), so the floor goes with
+        # the dual-span structure. Supersedes verdicts #77/#109/#127,
+        # which lengthened and floored the hints to even the rows.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn("#checker-form .hint{min-height:4.95em}", build.CSS)
+        self.assertNotIn("#checker-form .hint{min-height:4.95em}", build.CSS)
+        self.assertNotIn(".hint-full", build.CSS)
+        self.assertNotIn(".hint-short", build.CSS)
+        self.assertNotIn("#checker-form .hint{min-height:0}", build.CSS)
 
     def test_checker_hints_and_api_values_readable(self):
         # Visual verdict #105 items 4-5 (2026-11-18): the checker form
@@ -6401,10 +6380,10 @@ class TestChecker(unittest.TestCase):
         # the API table's preset Values cell wrapped to two lines at
         # desktop while the vault_assets_usdc note broke after "and".
         # Hints are now .88em #4b5563 (the same darker grey as
-        # .check-desc, ~6.9:1 on the form's #f9fafb); .88em is the
-        # largest size that keeps all six hints at 3 lines at desktop
-        # (pixel-measured 2026-11-18: .9em tips the Victim deposit hint
-        # to 4 lines and breaks the even rows). The Values column is
+        # .check-desc, ~6.9:1 on the form's #f9fafb); .88em stays after
+        # visual verdict #139 (2026-11-21) shortened the hints to one
+        # line each -- the size was the contrast fix, the length was
+        # the crowding fix. The Values column is
         # nowrap -- the table already scrolls inside .twrap on mobile --
         # and the vault_assets_usdc note is shortened to one line at
         # desktop ("Vault assets, in USDC. Seeds the donation and
@@ -6426,44 +6405,20 @@ class TestChecker(unittest.TestCase):
                       "donation and minimum-viable-deposit checks.",
                       checker)
 
-    def test_checker_hints_short_on_mobile(self):
-        # Visual verdict #109 item 1 (2026-11-19): at 360px the six
-        # checker hints run ~7-8 lines each, ~850px of the 1676px form
-        # (measured 2026-11-18), and push Run checks 3.17 viewports
-        # down. Each hint now carries a one-line summary (.hint-short);
-        # below 640px only the summary shows and the 4.95em min-height
-        # floor is lifted (it only exists to keep the two desktop
-        # columns even; below 640px the form is one column, so there
-        # is nothing to keep even). Desktop is untouched: the full
-        # hint shows, the short span is hidden, the floor stays.
-        # Both render paths (static checker_body and the Worker-side
-        # formHTML) must carry the same six pairs.
+    def test_checker_hints_are_one_sentence_on_all_viewports(self):
+        # Visual verdict #139 (2026-11-21): the desktop hints were
+        # still 3 sentences each (25-33 words, 3-4 lines), so the
+        # one-line text that verdict #109 added for phones only is now
+        # the hint on every viewport and the dual-span structure is
+        # gone. Both render paths (static checker_body and the
+        # Worker-side formHTML) must carry the same six one-liners.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn("#checker-form .hint .hint-short{display:none}",
-                      build.CSS)
-        self.assertIn("#checker-form .hint .hint-full{display:none}",
-                      build.CSS)
-        self.assertIn("#checker-form .hint .hint-short{display:inline}",
-                      build.CSS)
-        self.assertIn("#checker-form .hint{min-height:0}", build.CSS)
-        # The mobile rules must live inside the 640px media query
-        # (the same string that collapses the form to one column),
-        # not in the base CSS where they would also hide the full
-        # hints on desktop.
-        start = build.CSS.index(
-            "#checker-form{grid-template-columns:1fr}")
-        block = build.CSS[start:start + 600]
-        self.assertIn("#checker-form .hint .hint-full{display:none}",
-                      block)
-        self.assertIn("#checker-form .hint .hint-short{display:inline}",
-                      block)
-        self.assertIn("#checker-form .hint{min-height:0}", block)
-        # The desktop floor itself is untouched (also locked by
-        # test_checker_form_hints_share_one_height).
-        self.assertIn("#checker-form .hint{min-height:4.95em}", build.CSS)
+        self.assertNotIn(".hint-full", build.CSS)
+        self.assertNotIn(".hint-short", build.CSS)
+        self.assertNotIn("#checker-form .hint{min-height:4.95em}", build.CSS)
         shorts = ("Virtual shares. 6 is the standard; "
                   "0 means no protection.",
                   "The smallest deposit the vault accepts.",
@@ -6475,16 +6430,16 @@ class TestChecker(unittest.TestCase):
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         for path_html in (html, worker):
-            self.assertEqual(path_html.count('class="hint-full"'), 6)
-            self.assertEqual(path_html.count('class="hint-short"'), 6)
+            self.assertEqual(path_html.count('class="hint"'), 6)
+            self.assertNotIn("hint-full", path_html)
+            self.assertNotIn("hint-short", path_html)
             for short in shorts:
                 self.assertIn(short, path_html)
         # The audit form's single hint is untouched: no spans there.
-        # (The shared CSS legitimately names .hint-full/.hint-short,
-        # so count the markup class attributes, not the bare names.)
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        self.assertEqual(audit.count('class="hint-full"'), 0)
-        self.assertEqual(audit.count('class="hint-short"'), 0)
+        self.assertEqual(audit.count('class="hint"'), 1)
+        self.assertIn("Up to 15 files. More than 15 does not fit this service.",
+                      audit)
 
     def test_checker_notice_compact_on_mobile(self):
         # Mobile checker intro compaction (2026-11-19, verdict #109
@@ -6685,6 +6640,12 @@ class TestChecker(unittest.TestCase):
         # compressed to "Taken on the gain itself, with no high-water
         # mark or hurdle." The claim is unchanged: fee on the gain,
         # no HWM, no hurdle. The example sentence below is untouched.
+        # 2026-11-21 (visual verdict #139): the form hint is one line
+        # now ("The cut from the yield. 1000 bps = 10%."); the model
+        # facts moved to the how-to guide Step 1, which the checker
+        # notice already links. The fee example ("E.g. 1000 bps:
+        # 10,000 USDC of yield pays 1,000 in fees.") was arithmetic
+        # from 1000 bps = 10% and is dropped, not moved.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -6692,31 +6653,21 @@ class TestChecker(unittest.TestCase):
         src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
         # Regression guard: the form HTML is duplicated in a
         # single-quoted JS string (worker-side renderer mirror), so an
-        # apostrophe in any hint breaks worker.js at node --check. The
-        # first draft used "manager's" and did exactly that.
-        hint = ("The cut from the yield — 1000 bps = 10%. "
-                "0 = no fee. Taken on the gain itself, with no "
-                "high-water mark or hurdle.")
+        # apostrophe in any hint breaks worker.js at node --check.
+        hint = "The cut from the yield. 1000 bps = 10%."
         self.assertNotIn("'", hint)
-        self.assertIn(hint, src)
+        self.assertEqual(src.count(hint), 2)
         self.assertNotIn("Fee on yield, in basis points — 1000 bps = 10%.", src)
-        # The last sentence is pinned in both copies too: render
-        # verdict #83 verified "in fees" is exactly 3 lines with all
-        # hints aligned, while "USDC to the manager" renders 4 lines
-        # with an orphan "manager." on line 4 (verdict #82 FAIL). A
-        # parallel round reverted build.py to the old sentence to
-        # satisfy this test's old pin; the pin now records the
-        # render-verified sentence instead. Both render paths must
-        # carry the same sentence (rule (z)). Verdict #118: the bare
-        # "At 1000 bps" read as the current run's fee under a 0-fee
-        # preset, so the sentence is now marked as an example ("E.g.").
-        # Measured this run: the sentence is 2 chars longer, and the
-        # fee hint renders 4 lines at desktop in BOTH the old and the
-        # new build (all six hints [4,4,5,3,4,4]) -- wrap and alignment
-        # are unchanged by the edit.
-        last = ("E.g. 1000 bps: 10,000 USDC of yield pays 1,000 in fees.")
-        self.assertEqual(src.count(last), 2)
+        self.assertNotIn("E.g. 1000 bps: 10,000 USDC of yield pays 1,000 in fees.",
+                         src)
         self.assertNotIn("pays 1,000 USDC to the manager.", src)
+        # The model facts now live in the how-to guide Step 1 (guide
+        # bodies wrap across source lines; normalize whitespace first).
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        guide = " ".join(
+            pages["/guides/how-to-use-the-erc4626-checker/"].split())
+        self.assertIn("The fee is taken on the gain itself, with no "
+                      "high-water mark or hurdle; 0 means no fee.", guide)
         model = (Path.home() / "workspace/taskmarket/erc4626-checker"
                  / "erc4626_checker.py").read_text()
         self.assertIn("fee = yield_amount * self.perf_fee_bps // 10_000", model)
@@ -6733,6 +6684,10 @@ class TestChecker(unittest.TestCase):
         # deposits the victim -- the victim mints at the inflated price,
         # loss = deposit - redeem value; below the minimum, or minting
         # zero shares, the deposit reverts and no loss is measured.
+        # 2026-11-21 (visual verdict #139): the form hint is one line
+        # now ("The deposit made after the donation."); the order of
+        # operations and the loss definition moved to the how-to guide
+        # Step 3, which the checker notice already links.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -6741,31 +6696,20 @@ class TestChecker(unittest.TestCase):
         # Regression guard: the form HTML is duplicated in a
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check.
-        # 2026-11-20 (visual verdict #127): the hint was trimmed from
-        # 4 lines to 3 -- the revert sentence ("Below the minimum, or
-        # minting zero shares, it reverts and no loss is measured.")
-        # moved to the Minimum deposit hint, where the parameter that
-        # causes the revert lives; the victim hint keeps the order of
-        # operations and the loss definition. All six hints now render
-        # 3 lines at 1919/1280 headless (see
-        # test_checker_hints_render_three_lines).
-        hint = ("The deposit after the donation, at the inflated price — "
-                "it mints fewer shares than it should. Its loss is the deposit minus "
-                "what those shares redeem for.")
+        hint = "The deposit made after the donation."
         self.assertNotIn("'", hint)
-        # Python template copy carries the literal em dash; the JS mirror
-        # carries the same text with a \u2014 escape, which JS renders
-        # as the same character. Both copies must be present.
-        self.assertIn(hint, src)
-        self.assertIn(hint.replace("—", "\\u2014"), src)
-        self.assertNotIn("The deposit the donation attacker targets.", src)
-        # 2026-11-20 (visual verdict #122 item 2): the first clause was
-        # trimmed ("made after the donation, at the inflated share price"
-        # -> "after the donation, at the inflated price") so the hint
-        # renders 4 lines like its row partner (Vault assets now),
-        # evening row 2 of the form at desktop. The old wording must
-        # be gone from both render copies.
-        self.assertNotIn("at the inflated share price", src)
+        self.assertEqual(src.count(hint), 2)
+        self.assertNotIn("The deposit after the donation, at the inflated price",
+                         src)
+        self.assertNotIn("Its loss is the deposit minus what those shares redeem for.",
+                         src)
+        # The loss definition now lives in the how-to guide Step 3
+        # (guide bodies wrap across source lines; normalize first).
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        guide = " ".join(
+            pages["/guides/how-to-use-the-erc4626-checker/"].split())
+        self.assertIn("The victim loss is the deposit minus what those "
+                      "shares redeem for.", guide)
         js = (Path.home() / "workspace/taskmarket/site/checker.js").read_text()
         self.assertLess(js.index("w.donate(d)"), js.index("w.deposit(victimDeposit)"))
         self.assertIn("const vicLoss = victimDeposit - vicOut;", js)
@@ -6778,6 +6722,10 @@ class TestChecker(unittest.TestCase):
         # one share is 1.000000 / 0.100000 / 0.010000 / 0.000001 USDC
         # at offsets 0 / 1 / 2 / 6 -- exactly x10 per unit of offset.
         # The checker clamps offset to 0-30 (offset=31 runs as 30).
+        # 2026-11-21 (visual verdict #139): the form hint is one line
+        # now ("Virtual shares. 6 is the standard; 0 means no
+        # protection."); the x10-per-unit fact moved to the how-to
+        # guide Step 1, which the checker notice already links.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -6786,21 +6734,18 @@ class TestChecker(unittest.TestCase):
         # Regression guard: the form HTML is duplicated in a
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check.
-        # 2026-11-20 (visual verdict #127): the hint was trimmed from
-        # 4 lines to 3 -- "6 is the OpenZeppelin standard" shortened
-        # to "6 is the standard" (the page notice already says the
-        # model is OpenZeppelin math), and the tail ("shrinking the
-        # rounding loss the same way. The checker accepts 0–30.")
-        # dropped: the input enforces 0–30, and the rounding-loss
-        # mechanism is the virtual-shares guide's subject and is
-        # visible in the check results. The x10-per-unit fact stays.
-        hint = ("Virtual shares the vault pretends to hold. 6 is the standard; "
-                "0 means no protection. Each unit of offset divides the price of one share "
-                "by 10.")
+        hint = "Virtual shares. 6 is the standard; 0 means no protection."
         self.assertNotIn("'", hint)
         # Both copies (Python template + JS mirror) must carry it.
         self.assertEqual(src.count(hint), 2)
-        self.assertIn("Each unit of offset divides the price of one share by 10", src)
+        # The x10-per-unit fact now lives in the how-to guide Step 1
+        # (guide bodies wrap across source lines; normalize first).
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        guide = " ".join(
+            pages["/guides/how-to-use-the-erc4626-checker/"].split())
+        self.assertIn("Each unit of offset divides the price of one share "
+                      "by 10.", guide)
+        self.assertNotIn("Virtual shares the vault pretends to hold", src)
 
     def test_checker_min_deposit_hint_says_what_the_model_does(self):
         # Visual verdict #79: the Minimum deposit hint was 1 line of
@@ -6813,6 +6758,9 @@ class TestChecker(unittest.TestCase):
         # deposit, the victim deposit reverts (error row, victim_loss
         # None) and no loss is measured -- see
         # test_donation_error_row_reports_no_loss.
+        # 2026-11-21 (visual verdict #139): the form hint is one line
+        # now ("The smallest deposit the vault accepts."); the seed
+        # floor and the revert rule moved to the how-to guide Step 1.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -6821,85 +6769,63 @@ class TestChecker(unittest.TestCase):
         # Regression guard: the form HTML is duplicated in a
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check.
-        # 2026-11-20 (visual verdict #127): the hint was trimmed from
-        # 4 lines to 3 -- "donation attacker" shortened to "attacker"
-        # (the page is the donation attack), and the third sentence
-        # compressed to "Above the victim deposit, it reverts and no
-        # loss is measured." The revert fact is now stated here, not
-        # in the Victim deposit hint; the 1 USDC seed floor stays.
-        hint = ("The smallest deposit the vault accepts. The attacker seeds this "
-                "amount, at least 1 USDC even when the minimum is 0. Above the victim "
-                "deposit, it reverts and no loss is measured.")
+        hint = "The smallest deposit the vault accepts."
         self.assertNotIn("'", hint)
         # Both copies (Python template + JS mirror) must carry it, and
-        # the old 1-line text (ending in a period after "amount") is gone.
+        # the old 3-line text is gone from both render copies.
         self.assertEqual(src.count(hint), 2)
+        self.assertNotIn("The attacker seeds this amount", src)
         self.assertNotIn("The donation attacker seeds this amount.", src)
+        # The seed floor and revert rule now live in the how-to guide
+        # Step 1 (guide bodies wrap across source lines; normalize first).
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        guide = " ".join(
+            pages["/guides/how-to-use-the-erc4626-checker/"].split())
+        self.assertIn("The attacker seeds the minimum", guide)
+        self.assertIn("at least 1 USDC even when the minimum is 0", guide)
+        self.assertIn("no loss is measured", guide)
 
-    def test_checker_hints_render_three_lines(self):
-        # Visual verdict #127 (2026-11-20, real browser): the checker
-        # form's six hints each ran 4 lines of small grey text, and the
-        # inputs' visual weight was pressed down by the explanations --
-        # the form read as text-crowded. All six hint-full texts were
-        # trimmed to 3 lines at desktop (facts preserved; dropped
-        # clauses live elsewhere: the revert rule in the Minimum
-        # deposit hint, the pairing rule in the Vault shares hint and
-        # the how-to guide, the rounding-loss mechanism in the
-        # virtual-shares guide and the check results). Fresh pixel
-        # measurement this run (hidden_files/measure-hint-trim.py,
-        # headless chrome-headless-shell on the built static page):
-        # 1919x998 and 1280x800, all six hints 3 lines, box 74.0px
-        # (exactly the 4.95em floor -- no blank space, no 4th line),
-        # form 774.8px tall (was ~923px), no horizontal overflow;
-        # 360px shows only the one-line short summaries, unchanged.
-        # This test pins the six trimmed texts in both render copies
-        # (Python template + Worker JS mirror); the line counts
-        # themselves are a rendering property, verified by measurement.
+    def test_checker_hints_are_one_sentence(self):
+        # Visual verdict #139 (2026-11-21, real browser): the checker
+        # form's six hints each ran 3 sentences of small grey text, and
+        # the inputs' visual weight was pressed down by the explanations
+        # -- the form read as text-crowded. All six hints are one
+        # sentence now; the displaced facts moved to the how-to guide
+        # (Step 1 / Step 3, pinned by the four *_says_what_the_model_does
+        # tests and test_vault_state_hint_names_both_checks). This test
+        # pins the six one-liners in both render copies (Python
+        # template + Worker JS mirror).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
         hints = [
-            "Virtual shares the vault pretends to hold. 6 is the standard; "
-            "0 means no protection. Each unit of offset divides the price of one share "
-            "by 10.",
-            "The smallest deposit the vault accepts. The attacker seeds this "
-            "amount, at least 1 USDC even when the minimum is 0. Above the victim "
-            "deposit, it reverts and no loss is measured.",
-            "The deposit after the donation, at the inflated price — "
-            "it mints fewer shares than it should. Its loss is the deposit minus "
-            "what those shares redeem for.",
-            "Assets already in the vault. 0 = a new vault. The donation and "
-            "minimum-viable-deposit checks use this, and victim loss is measured "
-            "against it.",
-            "Shares already issued, as the vault shows them — not the raw totalSupply. "
-            "The model counts 6-decimal shares. 0 = a new vault. Give both, or leave "
-            "both at 0.",
-            "The cut from the yield — 1000 bps = 10%. 0 = no fee. Taken on the gain "
-            "itself, with no high-water mark or hurdle. E.g. 1000 bps: 10,000 USDC of "
-            "yield pays 1,000 in fees.",
+            "Virtual shares. 6 is the standard; 0 means no protection.",
+            "The smallest deposit the vault accepts.",
+            "The deposit made after the donation.",
+            "Assets already in the vault. 0 = a new vault.",
+            "Shares already issued. 0 = a new vault.",
+            "The cut from the yield. 1000 bps = 10%.",
         ]
-        for i, hint in enumerate(hints):
+        for hint in hints:
             self.assertNotIn("'", hint)
-            if i == 2:
-                # Victim: the JS mirror carries the em dash as a
-                # \u2014 escape; the Python template carries it literal.
-                self.assertEqual(src.count(hint), 1)
-                self.assertEqual(
-                    src.count(hint.replace("—", "\\u2014")), 1)
-            else:
-                self.assertEqual(src.count(hint), 2)
-        # Old 4-line wordings must be gone from the form (two survive
-        # elsewhere and are not asserted here: "the OpenZeppelin
-        # default for a USDC vault" lives in the API table note, and
-        # "6 is the OpenZeppelin standard" lives in a guide).
+            self.assertEqual(src.count(hint), 2)
+        # Wordings gone entirely (their facts survive in the how-to
+        # guide, so they are pinned there, not here).
         self.assertNotIn("shrinking the rounding loss the same way", src)
         self.assertNotIn("The checker accepts 0–30", src)
         self.assertNotIn("Set it above the victim deposit", src)
         self.assertNotIn("Below the minimum, or minting zero shares", src)
         self.assertNotIn("deposits from existing holders", src)
         self.assertNotIn("The model takes it on the gain itself", src)
+        # And the dual-span structure is gone from both render paths.
+        html = build.checker_body()
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        for path_html in (html, worker):
+            self.assertNotIn("hint-full", path_html)
+            self.assertNotIn("hint-short", path_html)
 
     def test_donation_nonmonotonic_explanation(self):
         # The donation loss is not monotonic in the donation size (1B
