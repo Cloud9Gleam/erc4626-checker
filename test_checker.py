@@ -1446,10 +1446,17 @@ class TestChecker(unittest.TestCase):
         # box directly after the Parameters box, not a section
         # heading, and the notice below it tightens by the same
         # amount. The 1.2em pin below is intentionally overturned.
+        # Visual verdict #148 (2026-11-22): align-items:center is
+        # also intentionally overturned — centring is what floated
+        # the cross at second-line height on the 3-line FAIL banner
+        # (mark 46.9px below line 0). The banner is top-aligned now
+        # and split into .banner-text / .banner-actions groups; the
+        # mobile full-width rule moved from the button to the
+        # actions group, so it no longer names copy-link-btn.
         self.assertIn(
             ".result-banner{font-size:1.45em;font-weight:700;"
             "border-radius:8px;padding:.75em 1em;margin:.6em 0;"
-            "display:flex;align-items:center;gap:.5em}",
+            "display:flex;align-items:flex-start;gap:.5em}",
             build.CSS)
         self.assertIn(
             ".result-banner .copy-link-btn{flex:none;"
@@ -1459,7 +1466,7 @@ class TestChecker(unittest.TestCase):
             ".result-banner .copy-link-btn{")[1].split("}")[0])
         self.assertIn(
             "@media (max-width:640px){.result-banner{flex-wrap:wrap}"
-            ".result-banner .copy-link-btn{flex:1 1 100%;",
+            ".result-banner .banner-actions{flex:1 1 100%;",
             build.CSS)
 
     def test_form_to_banner_stack_is_tight(self):
@@ -4027,14 +4034,19 @@ class TestChecker(unittest.TestCase):
         # and hung 27px below the banner (a float that drops does
         # not expand its parent), so desktop is flex now and the
         # mobile rule wraps to its own full-width line instead.
+        # Visual verdict #148 (2026-11-22): the full-width mobile
+        # rule now targets the .banner-actions group (button +
+        # status), not the button alone — the button keeps its
+        # flex:none desktop rule and the status rides beside it,
+        # nowrap, instead of wrapping under it.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
             "@media (max-width:640px){.result-banner{flex-wrap:wrap}"
-            ".result-banner .copy-link-btn{flex:1 1 100%;"
-            "box-sizing:border-box;margin:.6em 0 0;text-align:center}}",
+            ".result-banner .banner-actions{flex:1 1 100%;"
+            "margin:.6em 0 0}}",
             build.CSS)
         self.assertIn(
             ".result-banner .copy-link-btn{flex:none;font-size:.62em;"
@@ -20062,12 +20074,76 @@ class TestChecker(unittest.TestCase):
         src = (Path.home() / "workspace/taskmarket/site/build.py"
                ).read_text()
         self.assertEqual(src.count('Copy link to these results'), 2)
-        # 'copy-link-btn' appears 4x: CSS rule + mobile rule + Python
-        # markup + JS mirror.
-        self.assertEqual(src.count('copy-link-btn'), 4)
+        # 'copy-link-btn' appears 3x: CSS desktop rule + Python
+        # markup + JS mirror. The mobile rule used to name it too
+        # (4x); visual verdict #148 moved the full-width mobile
+        # rule to the .banner-actions group, so it no longer does.
+        self.assertEqual(src.count('copy-link-btn'), 3)
         self.assertIn('.result-banner .copy-link-btn{flex:none', src)
         self.assertIn('@media (max-width:640px){.result-banner{flex-wrap:wrap}'
-                      '.result-banner .copy-link-btn{flex:1 1 100%', src)
+                      '.result-banner .banner-actions{flex:1 1 100%', src)
+
+    def test_banner_mark_rides_with_first_line(self):
+        # Visual verdict #148 (2026-11-22): on the FAIL banner the
+        # cross mark was a bare flex item of the h2, vertically
+        # centred — at 1919px it sat 46.9px below line 0 (6.3px
+        # below line 1), an orphaned x at the start of line 2, and
+        # the copy button sat mid-banner; "Link copied." squeezed
+        # to two lines (51.9px wide, 50.4px tall). At 360px the mark
+        # wrapped onto its own line above the text (banner 410.6px
+        # tall). The banner is now two flex groups: mark + text in
+        # .banner-text (the mark is inline at the start of line 1),
+        # button + status in .banner-actions (top-aligned, status
+        # nowrap). Both renderers must carry the same structure.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        for kwargs in (dict(decimals_offset=0, min_deposit=0,
+                            perf_fee_bps=0),
+                       dict(decimals_offset=6, min_deposit=1_000_000,
+                            perf_fee_bps=1000)):
+            html = build.results_html(run_all(Vault(**kwargs)),
+                                      vic=100_000_000_000, off=kwargs["decimals_offset"],
+                                      mn=kwargs["min_deposit"], fee=kwargs["perf_fee_bps"])
+            h2 = html.split("</h2>")[0]
+            self.assertIn('<span class="banner-text">', h2)
+            self.assertIn('<span class="banner-actions">', h2)
+            # Mark is inside the text group, before the verdict text.
+            text = h2.split('<span class="banner-text">')[1].split(
+                '</span>')[0]
+            self.assertIn('<svg class="banner-mark"', text)
+            self.assertIn("Result:", text)
+            self.assertLess(text.index('<svg class="banner-mark"'),
+                            text.index("Result:"))
+            # Text group precedes the actions group; button and
+            # status sit inside the actions group, in that order.
+            self.assertLess(h2.index('banner-text'),
+                            h2.index('banner-actions'))
+            actions = h2.split('<span class="banner-actions">')[1]
+            self.assertIn('copy-link-btn', actions)
+            self.assertIn('id="copylink-msg"', actions)
+            self.assertLess(actions.index('copy-link-btn'),
+                            actions.index('copylink-msg'))
+        # CSS: top-aligned groups, status never wraps.
+        self.assertIn(
+            ".result-banner .banner-text{flex:1 1 auto;min-width:0}",
+            build.CSS)
+        self.assertIn(
+            ".result-banner .banner-actions{flex:none;display:flex;"
+            "align-items:center;gap:.5em",
+            build.CSS)
+        self.assertIn(
+            ".result-banner #copylink-msg{font-size:.62em;"
+            "font-weight:600;white-space:nowrap}",
+            build.CSS)
+        # JS mirror carries the identical two-group markup.
+        src = (Path.home() / "workspace/taskmarket/site/build.py"
+               ).read_text()
+        self.assertIn(
+            "<span class='banner-text'>\"+banner+\"</span>"
+            "<span class='banner-actions'>",
+            src)
 
     def test_guide_link_is_named_and_at_card_bottom(self):
         # Visual verdict #54 item c (2026-11-17): "Read the guide
