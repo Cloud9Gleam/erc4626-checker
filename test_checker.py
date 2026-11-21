@@ -2777,7 +2777,8 @@ class TestChecker(unittest.TestCase):
                       'four flash-loan findings, all forge-proven (3 High, '
                       '1 Medium graded High by the canonical report). '
                       '<span class="track-detail">6 of 7 canonical High+Medium '
-                      'findings independently reproduced, the seventh — the '
+                      'findings independently reproduced (four forge-proven, '
+                      'two code-read), the seventh — the '
                       'fee-on-transfer Medium — never considered, 15/15 tests '
                       'passing.</span>', track)
         self.assertIn('<a href="/research/zaros/">Zaros Part 2</a>'
@@ -2823,11 +2824,57 @@ class TestChecker(unittest.TestCase):
             r'four flash-loan findings, all forge-proven \(3 High, '
             r'1 Medium graded High by the canonical report\)\. '
             r'<span class="track-detail">6 of 7 canonical High\+Medium '
-            r'findings independently reproduced, the seventh — the '
+            r'findings independently reproduced \(four forge-proven, '
+            r'two code-read\), the seventh — the '
             r'fee-on-transfer Medium — never considered, 15/15 tests '
             r'passing\.</span>')
         self.assertIn(".track-detail{display:block;font-size:.92em;"
                       "color:#4b5563;margin-top:.25em}", build.CSS)
+
+    def test_thunder_loan_canonical_counts_reconcile(self):
+        # Visual verdict #146 (2026-11-21): the /audit/ line said "4
+        # findings" and then "6 of 7 canonical High+Medium findings
+        # independently reproduced" with no explanation of how four
+        # findings reproduce six — and the research page said "all 3
+        # canonical Highs found" while its own mapping table lists FOUR
+        # canonical Highs (H-1, H-2, H-3, H-4), H-4 only partially
+        # reproduced (M-3 under-called Medium vs canonical High).
+        # Ground truth, from the page's own "Against the canonical
+        # report" table: the six reproduced are the four forge-proven
+        # findings plus two code-read items (M-2 setAllowedToken,
+        # M-3 decimals); the seventh canonical finding (M-03,
+        # fee-on-transfer) was never considered.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        descs = dict((p, d) for p, t, d, k, b in build.PAGES)
+        page = pages["/research/thunder-loan/"]
+        # The wrong count is gone from the page entirely.
+        self.assertNotIn("all 3 canonical Highs", page)
+        # Intro and Hit rate now state the four-High split.
+        self.assertIn("three of the four canonical Highs in full, "
+                      "the fourth (H-4, decimals) only in part", page)
+        # The mapping table still lists all four canonical Highs.
+        for hid in ("H-1 storage collision", "H-2 unnecessary",
+                    "H-3 flashloan", "H-4 TSwap price ignores decimals"):
+            self.assertIn(hid, page)
+        # The standalone lines now explain the 4-vs-6 split.
+        self.assertIn("6 of 7 canonical High+Medium findings "
+                      "independently reproduced (four forge-proven, "
+                      "two code-read), the seventh — the fee-on-transfer "
+                      "Medium — never considered", pages["/audit/"])
+        self.assertIn("6 of 7 canonical High+Medium findings "
+                      "independently reproduced (four forge-proven, "
+                      "two code-read), the seventh — the fee-on-transfer "
+                      "Medium — never considered (Nov 2026).",
+                      pages["/research/"])
+        self.assertIn("6 of 7 canonical High+Medium findings "
+                      "independently reproduced (four forge-proven, "
+                      "two code-read), the seventh — the fee-on-transfer "
+                      "Medium — never considered.",
+                      descs["/research/thunder-loan/"])
 
     def test_audit_track_record_entries_carry_findings_labels(self):
         # Visual verdict #137 second half (2026-11-21): the First Flight
