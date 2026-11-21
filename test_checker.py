@@ -2851,6 +2851,40 @@ class TestChecker(unittest.TestCase):
                       "padding:.05em .55em;margin-left:.5em;white-space:nowrap;"
                       "vertical-align:.15em}", build.CSS)
 
+    def test_audit_track_record_pill_meaning_is_annotated(self):
+        # Visual verdict #141 item 3 (2026-11-21): the pill after a
+        # title and the split in the sentence after it count different
+        # sets — the pill is the findings re-verified on the linked
+        # review page (Gamma 25: 5H 8M 12L), the sentence quotes the
+        # contest's own total (27 validated: 5H 9M 13L); Zaros is the
+        # same shape (66 re-verified vs 70 awarded). With no label a
+        # first-time reader takes the two splits for a data error.
+        # The Track record intro now says so in one sentence, before
+        # the first (open) group, so it is visible without expanding
+        # anything. The two differing entries are the only ones whose
+        # lead quotes an "N of M" contest total — every other lead's
+        # count already matches its pill (verified this round by
+        # script over all 41 entries).
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        intro = re.sub(r"\s+", " ",
+                       track[:track.index("<details")])
+        self.assertIn("The pill after each title counts the findings "
+                      "re-verified on the linked review page; where the "
+                      "sentence after it quotes the contest's own total, "
+                      "the two can differ — a few findings were "
+                      "re-derived as misses:", intro)
+        # Only Gamma and Zaros quote an "N of M" contest total.
+        self.assertEqual(
+            sorted(re.findall(r"(\d+) of (\d+) (?:validated|awarded)",
+                              track)),
+            [("25", "27"), ("66", "70")])
+
     def test_track_summary_toggle(self):
         # Visual verdict #115 (c) residual, measured 2026-11-19: the
         # five Track record summaries fill only 45-73% of their grey
