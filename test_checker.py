@@ -13621,6 +13621,11 @@ class TestChecker(unittest.TestCase):
         # (4) Big pending claim (Alice redeems half the vault):
         # asset fee still 20,000; Bob 86,400 vs 88,200 honest
         # (extra 1,800); Carol 393,600 vs 401,800 (extra 8,200).
+        # This scenario re-allocates the holdings: Alice holds
+        # 500,000 shares here (not the setup's 100,000), so Carol
+        # holds the remaining 410,000 (not 810,000) — the guide
+        # must say so, else a reader re-deriving Carol from the
+        # setup gets 777,600, which exceeds the remaining supply.
         P4, S4 = 500_000, 500_000
         fee4 = T * 200 // 10_000
         self.assertEqual(fee4, 20_000)
@@ -13656,15 +13661,33 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(round(float(Fraction(1_800, 1_800) * 100), 1),
                          100.0)
 
-        # (7) Guide page carries the headline numbers.
+        # (7) The headline numbers must sit in THIS guide's own
+        # text in build.py — not just somewhere on the site. The
+        # old global pins were vacuous: "20,000" occurs hundreds
+        # of times in build.py, so deleting the pending-fee guide
+        # would not have failed the test. Section-scope them the
+        # way the flat-fee test does.
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
+        start = build.index('add("/guides/erc4626-pending-fee/"')
+        section = build[start:build.index('""")', start) + 4]
         self.assertIn("/guides/erc4626-pending-fee/", build)
         for needle in ("20,000", "18,000", "88,000", "792,000",
                        "88,200", "793,800", "88,235.294118",
                        "86,400", "393,600", "401,800", "35.294118",
                        "8,200", "Bob pays 200 and Carol 1,800"):
-            self.assertIn(needle, build)
+            self.assertIn(needle, section)
+
+        # (9) Section D restates the holdings for its own
+        # scenario: Alice holds 500,000 shares here, Bob still
+        # 90,000, Carol the remaining 410,000 — not the setup's
+        # 100,000 / 810,000. Without that sentence a reader
+        # re-deriving Carol from the setup gets 777,600, which
+        # exceeds the remaining supply and cannot exist.
+        self.assertIn("This time the holdings are different: Alice "
+                      "500,000, Bob still 90,000, Carol the remaining "
+                      "410,000.", section)
+        self.assertNotIn("777,600", section)
 
         # (8) The 2,000 is the TOTAL extra fee, not Bob's share:
         # Bob pays 200, Carol 1,800. The guide must never state
