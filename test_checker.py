@@ -7591,6 +7591,14 @@ class TestChecker(unittest.TestCase):
             "mint preview matches execution": "mint preview",
             "redeem preview matches execution": "redeem preview",
             "smallest deposit minting 1 share": "1-share threshold",
+            # 2026-11-23, checker-improvement (visual verdict #156
+            # minor item): the share-price label wrapped at 1919px
+            # too — label and value both two lines, the card's only
+            # row 66.6px against the Fee card's 38.5px rows — so it
+            # shortens like the #130 labels. The key carries the
+            # model's real U+00A0; the Pass-rule sentence below the
+            # table keeps the full "1,000,000 shares".
+            "price per 1,000,000\u00a0shares": "price / 1M shares",
         }
         for v, kwargs in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
@@ -7690,8 +7698,9 @@ class TestChecker(unittest.TestCase):
         # Both presets, Python path: every figure in every value cell
         # is wrapped, and the count of <strong> matches the count of
         # numeric tokens exactly (no figure left bare); no label cell
-        # carries a <strong> (labels stay regular, including the
-        # "1,000,000" inside "price per 1,000,000 shares").
+        # carries a <strong> (labels stay regular, including the "1"
+        # inside the shortened "price / 1M shares" label — bolding
+        # is applied to value cells only, never to labels).
         for v, kwargs in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
                        perf_fee_bps=1000), {}),
