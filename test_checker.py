@@ -1759,6 +1759,12 @@ class TestChecker(unittest.TestCase):
         # row below it, left-aligned; the status span is gone and
         # the button itself shows the feedback. The flex row and
         # the mobile media query below are intentionally overturned.
+        # Checker-improvement (2026-11-22): the button now fills
+        # its own row (display:block, width:100%) — measured
+        # 224.6px in an 894.2px row at 1280px, ~670px of empty
+        # banner beside it. Right-aligned and centred placements
+        # were rendered and rejected; full-width reads as an
+        # action strip. Stacking is unchanged.
         self.assertIn(
             ".result-banner{font-size:1.45em;font-weight:700;"
             "border-radius:8px;padding:.75em 1em;margin:.6em 0}",
@@ -1771,7 +1777,8 @@ class TestChecker(unittest.TestCase):
             "margin:.55em 0 0}",
             build.CSS)
         self.assertIn(
-            ".result-banner .copy-link-btn{"
+            ".result-banner .copy-link-btn{display:block;"
+            "width:100%;box-sizing:border-box;text-align:center;"
             "font-size:.62em;font-weight:600;margin:0}",
             build.CSS)
         self.assertNotIn("float:right", build.CSS.split(
@@ -5170,6 +5177,10 @@ class TestChecker(unittest.TestCase):
         # query is gone: the button can no longer sit beside the
         # title on desktop or leave a dead band on mobile. The
         # media-query pin below is intentionally overturned.
+        # Checker-improvement (2026-11-22): the button itself is
+        # now full-width within that row (display:block,
+        # width:100%) — the row was full-width but the button was
+        # 224.6px of it, ~670px of empty banner at 1280px.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5182,8 +5193,9 @@ class TestChecker(unittest.TestCase):
             "@media (max-width:640px){.result-banner{flex-wrap:wrap}",
             build.CSS)
         self.assertIn(
-            ".result-banner .copy-link-btn{font-size:.62em;"
-            "font-weight:600;margin:0}", build.CSS)
+            ".result-banner .copy-link-btn{display:block;"
+            "width:100%;box-sizing:border-box;text-align:center;"
+            "font-size:.62em;font-weight:600;margin:0}", build.CSS)
 
     def test_hero_cta_and_proof_use_nonbreaking_hyphens(self):
         # At 360px the hero CTA broke after the hyphen — "Run the
@@ -21293,8 +21305,13 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #151 (2026-11-22): the banner is stacked,
         # not a flex row — the button rule carries no flex:none and
         # the mobile media query is gone.
+        # Checker-improvement (2026-11-22): the button now fills
+        # its own row (display:block, width:100%) — it was 224.6px
+        # in an 894.2px row at 1280px, ~670px of empty banner.
         self.assertEqual(src.count('copy-link-btn'), 3)
-        self.assertIn('.result-banner .copy-link-btn{font-size:.62em;',
+        self.assertIn('.result-banner .copy-link-btn{display:block;'
+                      'width:100%;box-sizing:border-box;'
+                      'text-align:center;font-size:.62em;',
                       src)
         self.assertNotIn(
             '@media (max-width:640px){.result-banner{flex-wrap:wrap}',
