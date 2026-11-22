@@ -4120,12 +4120,19 @@ class TestChecker(unittest.TestCase):
         # contest's own total (27 validated: 5H 9M 13L); Zaros is the
         # same shape (66 re-verified vs 70 awarded). With no label a
         # first-time reader takes the two splits for a data error.
-        # The Track record intro now says so in one sentence, before
-        # the first (open) group, so it is visible without expanding
-        # anything. The two differing entries are the only ones whose
-        # lead quotes an "N of M" contest total — every other lead's
-        # count already matches its pill (verified this round by
-        # script over all 41 entries).
+        # Visual verdict #151 (2026-11-22) called the old intro the
+        # most confusing paragraph on the page: it said the two numbers
+        # "can differ" without saying which is which, never mentioned
+        # that the severity splits differ too, and left MISS as
+        # unexplained jargon. The intro now names both counts, says the
+        # pill's split is the split of the re-verified findings, defines
+        # a MISS in plain words (claimed mechanism does not hold), and
+        # works Gamma as the concrete example — before the first (open)
+        # group, so it is visible without expanding anything. The two
+        # differing entries are the only ones whose lead quotes an
+        # "N of M" contest total — every other lead's count already
+        # matches its pill (verified this round by script over all 41
+        # entries).
         import re
         import sys
         from pathlib import Path
@@ -4135,15 +4142,31 @@ class TestChecker(unittest.TestCase):
         track = audit[audit.index("<h2>Track record</h2>"):]
         intro = re.sub(r"\s+", " ",
                        track[:track.index("<details")])
-        self.assertIn("The pill after each title counts the findings "
-                      "re-verified on the linked review page; where the "
-                      "sentence after it quotes the contest's own total, "
-                      "the two can differ — a few findings were "
-                      "re-derived as misses:", intro)
-        # Only Gamma and Zaros quote an "N of M" contest total.
+        self.assertIn("Two numbers can appear for one review, and they "
+                      "count different things: the pill after a title "
+                      "counts only the findings re-verified on the linked "
+                      "review page, and its severity split is the split of "
+                      "those findings; the sentence after it quotes the "
+                      "contest's own award.", intro)
+        # The Gamma example is concrete, not abstract: both splits and
+        # both MISS ids appear in the intro itself.
+        self.assertIn("Gamma's pill reads 25 findings (5 High, 8 Medium, "
+                      "12 Low) while its sentence says 25 of 27 validated "
+                      "(5 High, 9 Medium, 13 Low): the contest awarded 27, "
+                      "and the two missing ones, M-05 and L-12, are "
+                      "findings whose claimed mechanism does not hold on "
+                      "the code, so the review presents them as MISSes "
+                      "instead of counting them as verified.", intro)
+        # The old abstract wording is gone, not just extended.
+        self.assertNotIn("re-derived as misses", intro)
+        self.assertNotIn("the two can differ", intro)
+        # Only Gamma and Zaros quote an "N of M" contest total — scoped
+        # to the leads (after the first <details>): the intro's Gamma
+        # example repeats "25 of 27 validated" in prose, so it is
+        # excluded here by design.
         self.assertEqual(
             sorted(re.findall(r"(\d+) of (\d+) (?:validated|awarded)",
-                              track)),
+                              track[track.index("<details"):])),
             [("25", "27"), ("66", "70")])
 
     def test_track_summary_toggle(self):
