@@ -1525,24 +1525,37 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #148 (2026-11-22): align-items:center is
         # also intentionally overturned — centring is what floated
         # the cross at second-line height on the 3-line FAIL banner
-        # (mark 46.9px below line 0). The banner is top-aligned now
-        # and split into .banner-text / .banner-actions groups; the
-        # mobile full-width rule moved from the button to the
-        # actions group, so it no longer names copy-link-btn.
+        # (mark 46.9px below line 0). The banner was top-aligned
+        # then and split into .banner-text / .banner-actions groups.
+        # Visual verdict #151 (2026-11-22): the #148 flex row still
+        # squeezed the FAIL title to 3 lines at 1919px and the
+        # status text read as a stray line at the banner's right
+        # edge. The banner is stacked now, not a row: .banner-text
+        # is a full-width block row, .banner-actions a second block
+        # row below it, left-aligned; the status span is gone and
+        # the button itself shows the feedback. The flex row and
+        # the mobile media query below are intentionally overturned.
         self.assertIn(
             ".result-banner{font-size:1.45em;font-weight:700;"
-            "border-radius:8px;padding:.75em 1em;margin:.6em 0;"
-            "display:flex;align-items:flex-start;gap:.5em}",
+            "border-radius:8px;padding:.75em 1em;margin:.6em 0}",
             build.CSS)
         self.assertIn(
-            ".result-banner .copy-link-btn{flex:none;"
+            ".result-banner .banner-text{display:block}",
+            build.CSS)
+        self.assertIn(
+            ".result-banner .banner-actions{display:block;"
+            "margin:.55em 0 0}",
+            build.CSS)
+        self.assertIn(
+            ".result-banner .copy-link-btn{"
             "font-size:.62em;font-weight:600;margin:0}",
             build.CSS)
         self.assertNotIn("float:right", build.CSS.split(
             ".result-banner .copy-link-btn{")[1].split("}")[0])
-        self.assertIn(
-            "@media (max-width:640px){.result-banner{flex-wrap:wrap}"
-            ".result-banner .banner-actions{flex:1 1 100%;",
+        self.assertNotIn(".result-banner{display:flex", build.CSS)
+        self.assertNotIn("copylink-msg", build.CSS)
+        self.assertNotIn(
+            "@media (max-width:640px){.result-banner{flex-wrap:wrap}",
             build.CSS)
 
     def test_form_to_banner_stack_is_tight(self):
@@ -1555,6 +1568,9 @@ class TestChecker(unittest.TestCase):
         # are pinned here together — the params sentences flow and
         # the banner margin is .6em — in the Python render and the
         # Worker render. Numbers and wording are untouched.
+        # Visual verdict #151 (2026-11-22): the banner is stacked
+        # now, not a flex row — the margin pin drops the
+        # display:flex tail, which the stacked layout overturns.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -1565,11 +1581,20 @@ class TestChecker(unittest.TestCase):
         self.assertIn("fee 1000 bps.", params)
         self.assertIn("Victim deposit 100,000 USDC", params)
         self.assertIn("Vault state 0 USDC", params)
-        self.assertIn("margin:.6em 0;display:flex", build.CSS)
-        self.assertNotIn("margin:1.2em 0;display:flex", build.CSS)
+        self.assertIn(
+            ".result-banner{font-size:1.45em;font-weight:700;"
+            "border-radius:8px;padding:.75em 1em;margin:.6em 0}",
+            build.CSS)
+        self.assertNotIn(
+            ".result-banner{font-size:1.45em;font-weight:700;"
+            "border-radius:8px;padding:.75em 1em;margin:1.2em 0}",
+            build.CSS)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
-        self.assertIn("margin:.6em 0;display:flex", worker)
+        self.assertIn(
+            ".result-banner{font-size:1.45em;font-weight:700;"
+            "border-radius:8px;padding:.75em 1em;margin:.6em 0}",
+            worker)
         self.assertIn("bps. Victim deposit", worker)
         self.assertIn("USDC. Vault state", worker)
 
@@ -4814,21 +4839,28 @@ class TestChecker(unittest.TestCase):
         # not expand its parent), so desktop is flex now and the
         # mobile rule wraps to its own full-width line instead.
         # Visual verdict #148 (2026-11-22): the full-width mobile
-        # rule now targets the .banner-actions group (button +
-        # status), not the button alone — the button keeps its
-        # flex:none desktop rule and the status rides beside it,
-        # nowrap, instead of wrapping under it.
+        # rule moved to the .banner-actions group (button + status),
+        # not the button alone.
+        # Visual verdict #151 (2026-11-22): the #148 flex row still
+        # squeezed the FAIL title to 3 lines at 1919px. The banner
+        # is stacked now — .banner-actions is a full-width block row
+        # below the title at EVERY width, so the mobile-only media
+        # query is gone: the button can no longer sit beside the
+        # title on desktop or leave a dead band on mobile. The
+        # media-query pin below is intentionally overturned.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            "@media (max-width:640px){.result-banner{flex-wrap:wrap}"
-            ".result-banner .banner-actions{flex:1 1 100%;"
-            "margin:.6em 0 0}}",
+            ".result-banner .banner-actions{display:block;"
+            "margin:.55em 0 0}",
+            build.CSS)
+        self.assertNotIn(
+            "@media (max-width:640px){.result-banner{flex-wrap:wrap}",
             build.CSS)
         self.assertIn(
-            ".result-banner .copy-link-btn{flex:none;font-size:.62em;"
+            ".result-banner .copy-link-btn{font-size:.62em;"
             "font-weight:600;margin:0}", build.CSS)
 
     def test_hero_cta_and_proof_use_nonbreaking_hyphens(self):
@@ -20901,6 +20933,12 @@ class TestChecker(unittest.TestCase):
         # FAIL banner the button dropped a line and hung 27px
         # below it, because a dropped float does not expand its
         # parent. Flex keeps it on the banner's own line.
+        # Visual verdict #151 (2026-11-22): the flex row itself
+        # was the problem — it squeezed the FAIL title to 3 lines
+        # at 1919px. The banner is stacked now: the button rides
+        # inside the h2 on its own block row below the title, at
+        # every width. The flex and media-query pins below are
+        # intentionally overturned.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -20926,14 +20964,19 @@ class TestChecker(unittest.TestCase):
         src = (Path.home() / "workspace/taskmarket/site/build.py"
                ).read_text()
         self.assertEqual(src.count('Copy link to these results'), 2)
-        # 'copy-link-btn' appears 3x: CSS desktop rule + Python
+        # 'copy-link-btn' appears 3x: CSS rule + Python
         # markup + JS mirror. The mobile rule used to name it too
         # (4x); visual verdict #148 moved the full-width mobile
         # rule to the .banner-actions group, so it no longer does.
+        # Visual verdict #151 (2026-11-22): the banner is stacked,
+        # not a flex row — the button rule carries no flex:none and
+        # the mobile media query is gone.
         self.assertEqual(src.count('copy-link-btn'), 3)
-        self.assertIn('.result-banner .copy-link-btn{flex:none', src)
-        self.assertIn('@media (max-width:640px){.result-banner{flex-wrap:wrap}'
-                      '.result-banner .banner-actions{flex:1 1 100%', src)
+        self.assertIn('.result-banner .copy-link-btn{font-size:.62em;',
+                      src)
+        self.assertNotIn(
+            '@media (max-width:640px){.result-banner{flex-wrap:wrap}',
+            src)
 
     def test_banner_mark_rides_with_first_line(self):
         # Visual verdict #148 (2026-11-22): on the FAIL banner the
@@ -20943,10 +20986,19 @@ class TestChecker(unittest.TestCase):
         # the copy button sat mid-banner; "Link copied." squeezed
         # to two lines (51.9px wide, 50.4px tall). At 360px the mark
         # wrapped onto its own line above the text (banner 410.6px
-        # tall). The banner is now two flex groups: mark + text in
+        # tall). The banner became two groups: mark + text in
         # .banner-text (the mark is inline at the start of line 1),
         # button + status in .banner-actions (top-aligned, status
-        # nowrap). Both renderers must carry the same structure.
+        # nowrap).
+        # Visual verdict #151 (2026-11-22): the #148 flex row still
+        # squeezed the FAIL title to 3 lines at 1919px and the
+        # status text read as a stray line at the banner's right
+        # edge. The banner is stacked now: .banner-text is a
+        # full-width block row (mark still inline at the start of
+        # line 1), .banner-actions a second block row below it with
+        # the button alone — no status span anywhere, feedback is
+        # the button's own text. Both renderers must carry the
+        # same structure.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -20968,34 +21020,63 @@ class TestChecker(unittest.TestCase):
             self.assertIn("Result:", text)
             self.assertLess(text.index('<svg class="banner-mark"'),
                             text.index("Result:"))
-            # Text group precedes the actions group; button and
-            # status sit inside the actions group, in that order.
+            # Text group precedes the actions group; the actions
+            # group holds only the button — no status span, no text
+            # beside the button.
             self.assertLess(h2.index('banner-text'),
                             h2.index('banner-actions'))
             actions = h2.split('<span class="banner-actions">')[1]
             self.assertIn('copy-link-btn', actions)
-            self.assertIn('id="copylink-msg"', actions)
-            self.assertLess(actions.index('copy-link-btn'),
-                            actions.index('copylink-msg'))
-        # CSS: top-aligned groups, status never wraps.
+            self.assertNotIn('copylink-msg', h2)
+            self.assertNotIn('role="status"', actions)
+        # CSS: stacked block rows, no flex row, no status rule.
         self.assertIn(
-            ".result-banner .banner-text{flex:1 1 auto;min-width:0}",
+            ".result-banner .banner-text{display:block}",
             build.CSS)
         self.assertIn(
-            ".result-banner .banner-actions{flex:none;display:flex;"
-            "align-items:center;gap:.5em",
+            ".result-banner .banner-actions{display:block;"
+            "margin:.55em 0 0}",
             build.CSS)
-        self.assertIn(
-            ".result-banner #copylink-msg{font-size:.62em;"
-            "font-weight:600;white-space:nowrap}",
-            build.CSS)
-        # JS mirror carries the identical two-group markup.
+        self.assertNotIn("copylink-msg", build.CSS)
+        self.assertNotIn(".result-banner{display:flex", build.CSS)
+        # JS mirror carries the identical stacked markup.
         src = (Path.home() / "workspace/taskmarket/site/build.py"
                ).read_text()
         self.assertIn(
             "<span class='banner-text'>\"+banner+\"</span>"
             "<span class='banner-actions'>",
             src)
+        self.assertNotIn("copylink-msg", src)
+
+    def test_copy_link_feedback_is_button_state(self):
+        # Visual verdict #151 (2026-11-22): "Link copied." used to
+        # appear as a separate span beside the button — on the FAIL
+        # banner it read as a stray line at the banner's right
+        # edge. The feedback is now the button's own text: the
+        # shipped copyResultsLink saves the label once, shows a
+        # checkmark label on success, and restores the original
+        # label after 3 seconds; the failure text goes through the
+        # same path. No status span exists in either renderer.
+        # The behaviour itself (button text changes, then reverts)
+        # is executed by the node harness; this suite pins the
+        # shipped script text.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        for script in (build.COPY_LINK_SCRIPT,
+                       (Path.home() / "workspace/taskmarket/site/build.py"
+                        ).read_text().split('h+="<script>')[1].split("</script>")[0]):
+            self.assertIn("function copyResultsLink(btn)", script)
+            self.assertIn("btn._label", script)
+            self.assertIn("btn.textContent=btn._label", script)
+            self.assertIn("setTimeout(function(){btn.textContent=btn._label;},3000)", script)
+            self.assertIn("Link copied", script)
+            self.assertIn("Copy failed", script)
+            self.assertNotIn("copylink-msg", script)
+            self.assertNotIn("getElementById('copylink-msg')", script)
+        self.assertNotIn("copylink-msg", build.COPY_LINK_HTML)
+        self.assertNotIn("copylink-msg", build.COPY_LINK_SCRIPT)
 
     def test_guide_link_is_named_and_at_card_bottom(self):
         # Visual verdict #54 item c (2026-11-17): "Read the guide
