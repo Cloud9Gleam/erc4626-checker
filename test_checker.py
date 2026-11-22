@@ -20880,6 +20880,16 @@ class TestChecker(unittest.TestCase):
         # Pins /guides/erc4626-donation-per-address-cap/ to its model:
         # 10,000 USDC per-address cap, seed 1 base unit, donate
         # 1,000,000 USDC, victim 100,000 USDC, 2 USDC gas per deposit.
+        # Corrected 2026-11-22: the old model computed redeem as
+        # shares * total_assets // supply (no virtual amounts) and
+        # treated a 0-share deposit as funds entering the vault. With
+        # the OZ virtual share the attacker's single share is worth
+        # half the assets (supply 1 + 1 virtual), a 0-share deposit
+        # reverts so the victim loses nothing but gas, the 1-share
+        # victim is one of three units (supply 2 + 1 virtual) and
+        # loses a third -- so the cap blocks the loss, not a rescue --
+        # and with offset 6 the victim loses 0.454546, not a profit
+        # of 83,332.569443.
         import importlib.util
         from pathlib import Path
         model_path = (Path.home() / "workspace/taskmarket/site"
@@ -20891,66 +20901,154 @@ class TestChecker(unittest.TestCase):
         USDC = model.USDC
 
         # After the donation, offset 0: every address mints 0 shares,
-        # 10 addresses or one; attacker redeems 1,100,000.000001 for a
-        # +100,000 profit; the 10-way split costs 20 USDC of gas.
+        # 10 addresses or one; the deposits revert, so the victim
+        # loses 0 of the deposit and 20 USDC of gas. The attacker
+        # redeems the only share for 500,000.000001, a LOSS of
+        # 500,000; 500,000 stays stranded.
         A = 1 + model.DONATION
         S = 1
         self.assertEqual(
             model.shares_for_deposit(model.PER_ADDRESS_CAP, A, S, 0), 0)
         self.assertEqual(
             model.shares_for_deposit(100_000 * USDC, A, S, 0), 0)
-        ta = A + 100_000 * USDC
-        gross = model.assets_for_redeem(1, ta, S)
-        self.assertEqual(gross, 1_100_000_000_001)
-        self.assertEqual(gross - model.DONATION - 1, 100_000 * USDC)
+        vic_out, atk_out, stranded, reverted = model.split_attack(
+            0, 100_000 * USDC, 10)
+        self.assertEqual((vic_out, reverted), (0, 10))
+        self.assertEqual(atk_out, 500_000_000_001)
+        self.assertEqual(atk_out - model.DONATION - 1, -500_000 * USDC)
+        self.assertEqual(stranded, 500_000 * USDC)
         self.assertEqual(10 * model.GAS_PER_DEPOSIT, 20 * USDC)
 
-        # The inversion: the 500,000.000001 threshold for one share is
-        # just over 50x the cap, so a 1,000,000 victim who survives in
-        # one deposit loses 0, but split across 100 capped addresses
-        # loses the full 1,000,000 plus 200 USDC of gas.
+        # The inversion that is not: the 500,000.000001 threshold for
+        # one share is just over 50x the cap, and a 1,000,000 victim
+        # who deposits in one address mints 1 share-base-unit -- one
+        # of three units, not half the vault -- and redeems
+        # 666,666.666667, losing 333,333.333333. Under the cap the
+        # same 1,000,000 splits into 100 addresses that all revert:
+        # the victim loses 0 of the deposit plus 200 USDC of gas.
         self.assertEqual(
             model.shares_for_deposit(500_000_000_000, A, S, 0), 0)
         self.assertEqual(
             model.shares_for_deposit(500_000_000_001, A, S, 0), 1)
-        self.assertEqual(
-            model.shares_for_deposit(1_000_000 * USDC, A, S, 0), 1)
-        ta_big = A + 1_000_000 * USDC
-        gross_v = model.assets_for_redeem(1, ta_big, S + 1)
-        self.assertEqual(gross_v, 1_000_000_000_000)
-        self.assertEqual(gross_v - 1_000_000 * USDC, 0)
-        self.assertEqual(
-            100 * model.shares_for_deposit(
-                model.PER_ADDRESS_CAP, A, S, 0), 0)
+        atk, vic, ta_big, s_big = model.attack(0, 1_000_000 * USDC)
+        self.assertEqual((atk, vic), (1, 1))
+        gross_v = model.assets_for_redeem(vic, ta_big, s_big, 0)
+        self.assertEqual(gross_v, 666_666_666_667)
+        self.assertEqual(gross_v - 1_000_000 * USDC, -333_333_333_333)
+        gross_a = model.assets_for_redeem(
+            atk, ta_big - gross_v, s_big - vic, 0)
+        self.assertEqual(gross_a, 666_666_666_667)
+        self.assertEqual(gross_a - model.DONATION - 1, -333_333_333_334)
+        self.assertEqual(ta_big - gross_v - gross_a, 666_666_666_667)
+        vic_out, atk_out, stranded, reverted = model.split_attack(
+            0, 1_000_000 * USDC, 100)
+        self.assertEqual((vic_out, reverted), (0, 100))
         self.assertEqual(100 * model.GAS_PER_DEPOSIT, 200 * USDC)
 
         # Offset 6: one 100,000 deposit mints 199,999 and redeems
-        # 183,332.569443; split 10 x 10,000 mints 19,999 each (199,990
-        # total, 9 base units lost to flooring) and redeems
-        # 183,325.694380 total — the split costs 6.875063 USDC.
-        S6 = 1_000_000
-        v_one = model.shares_for_deposit(100_000 * USDC, A, S6, 6)
-        self.assertEqual(v_one, 199_999)
-        v_split = model.shares_for_deposit(
-            model.PER_ADDRESS_CAP, A, S6, 6)
-        self.assertEqual(v_split, 19_999)
-        self.assertEqual(10 * v_split, 199_990)
-        ta6 = A + 100_000 * USDC
-        s6_one = S6 + v_one
-        gross_one = model.assets_for_redeem(v_one, ta6, s6_one)
-        self.assertEqual(gross_one, 183_332_569_443)
-        s6_split = S6 + 10 * v_split
-        gross_each = model.assets_for_redeem(v_split, ta6, s6_split)
-        self.assertEqual(gross_each, 18_332_569_438)
-        self.assertEqual(10 * gross_each, 183_325_694_380)
-        self.assertEqual(gross_one - 10 * gross_each, 6_875_063)
-        gross_a6 = model.assets_for_redeem(S6, ta6, s6_split)
-        self.assertEqual(gross_a6, 916_674_305_620)
-        self.assertEqual(gross_a6 - model.DONATION - 1, -83_325_694_381)
+        # 99,999.545454 (loss 0.454546); split 10 x 10,000 mints
+        # 19,999 each (199,990 total, 9 base units lost to flooring)
+        # and redeems 99,995.454520 total (loss 4.545480) -- the split
+        # costs 4.090934 USDC plus 20 USDC of gas.
+        atk6, vic6, ta6, s6 = model.attack(6, 100_000 * USDC)
+        self.assertEqual((atk6, vic6), (1_000_000, 199_999))
+        gross_one = model.assets_for_redeem(vic6, ta6, s6, 6)
+        self.assertEqual(gross_one, 99_999_545_454)
+        self.assertEqual(gross_one - 100_000 * USDC, -454_546)
+        gross_a1 = model.assets_for_redeem(
+            atk6, ta6 - gross_one, s6 - vic6, 6)
+        self.assertEqual(gross_a1, 500_000_227_274)
+        self.assertEqual(gross_a1 - model.DONATION - 1, -499_999_772_727)
+        self.assertEqual(ta6 - gross_one - gross_a1, 500_000_227_273)
+        vic_out6, atk_out6, stranded6, reverted6 = model.split_attack(
+            6, 100_000 * USDC, 10)
+        self.assertEqual(reverted6, 0)
+        self.assertEqual(vic_out6, 99_995_454_520)
+        self.assertEqual(vic_out6 - 100_000 * USDC, -4_545_480)
+        self.assertEqual(gross_one - vic_out6, 4_090_934)
+        self.assertEqual(atk_out6, 500_002_272_741)
+        self.assertEqual(atk_out6 - model.DONATION - 1, -499_997_727_260)
+        self.assertEqual(stranded6, 500_002_272_740)
 
-        # No duplicate add() for this guide in build.py.
+        # Differential vs the checker's own Vault class: every redeem
+        # in the model equals Vault.redeem on the same state, and a
+        # 0-share deposit raises exactly where the model says it
+        # reverts.
+        from erc4626_checker import Vault
+        for off, v_usdc in ((0, 100_000), (0, 1_000_000), (6, 100_000)):
+            atk, vshares, ta, s = model.attack(off, v_usdc * USDC)
+            vault = Vault(decimals_offset=off)
+            self.assertEqual(vault.deposit(1), atk)
+            vault.donate(model.DONATION)
+            if vshares is None:
+                with self.assertRaises(ValueError):
+                    vault.deposit(v_usdc * USDC)
+                self.assertEqual(
+                    vault.redeem(atk),
+                    model.assets_for_redeem(atk, ta, s, off))
+            else:
+                self.assertEqual(vault.deposit(v_usdc * USDC), vshares)
+                self.assertEqual(
+                    vault.redeem(vshares),
+                    model.assets_for_redeem(vshares, ta, s, off))
+        # Split differential: 10 capped slices at offset 0 all revert
+        # in Vault too; at offset 6 the sequential Vault redemptions
+        # match split_attack to the base unit.
+        for off, v_usdc, n in ((0, 100_000, 10), (0, 1_000_000, 100),
+                               (6, 100_000, 10)):
+            vic_out, atk_out, stranded, reverted = model.split_attack(
+                off, v_usdc * USDC, n)
+            vault = Vault(decimals_offset=off)
+            atk = vault.deposit(1)
+            vault.donate(model.DONATION)
+            slice_assets = v_usdc * USDC // n
+            vault_vic_out = 0
+            vault_reverted = 0
+            shares = []
+            for _ in range(n):
+                try:
+                    shares.append(vault.deposit(slice_assets))
+                except ValueError:
+                    vault_reverted += 1
+            for sh in shares:
+                vault_vic_out += vault.redeem(sh)
+            vault_atk_out = vault.redeem(atk)
+            self.assertEqual(vault_reverted, reverted)
+            self.assertEqual(vault_vic_out, vic_out)
+            self.assertEqual(vault_atk_out, atk_out)
+            self.assertEqual(vault.total_assets, stranded)
+
+        # The guide page states the corrected numbers and no longer
+        # states the old ones (the three old figures that remain are
+        # the retraction sentences, naming the old errors).
         build = (Path.home() / "workspace/taskmarket/site/build.py"
                  ).read_text()
+        start = build.find('add("/guides/erc4626-donation-per-address-cap/"')
+        end = build.find('add("/guides/', start + 10)
+        section = build[start:end]
+        for new in ("500,000.000001", "666,666.666667", "333,333.333333",
+                    "99,999.545454", "0.454546", "4.090934", "4.545480",
+                    "9,999.545452", "99,995.454520", "500,002.272741",
+                    "499,997.727260", "500,000.227274", "499,999.772727",
+                    "the cap that blocks the victim, not the attack",
+                    "The inversion that is not",
+                    "the cap blocks the loss, not the rescue",
+                    "one of three units"):
+            self.assertIn(new, section)
+        for old, count in (("1,100,000.000001", 1),
+                           ("183,332.569443", 1),
+                           ("6.875063", 1),
+                           ("1,000,000.000000", 1),
+                           ("that single base unit is half the vault",
+                            1)):
+            self.assertEqual(section.count(old), count,
+                             f"{old}: expected {count} in the guide")
+        for gone in ("18,332.569438", "183,325.694380",
+                     "916,674.305620", "83,325.694381",
+                     "blocks the rescue", "loses the full",
+                     "the victim loses <strong>0</strong>, and the "
+                     "attacker profits"):
+            self.assertNotIn(gone, section)
         self.assertEqual(
             build.count('add("/guides/erc4626-donation-per-address-cap/"'),
             1)
