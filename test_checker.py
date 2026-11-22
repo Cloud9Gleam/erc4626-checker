@@ -21588,8 +21588,15 @@ class TestChecker(unittest.TestCase):
         # grid; the donation card (table + chart) spans both columns.
         # Below 1024px the single column stays. Structure, not
         # appearance, is what this test can pin: the grid wrapper,
-        # the wide class on exactly the donation card, and the CSS
-        # rule that turns the wrapper into a grid at desktop width.
+        # the wide class on exactly the donation and rounding cards,
+        # and the CSS rule that turns the wrapper into a grid at
+        # desktop width.
+        # Visual verdict #154 (2026-11-22, checker-improvement):
+        # one wide card left five halves that can never pair — on
+        # the ALL PASS page Rounding sat alone in row 1. Rounding
+        # spans both columns too now (two wides + four halves tile
+        # exactly), and the grid is dense so a failing half card
+        # landing before a wide card backfills instead of stranding.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -21604,10 +21611,13 @@ class TestChecker(unittest.TestCase):
             self.assertEqual(html.count("<section class='check-card"), 6)
             self.assertEqual(
                 html.count("<section class='check-card check-card--wide'>"),
-                1)
-            don = html.split(
-                "<section class='check-card check-card--wide'>")[1]
-            self.assertIn("Donation inflation", don.split("</h3>", 1)[0])
+                2)
+            wide_titles = [
+                s.split("</h3>", 1)[0].split("</span> ", 1)[1]
+                for s in html.split(
+                    "<section class='check-card check-card--wide'>")[1:]]
+            self.assertEqual(sorted(wide_titles),
+                             ["Donation inflation", "Rounding directions"])
             # The grid opens before the first card and closes after
             # the last one, with nothing but a newline between the
             # last card's close and the grid close.
@@ -21620,10 +21630,86 @@ class TestChecker(unittest.TestCase):
                 "")
         self.assertIn(
             "@media (min-width:1024px){.check-grid{display:grid;"
+            "grid-auto-flow:dense;"
             "grid-template-columns:1fr 1fr;gap:1em;margin:1em 0}"
             ".check-grid .check-card{margin:0}"
             ".check-card--wide{grid-column:1/-1}}",
             build.CSS)
+
+    def test_check_grid_never_orphans_a_card(self):
+        # Visual verdict #154 (2026-11-22, checker-improvement):
+        # the orphan was not a one-page accident. The failing-first
+        # sort reorders the cards, so the grid order depends on
+        # which checks fail — and the model reaches four failing
+        # sets (swept 2026-11-22: offsets 0/3/6/18/30 x fees
+        # 0/1000/10000 x mins 0/1/1000 USDC x victims 1k/100k x
+        # three vault states): none, {donation}, {donation, min},
+        # {min} alone. Two wides + four halves tile exactly only
+        # with dense backfill: in {min} the failing half card lands
+        # before both wide cards, and in {donation, min} between
+        # them — without dense each shows two lone half cards.
+        # This test simulates CSS grid auto-placement (dense, two
+        # columns) on the real rendered order for every reachable
+        # set and requires every row full: one wide card, or two
+        # half cards. The Worker JS renderer must carry the same
+        # wide condition; its live rendering is pinned by the
+        # rounding-wide node harness, not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+
+        def place(cards):
+            # cards: True = wide (spans both columns), False = half.
+            # Dense auto-placement: a half takes the earliest free
+            # cell; a wide takes the first row with both cells free
+            # (always a fresh row here — a live row never has two
+            # free cells, halves fill left to right).
+            rows = []
+            for wide in cards:
+                if wide:
+                    rows.append(["wide", "wide"])
+                else:
+                    for row in rows:
+                        if row[0] is None:
+                            row[0] = "half"
+                            break
+                        if row[1] is None:
+                            row[1] = "half"
+                            break
+                    else:
+                        rows.append(["half", None])
+            return rows
+
+        cases = (
+            # ALL PASS.
+            (Vault(decimals_offset=6, min_deposit=1_000_000,
+                   perf_fee_bps=1000), {}),
+            # Donation fails alone.
+            (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+             {"off": 0, "mn": 0, "fee": 0}),
+            # Minimum-viable-deposit fails alone (min 1000 USDC).
+            (Vault(decimals_offset=6, min_deposit=1_000_000_000,
+                   perf_fee_bps=1000),
+             {"off": 6, "mn": 1_000_000_000, "fee": 1000}),
+            # Donation + minimum-viable-deposit fail together.
+            (Vault(decimals_offset=0, min_deposit=10**15, perf_fee_bps=0),
+             {"off": 0, "mn": 10**15, "fee": 0}),
+        )
+        for v, kwargs in cases:
+            html = build.results_html(run_all(v), **kwargs)
+            cards = [s.startswith(" check-card--wide'>")
+                     for s in html.split("<section class='check-card")[1:]]
+            self.assertEqual(len(cards), 6)
+            self.assertEqual(sum(cards), 2)
+            for row in place(cards):
+                self.assertIn(row, (["wide", "wide"], ["half", "half"]),
+                              f"orphaned row {row} in {cards}")
+        js = build.checker_results_html_js()
+        self.assertIn(
+            "(r.name===\"donation_inflation\"||r.name===\"rounding\")"
+            "?\" check-card--wide\":\"\"",
+            js)
 
     def test_short_cards_state_their_pass_rule(self):
         # Visual verdict #104 item 1 (corrected): the short cards
