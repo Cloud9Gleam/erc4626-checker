@@ -5824,24 +5824,25 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             "<h1>ERC-4626 checker — donation-inflation model</h1>", other)
 
-    def test_audit_pay_row_address_hugs_content(self):
+    def test_audit_pay_row_address_own_line(self):
         # Visual verdict #59 supersedes #58: with the shortened
         # display (0xD07C…dC64, ~15 chars) the full-width address box
-        # was ~90% blank. The box now hugs its content (flex 0 1
-        # auto, capped at the row width) and the two controls share
-        # the row beside it -- uncrowded because the address is short.
+        # was ~90% blank, so the box hugged its content (flex 0 1
+        # auto) and the two controls shared the row beside it.
         # Visual verdict #110 supersedes the default: the full
         # 42-char address is now shown on load and the toggle only
-        # collapses it. The hugging rule is unchanged -- the box
-        # grows to fit the full address and the controls wrap below
-        # on narrow widths; the address still wraps instead of being
-        # ellipsis-clipped -- a clipped payment address hides
-        # characters the payer must see.
+        # collapses it — so #59's premise (a short address) is gone.
+        # 2026-11-23 supersedes the hugging rule itself (visual
+        # verdict 01:07): four controls still crammed one row
+        # (847px in a 903px row), the address at body size, the trust
+        # element not prominent. The address now takes its own
+        # full-width line at 1.1em — a deposit-address field — and
+        # the three actions share the line below it. The address
+        # still wraps instead of being ellipsis-clipped -- a clipped
+        # payment address hides characters the payer must see.
         # Visual verdict #115 (d) supersedes the markup: the toggle
-        # moved after the BaseScan link and takes its own full-width
-        # line under the address (see
-        # test_audit_pay_row_toggle_is_own_line) — the address box
-        # hugging rule itself is unchanged.
+        # moved after the BaseScan link (see
+        # test_audit_pay_row_toggle_shares_line_one).
         import re
         import sys
         from pathlib import Path
@@ -5849,9 +5850,11 @@ class TestChecker(unittest.TestCase):
         import build
         m = re.search(r"\.pay-row code\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".pay-row code rule not found")
-        self.assertIn("flex:0 1 auto", m.group(0))
+        self.assertIn("flex:0 0 100%", m.group(0))
+        self.assertNotIn("flex:0 1 auto", m.group(0))
+        self.assertIn("box-sizing:border-box", m.group(0))
+        self.assertIn("font-size:1.1em", m.group(0))
         self.assertIn("max-width:100%", m.group(0))
-        self.assertNotIn("flex:1 1 100%", m.group(0))
         self.assertIn("word-break:break-all", m.group(0))
         self.assertNotIn("text-overflow:ellipsis", m.group(0))
         self.assertIn(".pay-row{display:flex", build.CSS)
@@ -5892,6 +5895,12 @@ class TestChecker(unittest.TestCase):
         # is address, copy button, BaseScan link, toggle, note; the
         # copy script and the toggle function use getElementById, so
         # the wrapper cannot break them.
+        # 2026-11-23 supersedes the one-row arrangement (visual
+        # verdict 01:07): fitting is not breathing room — the address
+        # now takes its own full-width line at 1.1em (see
+        # test_audit_pay_row_address_own_line) and the three actions
+        # share the line below it. This test's assertions still hold:
+        # the toggle wrap is unchanged, DOM order is unchanged.
         import re
         import sys
         from pathlib import Path
@@ -5959,9 +5968,11 @@ class TestChecker(unittest.TestCase):
         # takes its own full-width line below the controls
         # (flex-basis 100%), so it reads as one attached warning
         # line under the address it warns about. The address box
-        # itself must stay hugging its content (verdict #59) --
-        # the note fills the row below the controls, it does not
-        # re-stretch the address box.
+        # was the hugging one from verdict #59 — 2026-11-23
+        # supersedes that (visual verdict 01:07, see
+        # test_audit_pay_row_address_own_line): the address is now
+        # its own full-width line at 1.1em, the note still fills the
+        # full-width strip below the actions.
         import re
         import sys
         from pathlib import Path
@@ -5983,11 +5994,11 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("margin-left:auto", m.group(0))
         self.assertIn("flex:0 0 100%", m.group(0))
         self.assertNotIn("max-width:26em", m.group(0))
-        # The address box is still the hugging one from verdict #59.
+        # The address box is now the full-width field from 2026-11-23.
         m2 = re.search(r"\.pay-row code\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m2)
-        self.assertIn("flex:0 1 auto", m2.group(0))
-        self.assertNotIn("flex:1 1 100%", m2.group(0))
+        self.assertIn("flex:0 0 100%", m2.group(0))
+        self.assertNotIn("flex:0 1 auto", m2.group(0))
 
     def test_footer_closes_the_page_tightly(self):
         # Visual verdict #69: the page ending felt loose -- the small
