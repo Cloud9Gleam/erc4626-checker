@@ -24268,5 +24268,108 @@ class TestChecker(unittest.TestCase):
 
 
 
+    def test_inflation_attack_guide_numbers(self):
+        # Inflation-attack guide: the flagship worked example,
+        # re-derived here with plain fractions.Fraction arithmetic,
+        # independent of any model file. Attacker deposits 1 USDC,
+        # donates 1,000,000 USDC, victim deposits 100,000 USDC,
+        # both redeem. Conversions use the OpenZeppelin rule the
+        # guide states -- virtual shares 10**offset, virtual assets
+        # 1 -- so at offset 0 every conversion is (supply+1) /
+        # (assets+1), and redemption is attacker first, as in the
+        # checker's donation check.
+        U = 10**6
+        vs, va = 1, 1  # offset 0
+
+        def to_shares(a, S, A):
+            return (a * (S + vs)) // (A + va)
+
+        def to_assets(s, S, A):
+            return (s * (A + va)) // (S + vs)
+
+        S, A = 0, 0
+        # Attacker deposits 1 USDC at the 1:1 starting price.
+        atk_shares = to_shares(1 * U, S, A)
+        self.assertEqual(atk_shares, 1_000_000)
+        S += atk_shares
+        A += 1 * U
+        # The donation: assets jump, shares do not.
+        A += 1_000_000 * U
+        # Victim deposits 100,000 USDC: 99,999 shares, not
+        # 100,000,000,000 -- each share now costs about 1 USDC.
+        vic_shares = to_shares(100_000 * U, S, A)
+        self.assertEqual(vic_shares, 99_999)
+        self.assertEqual(Fraction(A + va, S + vs) / U,
+                         Fraction(1_000_001_000_001, 1_000_001_000_000))
+        S += vic_shares
+        A += 100_000 * U
+        # Both redeem, attacker first.
+        atk_out = to_assets(atk_shares, S, A)
+        S -= atk_shares
+        A -= atk_out
+        vic_out = to_assets(vic_shares, S, A)
+        S -= vic_shares
+        A -= vic_out
+        self.assertEqual(atk_out, 1_000_000_909_091)
+        self.assertEqual(vic_out, 99_999_090_909)
+        self.assertEqual(Fraction(atk_out, U),
+                         Fraction("1000000.909091"))
+        self.assertEqual(Fraction(vic_out, U),
+                         Fraction("99999.090909"))
+        # The victim loses 0.909091 USDC, the attacker 0.090909 --
+        # and neither loss reaches the other: the two losses sum
+        # to exactly the 1 USDC left stranded in the vault.
+        vic_loss = 100_000 * U - vic_out
+        atk_loss = (1 * U + 1_000_000 * U) - atk_out
+        self.assertEqual(vic_loss, 909_091)
+        self.assertEqual(atk_loss, 90_909)
+        self.assertEqual(Fraction(vic_loss, U), Fraction("0.909091"))
+        self.assertEqual(Fraction(atk_loss, U), Fraction("0.090909"))
+        self.assertEqual(vic_loss + atk_loss, A)
+        self.assertEqual(A, 1_000_000)
+
+        # The model agrees, row by row, at the 1M donation.
+        v = Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)
+        rows = check_donation(v)["detail"]
+        row = [r for r in rows if r["donation"] == 1_000_000_000_000][0]
+        self.assertEqual(row["victim_loss"], 909_091)
+        self.assertEqual(row["attacker_net"], -90_909)
+        # The defense numbers the guide quotes: offset 0 fails
+        # with worst victim loss 0.909091, offset 6 passes with
+        # worst 0.0009, offset 18 passes with zero loss.
+        for off, mn, fee, worst, ok in (
+                (0, 0, 0, 909_091, False),
+                (6, 1_000_000, 1000, 900, True),
+                (18, 1_000_000, 1000, 0, True)):
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee)
+            results = {r["name"]: r for r in run_all(v)}
+            d = results["donation_inflation"]
+            self.assertEqual(d["pass"], ok)
+            self.assertEqual(
+                max(x["victim_loss"] for x in d["detail"]), worst)
+
+    def test_inflation_attack_guide_page(self):
+        # Pins the guide page: the add() must exist with the
+        # headline numbers, and a link from the /guides/ index.
+        # The numbers are re-derived in
+        # test_inflation_attack_guide_numbers; this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-inflation-attack/"', build)
+        start = build.index('add("/guides/erc4626-inflation-attack/"')
+        end = build.index('add("/guides/erc4626-donation-attack/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for num in ("99,999", "100,000,000,000", "99,999.090909",
+                    "0.909091", "1,000,000.909091", "0.090909",
+                    "0.0009"):
+            self.assertIn(num, block)
+        self.assertIn('<a href="/guides/erc4626-inflation-attack/">',
+                      build)
+
+
+
 if __name__ == "__main__":
     unittest.main()
