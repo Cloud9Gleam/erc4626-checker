@@ -1102,23 +1102,34 @@ class TestChecker(unittest.TestCase):
         # agree: the worst measured victim loss and the donation that
         # caused it. A custom victim deposit re-words the sentence
         # around the deposit actually run.
-        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
-                      "loses 0.909091 USDC", failed)
+        # Visual verdict #152 follow-up (2026-11-22): the banner broke
+        # "1,000,000 USDC donation" across lines, so the donation phrase
+        # rides in a nowrap span (same span in the JS lossSentence).
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
+                      "100,000 USDC deposit loses 0.909091 USDC", failed)
         custom = build.verdict_strip_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
                     victim_deposit=1_000_000_000), vic=1_000_000_000)
-        self.assertIn("1,000,000 USDC donation: a 1,000 USDC deposit "
-                      "loses 0.999001 USDC", custom)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
+                      "1,000 USDC deposit loses 0.999001 USDC", custom)
         # Visual verdict #124 (g) (2026-11-20): a bare "&darr;" at the
         # end read as expand / decoration / jump-to-the-failed-item.
         # The strip must say in words where it goes — the full results
         # below the form — and never end on the bare arrow again.
-        # 2026-11-20: "below &darr;" rides in a nowrap span so the
-        # arrow never orphans alone on a line at 360px (headless
+        # 2026-11-20: "below &darr;" rode in a nowrap span so the
+        # arrow never orphaned alone on a line at 360px (headless
         # render: the ALL PASS strip left a bare "↓" on line 3).
-        # The wording is unchanged; only the markup wraps it.
+        # Visual verdict #152 follow-up (2026-11-22): the span only
+        # protected the last two words — browser-measured 16:13-16:15
+        # on the live noprot page, the link still broke mid-phrase and
+        # "below ↓" orphaned onto line 2 with ~85% empty red strip
+        # beside it. The whole link is now one unbreakable unit: the
+        # anchor itself carries white-space:nowrap in CSS, so it drops
+        # to its own line whole instead of splitting. The inner span
+        # is gone; the wording is unchanged.
         self.assertIn("see the full results", failed)
-        self.assertIn('<span class="nowrap">below &darr;</span>', failed)
+        self.assertIn("see the full results below &darr;</a>", failed)
+        self.assertNotIn("<span class=\"nowrap\">below &darr;</span>", failed)
         self.assertNotIn("Donation inflation &darr;", failed)
         # Visual verdict #147 (2026-11-22): the whole strip used to be
         # one underlined link on the red background, so the verdict
@@ -1139,7 +1150,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn("verdict-strip pass", passed)
         self.assertNotIn("SOME FAILED", passed)
         self.assertIn("see the full results", passed)
-        self.assertIn('<span class="nowrap">below &darr;</span>', passed)
+        self.assertIn("see the full results below &darr;</a>", passed)
+        self.assertNotIn("<span class=\"nowrap\">below &darr;</span>", passed)
         self.assertNotIn("checks passed &darr;", passed)
         # Visual verdict #147 (2026-11-22): same de-linking on the
         # passing strip — the verdict precedes the anchor as plain text.
@@ -1180,7 +1192,8 @@ class TestChecker(unittest.TestCase):
                         body.index('<form id="checker-form"'))
         self.assertIn("ALL PASS", body)
         self.assertIn(".verdict-strip.fail", build.CSS)
-        self.assertIn(".verdict-strip a", build.CSS)
+        self.assertIn(".verdict-strip a{color:inherit;text-decoration:underline;"
+                      "white-space:nowrap}", build.CSS)
 
     def test_verdict_strip_does_not_repeat_banner_titles(self):
         # Visual verdict #151 minor issue (2026-11-22): the strip and
@@ -1199,8 +1212,8 @@ class TestChecker(unittest.TestCase):
         strip = build.verdict_strip_html(results)
         # Measured loss: strip is verdict + loss sentence only.
         self.assertIn("Result: SOME FAILED", strip)
-        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
-                      "loses 0.909091 USDC", strip)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
+                      "100,000 USDC deposit loses 0.909091 USDC", strip)
         self.assertNotIn("1 of 6 failed", strip)
         self.assertNotIn("Donation inflation", strip)
         # The banner still names the failures — the detail moved, it
@@ -1209,8 +1222,8 @@ class TestChecker(unittest.TestCase):
                                   off=0, mn=0, fee=0)
         banner = html[html.index('<h2 id="results"'):html.index("</h2>")]
         self.assertIn("1 of 6 failed: Donation inflation", banner)
-        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
-                      "loses 0.909091 USDC", banner)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
+                      "100,000 USDC deposit loses 0.909091 USDC", banner)
         # No measured loss: the strip falls back to the failed titles
         # (the only evidence available), so it still names the check.
         # (With this minimum the MVD check fails too, so the strip
@@ -1255,13 +1268,13 @@ class TestChecker(unittest.TestCase):
         banner = failed[failed.index('<h2 id="results"'):
                         failed.index("</h2>")]
         self.assertIn("SOME FAILED", banner)
-        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
-                      "loses 0.909091 USDC", banner)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
+                      "100,000 USDC deposit loses 0.909091 USDC", banner)
         # The banner and the strip agree wherever the visitor lands.
         strip = build.verdict_strip_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
-        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
-                      "loses 0.909091 USDC", strip)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
+                      "100,000 USDC deposit loses 0.909091 USDC", strip)
         # A custom victim deposit re-words the sentence around the
         # deposit actually run.
         custom = build.results_html(
@@ -1270,8 +1283,8 @@ class TestChecker(unittest.TestCase):
             vic=1_000_000_000, off=0, mn=0, fee=0)
         cbanner = custom[custom.index('<h2 id="results"'):
                          custom.index("</h2>")]
-        self.assertIn("1,000,000 USDC donation: a 1,000 USDC deposit "
-                      "loses 0.999001 USDC", cbanner)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
+                      "1,000 USDC deposit loses 0.999001 USDC", cbanner)
         # A donation failure with no measured loss invents no number.
         errored = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=10**15,
