@@ -15248,6 +15248,15 @@ class TestChecker(unittest.TestCase):
         # (1/11 of the vault), donates 10,000, price 111/110.
         # Importing the model re-runs its assertions; the checks
         # below independently re-derive the headline numbers.
+        #
+        # Units are base units (1 USDC = 1_000_000), matching the
+        # checker and OZ ERC-4626: shares mint and redeem in base
+        # units, floored, with the virtual +1 on both sides of each
+        # conversion. The model file previously worked in whole
+        # USDC and floored minting at 1 whole share (victim 99,099
+        # shares, loss 0.091736); that is wrong for a 6-decimal
+        # vault — the victim mints 99,099.099099 shares and loses
+        # one base unit. Rewritten 2026-11-22 with the guide.
         import importlib.util
         from fractions import Fraction
         from pathlib import Path
@@ -15258,146 +15267,150 @@ class TestChecker(unittest.TestCase):
         model = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(model)
 
-        USDC = 1  # Whole-USDC units, matching the model file:
-        # the model floors share minting at 1 whole share, so
-        # re-deriving in 1e6 base units would floor at 1 base
-        # unit and give 99,099.099099 shares instead of 99,099.
+        U = 1_000_000  # base units per USDC
 
-        def floor_frac(x):
-            return x.numerator // x.denominator
+        def shares_for(assets, supply, total_assets):
+            return assets * (supply + 1) // (total_assets + 1)
 
-        # (1) Scenario A: victim deposits 100,000, gets 99,099
-        # shares worth 99,999.908264, loses 0.091736 (dust).
-        T, S = 1_000_000 * USDC, 1_000_000 * USDC
-        A = 100_000 * USDC
-        D = 10_000 * USDC
+        def assets_for(shares, supply, total_assets):
+            return shares * (total_assets + 1) // (supply + 1)
+
+        # (1) Scenario A: victim deposits 100,000, gets
+        # 99,099.099099 shares worth 99,999.999999, loses
+        # one base unit (0.000001 USDC) of dust.
+        T, S = 1_000_000 * U, 1_000_000 * U
+        A = 100_000 * U
+        D = 10_000 * U
         S1, T1 = S + A, T + A
         T2 = T1 + D
         self.assertEqual(Fraction(T2, S1), Fraction(111, 110))
         self.assertEqual(round(float(Fraction(T2, S1)), 6), 1.009091)
-        V = 100_000 * USDC
-        victim_shares = floor_frac(Fraction(V) * S1 / T2)
-        self.assertEqual(victim_shares, 99_099 * USDC)
+        V = 100_000 * U
+        victim_shares = shares_for(V, S1, T2)
+        self.assertEqual(victim_shares, 99_099_099_099)
         S3, T3 = S1 + victim_shares, T2 + V
-        self.assertEqual(S3, 1_199_099 * USDC)
-        self.assertEqual(T3, 1_210_000 * USDC)
-        victim_value = Fraction(victim_shares) * T3 / S3
-        self.assertEqual(round(float(victim_value), 6), 99_999.908264)
+        self.assertEqual(S3, 1_199_099_099_099)
+        self.assertEqual(T3, 1_210_000 * U)
+        victim_value = assets_for(victim_shares, S3, T3)
+        self.assertEqual(victim_value, 99_999_999_999)
         victim_loss = V - victim_value
-        self.assertEqual(round(float(victim_loss), 6), 0.091736)
-        self.assertLess(victim_loss, Fraction(T2, S1))
+        self.assertEqual(victim_loss, 1)  # one base unit
+        self.assertLess(victim_loss, U)
 
-        # (2) Attacker redeems 100,000 shares -> 100,909,
-        # net -9,091.000000; others gain 9,090.992487.
-        attacker_out = floor_frac(Fraction(A) * T3 / S3)
-        self.assertEqual(attacker_out, 100_909 * USDC)
-        attacker_net = Fraction(attacker_out) - (A + D)
-        self.assertEqual(attacker_net, -9_091 * USDC)
-        others_gain = Fraction(1_000_000 * USDC) * T3 / S3 \
-            - 1_000_000 * USDC
-        self.assertEqual(round(float(others_gain), 6), 9_090.992487)
-        self.assertLess(abs(others_gain + attacker_net + victim_loss),
-                        Fraction(1, 10))
+        # (2) Attacker redeems 100,000 shares -> 100,909.090909,
+        # net -9,090.909091; others gain 9,090.909091.
+        attacker_out = assets_for(A, S3, T3)
+        self.assertEqual(attacker_out, 100_909_090_909)
+        attacker_net = attacker_out - (A + D)
+        self.assertEqual(attacker_net, -9_090_909_091)
+        others_out = assets_for(1_000_000 * U, S3 - A, T3 - attacker_out)
+        others_gain = others_out - 1_000_000 * U
+        self.assertEqual(others_gain, 9_090_909_091)
+        self.assertEqual(attacker_net - victim_loss + others_gain, -1)
 
-        # (3) Theorem: exact net -(1-f)*D = -9,090.909...;
-        # the floored -9,091.000000 is the realized figure.
+        # (3) Theorem: exact net -(1-f)*D = -9,090.909... USDC;
+        # the floored -9,090.909091 is the realized figure, within
+        # one base unit of the exact value.
         f = Fraction(A, S1)
         self.assertEqual(f, Fraction(1, 11))
         exact_net = -(1 - f) * D
-        self.assertEqual(exact_net, Fraction(-100_000, 11) * USDC)
-        self.assertEqual(round(float(exact_net), 6), -9_090.909091)
+        self.assertEqual(exact_net, Fraction(-100_000, 11) * U)
+        self.assertLess(abs(Fraction(attacker_net) - exact_net), 1)
 
         # (4) Scenario C: attacker holds half, price 1.005,
-        # victim 995,024 shares, loss 0.587641, attacker
-        # net exactly -5,000.000000.
-        A2 = 1_000_000 * USDC
+        # victim 995,024.875621 shares, loss one base unit,
+        # attacker net exactly -5,000.000000.
+        A2 = 1_000_000 * U
         S1c, T1c = S + A2, T + A2
         T2c = T1c + D
         self.assertEqual(Fraction(T2c, S1c), Fraction(201, 200))
-        Vc = 1_000_000 * USDC
-        victim_shares_c = floor_frac(Fraction(Vc) * S1c / T2c)
-        self.assertEqual(victim_shares_c, 995_024 * USDC)
+        Vc = 1_000_000 * U
+        victim_shares_c = shares_for(Vc, S1c, T2c)
+        self.assertEqual(victim_shares_c, 995_024_875_621)
         S3c, T3c = S1c + victim_shares_c, T2c + Vc
-        victim_loss_c = Vc - Fraction(victim_shares_c) * T3c / S3c
-        self.assertEqual(round(float(victim_loss_c), 6), 0.587641)
-        attacker_out_c = floor_frac(Fraction(A2) * T3c / S3c)
-        self.assertEqual(attacker_out_c, 1_005_000 * USDC)
-        self.assertEqual(Fraction(attacker_out_c) - (A2 + D),
-                         -5_000 * USDC)
+        victim_loss_c = Vc - assets_for(victim_shares_c, S3c, T3c)
+        self.assertEqual(victim_loss_c, 1)
+        attacker_out_c = assets_for(A2, S3c, T3c)
+        self.assertEqual(attacker_out_c, 1_005_000 * U)
+        self.assertEqual(attacker_out_c - (A2 + D), -5_000 * U)
 
         # (5) Scenario D: victim 10,000,000 (100x) — same
-        # 0.091736 loss, same -9,091.000000 attacker net.
-        Vd = 10_000_000 * USDC
-        victim_shares_d = floor_frac(Fraction(Vd) * S1 / T2)
-        self.assertEqual(victim_shares_d, 9_909_909 * USDC)
+        # one-base-unit loss, same -9,090.909091 attacker net.
+        Vd = 10_000_000 * U
+        victim_shares_d = shares_for(Vd, S1, T2)
+        self.assertEqual(victim_shares_d, 9_909_909_909_909)
         S3d, T3d = S1 + victim_shares_d, T2 + Vd
-        victim_loss_d = Vd - Fraction(victim_shares_d) * T3d / S3d
-        self.assertEqual(round(float(victim_loss_d), 6), 0.091736)
-        attacker_out_d = floor_frac(Fraction(A) * T3d / S3d)
-        self.assertEqual(Fraction(attacker_out_d) - (A + D),
-                         -9_091 * USDC)
+        victim_loss_d = Vd - assets_for(victim_shares_d, S3d, T3d)
+        self.assertEqual(victim_loss_d, 1)
+        attacker_out_d = assets_for(A, S3d, T3d)
+        self.assertEqual(attacker_out_d - (A + D), -9_090_909_091)
 
-        # (6) Chart rows: attacker loss 9,091 / 5,000 / 10,000,
-        # widths 90.9 / 50.0 / 100.0 of the max.
-        self.assertEqual(round(float(Fraction(9_091, 10_000) * 100), 1),
+        # (6) Chart rows: attacker loss 9,090.909091 / 5,000 /
+        # 10,000, widths 90.9 / 50.0 / 100.0 of the max.
+        self.assertEqual(round(float(Fraction(9_090_909_091,
+                                             10_000_000_000) * 100), 1),
                          90.9)
         self.assertEqual(round(float(Fraction(5_000, 10_000) * 100), 1),
                          50.0)
         self.assertEqual(round(float(Fraction(10_000, 10_000) * 100), 1),
                          100.0)
 
-        # (7) Guide page carries the headline numbers.
+        # (7) Guide page carries the headline numbers, and the
+        # whole-share figures are gone from the sandwich section.
         build = (Path.home() / "workspace/taskmarket/site"
                  / "build.py").read_text()
         self.assertIn("/guides/erc4626-donation-sandwich/", build)
-        for needle in ("99,099", "99,999.908264", "0.091736",
-                       "100,909", "9,091.000000", "9,090.992487",
-                       "1.009091", "1.005", "995,024", "0.587641",
-                       "9,909,909", "5,000.000000", "10,000.000000",
-                       "9,090.909"):
-            self.assertIn(needle, build)
-
-        # (8) The victim's loss is the floor dust, not the
-        # 901-share gap: 99,099 shares at 1.009091 are worth
-        # 99,999.908264, so the guide must never state the
-        # victim loses 901 USDC.
-        self.assertIn("0.091736 USDC", build)
-        self.assertNotIn("loses 901 USDC", build)
-        self.assertNotIn("loss of 901", build)
-
-        # (9) The zero-sum close: the three SIGNED figures —
-        # attacker -9,091, victim -victim_loss, others
-        # +others_gain — sum to -0.099249, NOT within 0.09.
-        # The guide must state the 0.10 bound, never 0.09.
-        signed_sum = attacker_net - victim_loss + others_gain
-        self.assertEqual(round(float(abs(signed_sum)), 6), 0.099249)
-        self.assertFalse(abs(signed_sum) < Fraction(9, 100))
-        self.assertLess(abs(signed_sum), Fraction(1, 10))
-        self.assertIn("within <strong>0.10 USDC</strong> of zero-sum",
-                      build)
-        self.assertIn("0.099249 USDC of rounding dust", build)
-        self.assertNotIn("within <strong>0.09 USDC</strong>", build)
-
-        # (10) The floor-dust explanation, fixed 2026-11-21: the
-        # 0.099... share that rounds away is worth 0.100000 at the
-        # post-donation price, NOT 0.091736 — the victim's loss is
-        # 0.091736 only after the 0.008264 price-lift gain on their
-        # own 99,099 minted shares. And the scope note is the
-        # sandwich's own, not the pending-fee guide's copy.
         start = build.index('add("/guides/erc4626-donation-sandwich/"')
         section = build[start:build.index('""")', start) + 4]
-        dust = Fraction(11, 111)
-        self.assertEqual(dust * Fraction(111, 110), Fraction(1, 10))
-        p2 = Fraction(111, 110)
-        p3 = Fraction(1_210_000, 1_199_099)
-        gain = Fraction(99_099) * (p3 - p2)
-        self.assertEqual(round(float(gain), 6), 0.008264)
-        self.assertEqual(round(float(Fraction(1, 10) - gain), 6), 0.091736)
-        self.assertIn("worth 0.100000 at the post-donation price", section)
-        self.assertIn("gain 0.008264 from that lift", section)
-        self.assertIn("leaving a net loss of 0.091736", section)
-        self.assertNotIn("worth 0.091736 at the post-donation price",
+        for needle in ("99,099.099099", "99,999.999999", "0.000001",
+                       "100,909.090909", "9,090.909091", "1.009091",
+                       "1.005", "995,024.875621", "9,909,909.909909",
+                       "5,000.000000", "10,000.000000", "9,090.909"):
+            self.assertIn(needle, section)
+        for old in ("99,999.908264", "0.091736", "9,091.000000",
+                    "9,090.992487", "0.587641", "0.099249",
+                    "100,909</strong>", "99,099 shares",
+                    "9,909,909 shares", "995,024 shares"):
+            self.assertNotIn(old, section)
+
+        # (8) The victim's loss is one base unit of floor dust,
+        # not the 901-share gap: 99,099.099099 shares at 1.009091
+        # are worth 99,999.999999, so the guide must never state
+        # the victim loses 901 USDC.
+        self.assertIn("0.000001 USDC", section)
+        self.assertNotIn("loses 901 USDC", section)
+        self.assertNotIn("loss of 901", section)
+
+        # (9) The zero-sum close: the three SIGNED figures —
+        # attacker -9,090.909091, victim -0.000001, others
+        # +9,090.909091 — sum to -0.000001, one base unit of
+        # dust left in the vault.
+        signed_sum = attacker_net - victim_loss + others_gain
+        self.assertEqual(signed_sum, -1)
+        self.assertIn("within <strong>0.000001 USDC</strong> of zero-sum",
+                      section)
+        self.assertIn("one base unit (0.000001 USDC) of rounding dust",
+                      section)
+        self.assertNotIn("within <strong>0.10 USDC</strong>", section)
+        self.assertNotIn("0.099249 USDC of rounding dust", section)
+
+        # (10) The floor-dust explanation, corrected 2026-11-22:
+        # the mint floors to the base unit — less than one base
+        # unit of a share rounds away — and the redeem floor takes
+        # the rest, one base unit in total. The 2026-11-21 version
+        # (0.099 of a share worth 0.100000, 0.008264 lift, net
+        # loss 0.091736) assumed shares floor to whole shares and
+        # is superseded. And the scope note is the sandwich's own,
+        # not the pending-fee guide's copy.
+        entitlement = Fraction(V) * (S1 + 1) / (T2 + 1)
+        self.assertLess(entitlement - victim_shares, 1)
+        self.assertGreaterEqual(entitlement - victim_shares, 0)
+        self.assertIn("floors to the base unit", section)
+        self.assertIn("one base unit in total", section)
+        self.assertNotIn("worth 0.100000 at the post-donation price",
                          section)
+        self.assertNotIn("gain 0.008264 from that lift", section)
+        self.assertNotIn("leaving a net loss of 0.091736", section)
         self.assertIn("a donation landing between a victim's quote and "
                       "their deposit", section)
         self.assertIn("slip in between a quote and its execution", section)
