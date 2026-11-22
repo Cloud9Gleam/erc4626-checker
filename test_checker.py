@@ -20742,6 +20742,14 @@ class TestChecker(unittest.TestCase):
         # Pins /guides/erc4626-donation-maxmint-cap/ to its model:
         # caps 100,000 USDC maxDeposit / 100,000 shares maxMint,
         # seed 1 base unit, donate 1,000,000 USDC.
+        # Corrected 2026-11-22: the old model computed redeem as
+        # shares * total_assets // supply (no virtual amounts) and
+        # assumed the attacker takes the whole vault and the 1,000,000
+        # victim loses 0 ("the cliff saves the big victim"). With the
+        # OZ virtual share the attacker's single share is worth a
+        # third of the vault at supply 2, a deposit that previews 0
+        # shares reverts, and with offset 6 the victim loses 0.454546
+        # instead of profiting 83,332.569443.
         import importlib.util
         from pathlib import Path
         model_path = (Path.home() / "workspace/taskmarket/site"
@@ -20769,45 +20777,102 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(
             model.shares_for_deposit(500_000_000_001, A, S, 0), 1)
 
-        # maxDeposit caps the loss at 100,000; maxMint alone lets a
-        # 500,000 victim lose 500,000; a 1,000,000 victim mints 1
-        # share-base-unit, half the vault, and loses 0.
-        ta = A + 100_000 * USDC
-        gross = model.assets_for_redeem(1, ta, S)
-        self.assertEqual(gross - model.DONATION - 1, 100_000 * USDC)
-        ta_mid = A + 500_000 * USDC
-        gross_mid = model.assets_for_redeem(1, ta_mid, S)
-        self.assertEqual(gross_mid - model.DONATION - 1, 500_000 * USDC)
-        self.assertEqual(
-            model.shares_for_deposit(1_000_000 * USDC, A, S, 0), 1)
-        ta_big = A + 1_000_000 * USDC
-        gross_big = model.assets_for_redeem(1, ta_big, S + 1)
-        self.assertEqual(gross_big - model.DONATION - 1, -1)
-        self.assertEqual(
-            model.assets_for_redeem(1, ta_big, S + 1)
-            - 1_000_000 * USDC, 0)
+        # The revert saves the small victim: a 100,000 or 500,000
+        # victim mints 0 shares, the deposit reverts, the victim loses
+        # 0; the attacker redeems 500,000.000001, a loss of 500,000.
+        atk, vic, ta, s = model.attack(0, 100_000 * USDC)
+        self.assertEqual((atk, vic), (1, None))
+        gross = model.assets_for_redeem(atk, ta, s, 0)
+        self.assertEqual(gross, 500_000_000_001)
+        self.assertEqual(gross - model.DONATION - 1, -500_000 * USDC)
+        self.assertEqual(ta - gross, 500_000 * USDC)
+        atk, vic, ta, s = model.attack(0, 500_000 * USDC)
+        self.assertEqual((atk, vic), (1, None))
+        gross_mid = model.assets_for_redeem(atk, ta, s, 0)
+        self.assertEqual(gross_mid, 500_000_000_001)
+        self.assertEqual(gross_mid - model.DONATION - 1,
+                         -500_000 * USDC)
+
+        # No cliff saves the big victim: a 1,000,000 victim mints 1
+        # share-base-unit, one of three units, and redeems
+        # 666,666.666667, losing 333,333.333333; the attacker redeems
+        # the other 666,666.666667, losing 333,333.333334.
+        atk, vic, ta_big, s_big = model.attack(0, 1_000_000 * USDC)
+        self.assertEqual((atk, vic), (1, 1))
+        gross_v_big = model.assets_for_redeem(vic, ta_big, s_big, 0)
+        self.assertEqual(gross_v_big, 666_666_666_667)
+        self.assertEqual(gross_v_big - 1_000_000 * USDC,
+                         -333_333_333_333)
+        gross_big = model.assets_for_redeem(
+            atk, ta_big - gross_v_big, s_big - vic, 0)
+        self.assertEqual(gross_big, 666_666_666_667)
+        self.assertEqual(gross_big - model.DONATION - 1,
+                         -333_333_333_334)
+        self.assertEqual(ta_big - gross_v_big - gross_big,
+                         666_666_666_667)
 
         # Offset 6: victim mints 199,999 share-base-units and redeems
-        # 183,332.569443 (profit +83,332.569443); attacker redeems
-        # 916,667.430557 (profit -83,332.569444); minting maxMint
-        # still costs 500,000.000001x the assets cap.
-        S6 = 1_000_000
-        vshares = model.shares_for_deposit(100_000 * USDC, A, S6, 6)
-        self.assertEqual(vshares, 199_999)
-        cost6 = model.assets_for_mint(model.MAX_MINT, A, S6, 6)
+        # 99,999.545454 (loss 0.454546); attacker redeems 500,000.227274
+        # (loss 499,999.772727); minting maxMint still costs
+        # 500,000.000001x the assets cap.
+        atk6, vic6, ta6, s6 = model.attack(6, 100_000 * USDC)
+        self.assertEqual((atk6, vic6), (1_000_000, 199_999))
+        cost6 = model.assets_for_mint(model.MAX_MINT, A, atk6, 6)
         self.assertEqual(cost6, 50_000_000_000_100_000)
-        ta6 = A + 100_000 * USDC
-        s6 = S6 + vshares
-        gross_v = model.assets_for_redeem(vshares, ta6, s6)
-        self.assertEqual(gross_v, 183_332_569_443)
-        self.assertEqual(gross_v - 100_000 * USDC, 83_332_569_443)
-        gross_a = model.assets_for_redeem(S6, ta6, s6)
-        self.assertEqual(gross_a, 916_667_430_557)
-        self.assertEqual(gross_a - model.DONATION - 1, -83_332_569_444)
+        gross_v = model.assets_for_redeem(vic6, ta6, s6, 6)
+        self.assertEqual(gross_v, 99_999_545_454)
+        self.assertEqual(gross_v - 100_000 * USDC, -454_546)
+        gross_a = model.assets_for_redeem(
+            atk6, ta6 - gross_v, s6 - vic6, 6)
+        self.assertEqual(gross_a, 500_000_227_274)
+        self.assertEqual(gross_a - model.DONATION - 1, -499_999_772_727)
+        self.assertEqual(ta6 - gross_v - gross_a, 500_000_227_273)
 
-        # No duplicate add() for this guide in build.py.
+        # Differential vs the checker's own Vault class: every redeem
+        # in the model equals Vault.redeem on the same state.
+        from erc4626_checker import Vault
+        for off, v_usdc in ((0, 100_000), (0, 500_000), (0, 1_000_000),
+                            (6, 100_000)):
+            atk, vshares, ta, s = model.attack(off, v_usdc * USDC)
+            vault = Vault(decimals_offset=off)
+            self.assertEqual(vault.deposit(1), atk)
+            vault.donate(model.DONATION)
+            if vshares is None:
+                with self.assertRaises(ValueError):
+                    vault.deposit(v_usdc * USDC)
+                self.assertEqual(
+                    vault.redeem(atk),
+                    model.assets_for_redeem(atk, ta, s, off))
+            else:
+                self.assertEqual(vault.deposit(v_usdc * USDC), vshares)
+                self.assertEqual(
+                    vault.redeem(vshares),
+                    model.assets_for_redeem(vshares, ta, s, off))
+
+        # The guide page states the corrected numbers and no longer
+        # states the old ones (the 83,332.569443 mention that remains
+        # is the retraction sentence, naming the old error).
         build = (Path.home() / "workspace/taskmarket/site/build.py"
                  ).read_text()
+        start = build.find('add("/guides/erc4626-donation-maxmint-cap/"')
+        end = build.find('add("/guides/', start + 10)
+        section = build[start:end]
+        for new in ("500,000.000001", "666,666.666667", "333,333.333333",
+                    "99,999.545454", "0.454546", "500,000.227274",
+                    "499,999.772727", "The revert saves the small victim",
+                    "one of three units"):
+            self.assertIn(new, section)
+        for old in ("1,100,000.000001", "1,500,000.000001",
+                    "183,332.569443", "916,667.430557",
+                    "the cliff saves the big victim",
+                    "that single base unit is half the vault",
+                    "the victim loses <strong>0</strong>",
+                    "1 base unit stranded by flooring",
+                    "the whole deposit is stranded",
+                    "only maxDeposit caps the loss"):
+            self.assertNotIn(old, section)
+
+        # No duplicate add() for this guide in build.py.
         self.assertEqual(
             build.count('add("/guides/erc4626-donation-maxmint-cap/"'), 1)
 
