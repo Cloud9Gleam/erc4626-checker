@@ -2346,6 +2346,11 @@ class TestChecker(unittest.TestCase):
         self.assertAlmostEqual(float(H - H / S5n * A5n), 942.691902, places=6)
         # Linear no-yield 5y: claim 9,090.909091, cost 909.09.
         self.assertAlmostEqual(float(H / S5_lin * A5n), 9090.909091, places=6)
+        # No-yield gap: compounding costs 33.600993 more than linear
+        # (942.691902 - 909.090909); the guide once said 33.601811.
+        self.assertAlmostEqual(
+            float((H - H / S5n * A5n) - (H - H / S5_lin * A5n)),
+            33.600993, places=6)
         # Year 10: manager owns 17.965170% of the vault, not 16.666667%.
         A10, S10 = run(10)
         self.assertAlmostEqual(float(H / S10 * A10), 21277.722175, places=6)
