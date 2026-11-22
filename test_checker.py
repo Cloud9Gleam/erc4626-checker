@@ -23678,6 +23678,89 @@ class TestChecker(unittest.TestCase):
         after = state_file.read_bytes() if state_file.exists() else None
         self.assertEqual(before, after)
 
+    def test_donation_minimum_redemption_guide_numbers(self):
+        # Pins the numbers on
+        # /guides/erc4626-donation-minimum-redemption/ to its model:
+        # a 1,000,000 USDC donation pushes the price to $1,001.00, so
+        # a 100,000 USDC deposit buys 99 shares -- one short of the
+        # 100-share minimum redemption -- and the whole deposit is
+        # locked. Topping up another 100,000 buys 99 more shares and
+        # redeems 198,495.826377, a loss of 1,504.173623 that is
+        # exactly the attacker's gain (their 1,000 shares are worth
+        # 1,002,504.173623 after the redemption). If the attacker
+        # exits first they take 1,001,819.836214 and the victim's
+        # loss of 819.836214 is exactly the attacker's excess; an
+        # asset-denominated floor lets the same 99 shares out for
+        # 99,180.163785. Importing the model re-runs its assertions;
+        # the checks below independently re-derive the headline
+        # numbers with Fraction.
+        import importlib.util
+        from fractions import Fraction
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "donation-minimum-redemption-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "donation_minimum_redemption_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # (S2) Price after the donation; victim's floored share count.
+        self.assertEqual(Fraction(1_001_000 * USDC, 1_000),
+                         Fraction(1_001) * USDC)
+        vic_shares = (100_000 * USDC * 1_000) // (1_001_000 * USDC)
+        self.assertEqual(vic_shares, 99)
+        self.assertLess(vic_shares, 100)
+        # (S3) Top-up escape: 99 more shares, 198 total, redeem out,
+        # loss == attacker gain exactly, to the base unit.
+        top_shares = (100_000 * USDC * 1_099) // (1_101_000 * USDC)
+        self.assertEqual(top_shares, 99)
+        out3 = (198 * 1_201_000 * USDC) // 1_198
+        self.assertEqual(out3, 198_495_826_377)
+        loss3 = 200_000 * USDC - out3
+        self.assertEqual(loss3, 1_504_173_623)
+        atk_post = 1_201_000 * USDC - out3
+        self.assertEqual(atk_post, 1_002_504_173_623)
+        self.assertEqual(loss3, atk_post - 1_001_000 * USDC)
+        # The guide's old value was the truncated pre-redemption
+        # share value: floor(1000 * 1,201,000 / 1,198) in base units.
+        self.assertEqual((1_000 * 1_201_000 * USDC) // 1_198,
+                         1_002_504_173_622)
+        # (S4) Attacker exits first: takes 1,001,819.836214 (floored);
+        # victim's 819.836214 loss is exactly the attacker's excess.
+        atk_out = (1_000 * 1_101_000 * USDC) // 1_099
+        self.assertEqual(atk_out, 1_001_819_836_214)
+        rem_a = 1_101_000 * USDC - atk_out
+        self.assertEqual(rem_a, 99_180_163_786)
+        # A 1,000 USDC top-up mints 0 shares (assets still land in
+        # the vault); 2,000 USDC mints exactly 1.
+        self.assertEqual((1_000 * USDC * 99) // rem_a, 0)
+        self.assertEqual((2_000 * USDC * 99) // rem_a, 1)
+        out4 = (100 * (rem_a + 3_000 * USDC)) // 100
+        self.assertEqual(out4, 102_180_163_786)
+        self.assertEqual(103_000 * USDC - out4, 819_836_214)
+        self.assertEqual(103_000 * USDC - out4,
+                         atk_out - 1_001_000 * USDC)
+        # (S5) Asset-denominated floor: 99 shares are worth
+        # 99,180.163785 (exact 99,180,163,785.259... base units).
+        worth = Fraction(99 * 1_101_000 * USDC, 1_099)
+        self.assertEqual(worth.numerator // worth.denominator,
+                         99_180_163_785)
+        self.assertGreater(worth, 100 * USDC)
+
+        # Guide text carries the corrected numbers, not the old ones.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn("1,002,504.173623", build)
+        self.assertNotIn("1,002,504.173622", build)
+        self.assertNotIn("less one base unit of floor dust", build)
+        self.assertIn("198,495.826377", build)
+        self.assertIn("1,504.173623", build)
+        self.assertIn("1,001,819.836214", build)
+        self.assertIn("102,180.163786", build)
+        self.assertIn("819.836214", build)
+        self.assertIn("99,180.163785", build)
+
 
 
 if __name__ == "__main__":
