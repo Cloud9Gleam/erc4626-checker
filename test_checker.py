@@ -22696,6 +22696,55 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/guides/erc4626-multi-token-par-swap/">',
                       build)
 
+    def test_fee_on_transfer_guide_ten_deposits(self):
+        # 2026-11-22: the guide's ten-deposit example was wrong. It
+        # assumed every deposit mints exactly 100,000 shares, but
+        # ERC-4626 convertToShares mints at the falling price, so each
+        # later deposit mints slightly more. Re-derive with exact
+        # integer arithmetic (mulDiv, round down) and pin the page.
+        from fractions import Fraction
+        assets, shares = 1_000_000, 1_000_000
+        minted = []
+        for _ in range(10):
+            m = (100_000 * shares) // assets
+            minted.append(m)
+            assets += 99_000
+            shares += m
+        self.assertEqual(
+            minted,
+            [100000, 100090, 100174, 100251, 100323, 100390, 100453,
+             100512, 100568, 100621])
+        self.assertEqual(assets, 1_990_000)
+        self.assertEqual(shares, 2_003_382)
+        price = Fraction(assets, shares)
+        self.assertEqual(round(float(price), 6), 0.993320)
+        worth = float(price * 1_000_000)
+        self.assertEqual(round(worth, 2), 993320.30)
+        self.assertEqual(round(1_000_000 - worth, 2), 6679.70)
+        # The balance-delta fix keeps the price at exactly 1.00.
+        a2, s2 = 1_000_000, 1_000_000
+        for _ in range(10):
+            m2 = (99_000 * s2) // a2
+            a2 += 99_000
+            s2 += m2
+        self.assertEqual((a2, s2), (1_990_000, 1_990_000))
+        # Pin the page text; forbid the old wrong numbers in this
+        # guide's section (they still appear in other guides).
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        start = build.index('add("/guides/erc4626-fee-on-transfer/"')
+        end = build.index('add("/guides/erc4626-exit-fee/"', start)
+        section = build[start:end]
+        for num in ("2,003,382", "0.993320", "993,320.30", "6,679.70",
+                    "100,621", "nearly seven thousand gone",
+                    "two-thirds of a percent"):
+            self.assertIn(num, section)
+        for wrong in ("five thousand gone", "2,000,000 shares",
+                      "half a percent"):
+            self.assertNotIn(wrong, section)
+        self.assertNotIn("price <strong>0.995</strong>", section)
+
     def test_hero_flow_arrow_is_a_slim_chevron(self):
         # Visual verdict #100 (2026-11-18): the homepage hero's flow
         # arrows were two chunky white blocks - a 6px bar plus a 24px
