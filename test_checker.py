@@ -11185,11 +11185,15 @@ class TestChecker(unittest.TestCase):
     def test_fee_on_idle_cash_guide_numbers(self):
         # Pins /guides/erc4626-fee-on-idle-cash/ to its model: a 2%
         # management fee charged on totalAssets bills the idle cash
-        # buffer too. At 20% idle the fee takes 4,000 in year one —
-        # a quarter of the year's yield — and 25,440.822222 over
-        # five years; at 50% idle the fee eats 40% of the year's
-        # yield and half the fee is rent. Importing the model
-        # re-runs its assertions; the checks below independently
+        # buffer too. At 20% idle the fee on idle cash is 4,000 in
+        # year one — 5% of the year's 80,000 yield; the full 20,000
+        # fee is a quarter of it — and 25,440.822222 over five years;
+        # at 50% idle the fee eats 40% of the year's yield and half
+        # the fee is rent. The seven-point gap at 50% idle (10%
+        # advertised, 3% delivered) splits 5 + 1 + 1 — idle drag,
+        # fee on deployed capital, fee on idle cash — so the idle
+        # fee is one seventh of the gap, not a third. Importing the
+        # model re-runs its assertions; the checks below independently
         # re-derive the headline numbers the guide quotes, with
         # exact Fraction arithmetic.
         import importlib.util
@@ -11226,6 +11230,9 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(nc, 1_064_000 * USDC)
         self.assertEqual(nc - n, 4_000 * USDC)
         self.assertEqual(Fraction(f, g - A0), Fraction(1, 4))
+        # The 4,000 idle fee is 1/20 of the yield (5%) — the quarter
+        # belongs to the full 20,000 fee, not to the idle part.
+        self.assertEqual(Fraction(nc - n, g - A0), Fraction(1, 20))
         self.assertEqual(100_000 * n // 1_000_000, 106_000 * USDC)
         self.assertEqual(100_000 * nc // 1_000_000, 106_400 * USDC)
         self.assertEqual(900_000 * n // 1_000_000, 954_000 * USDC)
@@ -11244,6 +11251,15 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(nc, 1_040_000 * USDC)
         self.assertEqual(nc - n, 10_000 * USDC)
         self.assertEqual(Fraction(f, g - A0), Fraction(2, 5))
+        # The 7-point gap (10% advertised, 3% delivered) splits
+        # 5 + 1 + 1: 5 points idle drag, 1 point fee on deployed
+        # capital, 1 point fee on idle cash. The idle fee is one
+        # seventh of the gap; the whole fee is two sevenths.
+        self.assertEqual(Fraction(11 * A0 // 10 - g, A0), Fraction(1, 20))
+        self.assertEqual(Fraction(fc, A0), Fraction(1, 100))
+        self.assertEqual(Fraction(f - fc, A0), Fraction(1, 100))
+        self.assertEqual(Fraction(f - fc, 11 * A0 // 10 - n), Fraction(1, 7))
+        self.assertEqual(Fraction(f, 11 * A0 // 10 - n), Fraction(2, 7))
         self.assertEqual(100_000 * n // 1_000_000, 103_000 * USDC)
         self.assertEqual(100_000 * nc // 1_000_000, 104_000 * USDC)
         self.assertEqual(900_000 * n // 1_000_000, 927_000 * USDC)
