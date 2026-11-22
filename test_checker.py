@@ -1083,7 +1083,16 @@ class TestChecker(unittest.TestCase):
         failed = build.verdict_strip_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
         self.assertIn("SOME FAILED", failed)
-        self.assertIn("Donation inflation", failed)
+        # Visual verdict #151 minor issue (2026-11-22): the strip used
+        # to repeat the banner's whole sentence verbatim — "1 of 6
+        # failed: Donation inflation" plus the loss sentence — so the
+        # visitor read the same verdict twice. Intentionally overturned:
+        # a strip with a measured loss is now verdict + loss sentence
+        # only; the failed titles live in the banner. The loss sentence
+        # itself says "donation", so the failed check is still named by
+        # the evidence.
+        self.assertNotIn("1 of 6 failed", failed)
+        self.assertNotIn("Donation inflation", failed)
         self.assertIn("verdict-strip fail", failed)
         self.assertIn('href="#results"', failed)
         # Visual verdict #146 (2026-11-21): the verdict sat a screen
@@ -1123,6 +1132,10 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
         self.assertIn("ALL PASS", passed)
+        # Visual verdict #151 (2026-11-22): the passing strip repeated
+        # the banner's "6 of 6 checks passed" verbatim too — the count
+        # now lives in the banner only, the strip is the bare verdict.
+        self.assertNotIn("6 of 6 checks passed", passed)
         self.assertIn("verdict-strip pass", passed)
         self.assertNotIn("SOME FAILED", passed)
         self.assertIn("see the full results", passed)
@@ -1168,6 +1181,59 @@ class TestChecker(unittest.TestCase):
         self.assertIn("ALL PASS", body)
         self.assertIn(".verdict-strip.fail", build.CSS)
         self.assertIn(".verdict-strip a", build.CSS)
+
+    def test_verdict_strip_does_not_repeat_banner_titles(self):
+        # Visual verdict #151 minor issue (2026-11-22): the strip and
+        # the banner carried the same sentence verbatim. The split is
+        # now by role — the strip is the first-screen headline (verdict
+        # + the one headline evidence), the banner is the result
+        # heading (verdict + which checks failed + the number). The
+        # Worker JS renderer mirrors the strip; it is verified by the
+        # strip-dedup node harness, not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        results = run_all(Vault(decimals_offset=0, min_deposit=0,
+                                perf_fee_bps=0))
+        strip = build.verdict_strip_html(results)
+        # Measured loss: strip is verdict + loss sentence only.
+        self.assertIn("Result: SOME FAILED", strip)
+        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
+                      "loses 0.909091 USDC", strip)
+        self.assertNotIn("1 of 6 failed", strip)
+        self.assertNotIn("Donation inflation", strip)
+        # The banner still names the failures — the detail moved, it
+        # did not disappear.
+        html = build.results_html(results, vic=100_000_000_000,
+                                  off=0, mn=0, fee=0)
+        banner = html[html.index('<h2 id="results"'):html.index("</h2>")]
+        self.assertIn("1 of 6 failed: Donation inflation", banner)
+        self.assertIn("1,000,000 USDC donation: a 100,000 USDC deposit "
+                      "loses 0.909091 USDC", banner)
+        # No measured loss: the strip falls back to the failed titles
+        # (the only evidence available), so it still names the check.
+        # (With this minimum the MVD check fails too, so the strip
+        # names two failures, not one.)
+        errored = run_all(Vault(decimals_offset=0, min_deposit=10**15,
+                                perf_fee_bps=0))
+        estrip = build.verdict_strip_html(errored)
+        self.assertIn("Result: SOME FAILED", estrip)
+        self.assertIn("2 of 6 failed: Donation inflation, Minimum viable "
+                      "deposit", estrip)
+        self.assertNotIn("loses", estrip)
+        # ALL PASS: strip is the bare verdict, the count lives in the
+        # banner only.
+        passed = run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                               perf_fee_bps=1000))
+        pstrip = build.verdict_strip_html(passed)
+        self.assertIn("Result: ALL PASS", pstrip)
+        self.assertNotIn("6 of 6 checks passed", pstrip)
+        phtml = build.results_html(passed, vic=100_000_000_000,
+                                   off=6, mn=1_000_000, fee=1000)
+        pbanner = phtml[phtml.index('<h2 id="results"'):
+                        phtml.index("</h2>")]
+        self.assertIn("6 of 6 checks passed", pbanner)
 
     def test_results_banner_carries_loss_sentence(self):
         # Visual verdict #147 (2026-11-22): the strip above the form
