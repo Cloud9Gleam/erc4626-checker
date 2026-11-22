@@ -6175,10 +6175,12 @@ class TestChecker(unittest.TestCase):
                     "990.099010", "909.090909", "99,009"):
             self.assertIn(num, build)
         self.assertIn("shown rounded to six decimals", build)
-        start = build.index('"/guides/erc4626-stale-total-assets-cache/"')
-        end = build.index('"/guides/erc4626-donation-operator-allowance/"')
+        start = build.index('add("/guides/erc4626-stale-total-assets-cache/"')
+        end = build.index('add("/guides/erc4626-treasury-self-holding/"')
+        self.assertLess(start, end)
         block = build[start:end]
         self.assertNotIn("shown truncated to six decimals", block)
+        self.assertIn("shown rounded to six decimals", block)
         self.assertIn('<a href="/guides/erc4626-stale-total-assets-cache/">',
                       build)
 
@@ -19080,6 +19082,34 @@ class TestChecker(unittest.TestCase):
         # depositor 9,090.909090 / 10,000 = 90.909...% -> 90.9%.
         self.assertEqual(round(float(F(100_000, 11) / 10_000 * 100), 1), 90.9)
 
+    def test_donation_stale_quote_guide_page(self):
+        # Pins the /guides/erc4626-donation-stale-quote/ page: the
+        # add() must exist with the headline numbers, the intro
+        # sentence must still say "truncated", and the /guides/ index
+        # must link to it. This guide is the deliberate exception to
+        # the other three "truncated" boilerplates: its displays
+        # really are truncated (100,000/11 is shown as 9,090.909090,
+        # not the rounded 9,090.909091 — see
+        # test_donation_stale_quote_guide_numbers), so a future
+        # blanket find-replace to "rounded" would be wrong here.
+        # The block slice uses the add(" prefix, as in the
+        # treasury/flash-mint page tests.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-donation-stale-quote/"', build)
+        for num in ("9,090.909090", "109,090.909090", "90.909090",
+                    "90,909.090909", "11,111.111111"):
+            self.assertIn(num, build)
+        start = build.index('add("/guides/erc4626-donation-stale-quote/"')
+        end = build.index('add("/guides/erc4626-donation-yield-token/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        self.assertIn("shown truncated to six decimals", block)
+        self.assertNotIn("shown rounded to six decimals", block)
+        self.assertIn('<a href="/guides/erc4626-donation-stale-quote/">',
+                      build)
+
 
     def test_loss_chart_head_names_worst_row_value(self):
         # The bar chart is scaled to a round axis maximum, and the 1B
@@ -22772,6 +22802,51 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(pb, F(10, 9))
         self.assertEqual(900_000 * pb, 1_000_000)
 
+        # The guide's six-decimal displays are ROUNDED, not truncated:
+        # 89/90 truncates to 0.988888 but the guide (and the model,
+        # which formats with f"{x:,.6f}") shows 0.988889; 10/9 is
+        # 1.111111 under both conventions. The intro sentence must
+        # say so — it said "truncated" until this fix, same root
+        # cause as the stale-total-assets-cache guide.
+        for fr, shown in ((F(89, 90), "0.988889"),
+                          (F(10, 9), "1.111111")):
+            trunc = fr.numerator * 10**6 // fr.denominator
+            trunc_str = f"{trunc // 1_000_000}.{trunc % 1_000_000:06d}"
+            r = round(fr * 10**6)
+            round_str = f"{r // 1_000_000}.{r % 1_000_000:06d}"
+            self.assertEqual(round_str, shown)
+        # The distinguishing case: 89/90 truncates to 0.988888,
+        # which is NOT what the guide shows.
+        trunc89 = F(89, 90).numerator * 10**6 // F(89, 90).denominator
+        self.assertEqual(
+            f"{trunc89 // 1_000_000}.{trunc89 % 1_000_000:06d}",
+            "0.988888")
+
+    def test_treasury_self_holding_guide_page(self):
+        # Pins the guide page: the add() must exist with the headline
+        # numbers, the corrected display-convention sentence, and a
+        # link from the /guides/ index. The numbers are re-derived in
+        # test_treasury_self_holding_guide_numbers; this pins the
+        # page. The block slice uses the add(" prefix: the /guides/
+        # index at the top of build.py lists the same path, so a bare
+        # quoted-path index would land in the index, before the
+        # add() — the stale-cache page test made exactly that
+        # mistake and its block slice was empty (fixed this round).
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-treasury-self-holding/"', build)
+        for num in ("990,000", "90,000", "0.988889", "1.111111"):
+            self.assertIn(num, build)
+        start = build.index('add("/guides/erc4626-treasury-self-holding/"')
+        end = build.index('add("/guides/erc4626-flash-mint-fee-tier/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        self.assertIn("shown rounded to six decimals", block)
+        self.assertNotIn("shown truncated to six decimals", block)
+        self.assertIn('<a href="/guides/erc4626-treasury-self-holding/">',
+                      build)
+
     def test_flash_mint_fee_tier_guide_numbers(self):
         # Pins the flash-mint fee-tier model (theme named 2026-11-17
         # ~19:29, built this run): vault 900,000 assets / 900,000
@@ -22851,6 +22926,25 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(model.tier_rate(1_000_000), F(1, 100))
         self.assertEqual(model.tier_rate(999_999), F(5, 100))
 
+        # The guide's six-decimal displays are ROUNDED, not truncated:
+        # 10,989,000/61 truncates to 180,147.540983 but the guide (and
+        # the model, which formats with f"{x:,.6f}") shows
+        # 180,147.540984; the same /61 rounding shows in the gain,
+        # the dilution, and both flash-fee net gains. The intro
+        # sentence must say so — it said "truncated" until this fix,
+        # same root cause as the stale-total-assets-cache guide.
+        for fr, shown in ((F(10_989_000, 61), "180,147.540984"),
+                          (F(5_194_000, 61), "85,147.540984"),
+                          (F(4_950_000, 61), "81,147.540984"),
+                          (F(5_144_590, 61), "84,337.540984"),
+                          (F(4_645_000, 61), "76,147.540984")):
+            trunc = fr.numerator * 10**6 // fr.denominator
+            trunc_str = f"{trunc // 1_000_000:,}.{trunc % 1_000_000:06d}"
+            self.assertNotEqual(trunc_str, shown)
+            r = round(fr * 10**6)
+            round_str = f"{r // 1_000_000:,}.{r % 1_000_000:06d}"
+            self.assertEqual(round_str, shown)
+
 
     def test_flash_mint_fee_tier_guide_page(self):
         # The /guides/erc4626-flash-mint-fee-tier/ page (built this run
@@ -22869,6 +22963,17 @@ class TestChecker(unittest.TestCase):
             self.assertIn(num, build)
         self.assertIn('<a href="/guides/erc4626-flash-mint-fee-tier/">',
                       build)
+        # Display convention: the intro sentence must say "rounded"
+        # (the /61 values above only match rounding). The block slice
+        # uses the add(" prefix — the /guides/ index lists the same
+        # path earlier in the file, so a bare quoted-path index would
+        # land in the index and the slice would be empty.
+        start = build.index('add("/guides/erc4626-flash-mint-fee-tier/"')
+        end = build.index('add("/guides/erc4626-epoch-prorata-redemption/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        self.assertIn("shown rounded to six decimals", block)
+        self.assertNotIn("shown truncated to six decimals", block)
 
     def test_eip2771_per_address_cap_model_numbers(self):
         # Pins the EIP-2771 x per-address-cap model (theme named
