@@ -23973,6 +23973,116 @@ class TestChecker(unittest.TestCase):
         self.assertIn("819.836214", build)
         self.assertIn("99,180.163785", build)
 
+    def test_fee_conservation_guide_numbers(self):
+        # Fee-conservation guide: three worked examples, re-derived
+        # here with plain fractions.Fraction arithmetic, independent
+        # of any model file. Vault 10,000 USDC / 10,000 shares at
+        # 1.00 USDC per share; yield 1,000 USDC; fee 10% of yield.
+        A0, S0 = Fraction(10_000), Fraction(10_000)
+        Y = Fraction(1_000)
+
+        # 1: fee taken correctly. Fee 100, holders 900, price 1.09,
+        # and the identity holds: 1,000 = 900 + 100. The checker
+        # tests the same identity at ten times the scale (yield
+        # 10,000, fee 1,000, holder gain 9,000).
+        fee = Y * Fraction(1, 10)
+        holders = Y - fee
+        self.assertEqual((fee, holders), (100, 900))
+        self.assertEqual(fee + holders, Y)
+        self.assertEqual((A0 + Y - fee) / S0, Fraction(109, 100))
+        v = Vault(decimals_offset=6, min_deposit=1_000_000,
+                  perf_fee_bps=1000)
+        results = {r["name"]: r for r in run_all(v)}
+        self.assertTrue(results["fee_conservation"]["pass"])
+        self.assertEqual(
+            results["fee_conservation"]["detail"][0],
+            "yield 10,000.000000\u00a0USDC, fee 1,000.000000\u00a0USDC, "
+            "holder gain 9,000.000000\u00a0USDC")
+
+        # 2: fee charged on the wrong base. 10% of total assets after
+        # the yield lands is 1,100 -- more than the yield itself.
+        # Holders end with 9,900: 100 USDC of their own principal
+        # gone, price 0.99. Fee plus holder gain is 2,000 against
+        # 1,000 of yield, so conservation fails by construction.
+        fee2 = Fraction(11_000) * Fraction(1, 10)
+        holders2 = Fraction(11_000) - fee2
+        self.assertEqual((fee2, holders2), (1_100, 9_900))
+        self.assertEqual(A0 - holders2, 100)
+        self.assertEqual(holders2 / S0, Fraction(99, 100))
+        self.assertEqual(fee2 + holders, 2_000)
+        self.assertNotEqual(fee2 + holders, Y)
+
+        # 3: fee shares minted at the stale pre-yield price. The 100
+        # USDC fee buys 100 shares at 1.00; after the yield lands,
+        # assets are 11,000 over 10,100 shares, price 110/101.
+        price3 = Fraction(11_000, 10_100)
+        self.assertEqual(price3, Fraction(110, 101))
+        recip = Fraction(100) * price3
+        hold_val = Fraction(10_000) * price3
+        self.assertEqual(recip, Fraction(11_000, 101))
+        self.assertEqual(hold_val, Fraction(1_100_000, 101))
+        # The recipient's excess and the holders' shortfall are the
+        # same exact value, 900/101: what he gains, holders lose.
+        excess = recip - 100
+        short = Fraction(10_900) - hold_val
+        self.assertEqual(excess, Fraction(900, 101))
+        self.assertEqual(short, Fraction(900, 101))
+        self.assertEqual(excess, short)
+
+        # Six-decimal displays are ROUNDED. The price the guide
+        # shows, 1.089109, is the rounded value (truncation would
+        # give 1.089108), and the holder value must be 10,891.089109
+        # -- the guide previously showed 10,891.089108, the truncated
+        # value, which broke its own displayed conservation: the old
+        # pair summed to 10,999.999999, and a reader recomputing the
+        # shortfall from it got 8.910892 instead of 8.910891.
+        def rounded(x):
+            r = round(x * 10**6)
+            return f"{r // 1_000_000:,}.{r % 1_000_000:06d}"
+
+        def truncated(x):
+            t = x.numerator * 10**6 // x.denominator
+            return f"{t // 1_000_000:,}.{t % 1_000_000:06d}"
+
+        self.assertEqual(rounded(price3), "1.089109")
+        self.assertEqual(truncated(price3), "1.089108")
+        self.assertEqual(rounded(recip), "108.910891")
+        self.assertEqual(rounded(hold_val), "10,891.089109")
+        self.assertEqual(truncated(hold_val), "10,891.089108")
+        self.assertEqual(rounded(excess), "8.910891")
+        self.assertEqual(rounded(short), "8.910891")
+        self.assertEqual(Fraction("10891.089109") + Fraction("108.910891"),
+                         11_000)
+        self.assertNotEqual(
+            Fraction("10891.089108") + Fraction("108.910891"), 11_000)
+        self.assertEqual(Fraction(10_900) - Fraction("10891.089109"),
+                         Fraction("8.910891"))
+        self.assertNotEqual(Fraction(10_900) - Fraction("10891.089108"),
+                            Fraction("8.910891"))
+
+    def test_fee_conservation_guide_page(self):
+        # Pins the guide page: the add() must exist with the headline
+        # numbers, the corrected (rounded) holder value, and a link
+        # from the /guides/ index. The numbers are re-derived in
+        # test_fee_conservation_guide_numbers; this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-fee-conservation/"', build)
+        for num in ("1.09", "1,100", "9,900", "0.99", "1.089109",
+                    "108.910891", "10,891.089109", "8.910891",
+                    "10,900", "9,000"):
+            self.assertIn(num, build)
+        start = build.index('add("/guides/erc4626-fee-conservation/"')
+        end = build.index('add("/guides/erc4626-decimals-mismatch/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        self.assertIn("10,891.089109", block)
+        self.assertNotIn("10,891.089108", block)
+        self.assertNotIn("8.910892", block)
+        self.assertIn('<a href="/guides/erc4626-fee-conservation/">',
+                      build)
+
 
 
 if __name__ == "__main__":
