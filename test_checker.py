@@ -6075,6 +6075,113 @@ class TestChecker(unittest.TestCase):
         self.assertIn("4,545.454545", guide)
         self.assertIn("2,222.222221", guide)
 
+    def test_stale_total_assets_cache_guide_numbers(self):
+        # Stale totalAssets cache guide (site/stale-total-assets-cache-
+        # model.py): a vault that prices off a stored totalAssets
+        # snapshot, updated only at harvest. Re-derived here with plain
+        # fractions.Fraction arithmetic, independent of the model file,
+        # so the guide's numbers cannot drift silently. Vault
+        # 1,000,000 USDC / 1,000,000 shares at $1.00, Alice holding
+        # all 1,000,000 shares.
+        from fractions import Fraction
+        S = Fraction(1_000_000)
+        dep = Fraction(100_000)
+
+        # A: yield 100,000, live 1,100,000, cache 1,000,000. Deposit
+        # mints 100,000 shares against a fair 1,000,000/11; after the
+        # refresh (live 1,200,000, supply 1,100,000, price 12/11) the
+        # depositor holds 1,200,000/11, gaining 100,000/11, and Alice
+        # loses exactly that much.
+        fair_a = dep * S / Fraction(1_100_000)
+        self.assertEqual(fair_a, Fraction(1_000_000, 11))
+        self.assertEqual(Fraction(100_000) - fair_a, Fraction(100_000, 11))
+        self.assertEqual((100_000 * 1_000_000) // 1_000_000
+                         - (100_000 * 1_000_000) // 1_100_000, 9_091)
+        val_a = Fraction(100_000) * Fraction(1_200_000, 1_100_000)
+        self.assertEqual(val_a, Fraction(1_200_000, 11))
+        self.assertEqual(val_a - dep, Fraction(100_000, 11))
+        self.assertEqual(Fraction(1_000_000) * Fraction(1_200_000, 1_100_000),
+                         Fraction(12_000_000, 11))
+
+        # B: loss 100,000, live 900,000, cache 1,000,000. A redeemer
+        # takes 100,000 for shares worth 90,000 (+10,000); the late
+        # depositor buys 100,000 shares against a fair 1,000,000/9 and
+        # after the refresh (live 1,000,000, supply 1,100,000, price
+        # 10/11) holds 1,000,000/11, losing 100,000/11, which Alice
+        # gains.
+        self.assertEqual(Fraction(100_000) * Fraction(900_000) / S,
+                         90_000)
+        fair_b = dep * S / Fraction(900_000)
+        self.assertEqual(fair_b, Fraction(1_000_000, 9))
+        self.assertEqual(fair_b - dep, Fraction(100_000, 9))
+        val_b = dep * Fraction(1_000_000, 1_100_000)
+        self.assertEqual(val_b, Fraction(1_000_000, 11))
+        self.assertEqual(dep - val_b, Fraction(100_000, 11))
+
+        # C: live-balance pricing mints floor(100,000e6 / 1.1e6) =
+        # 90,909 shares, 1/11 of a share short of fair, and redeeming
+        # after the refresh returns 99,999.908333... -- extraction
+        # bounded by 1 USDC.
+        mint_c = (100_000 * 1_000_000) // 1_100_000
+        self.assertEqual(mint_c, 90_909)
+        self.assertEqual(Fraction(1_000_000, 11) - mint_c, Fraction(1, 11))
+        red_c = Fraction(mint_c) * Fraction(1_200_000, 1_000_000 + mint_c)
+        self.assertEqual(red_c, Fraction(109_090_800_000, 1_090_909))
+        self.assertLess(100_000 - red_c, 1)
+
+        # E: only 10,000 of yield in the window. Fair shares
+        # 100,000,000/1,010, excess 1,000,000/1,010, gain 10,000/11 --
+        # exactly one tenth of A's 100,000/11. A harvest immediately
+        # before the deposit mints 99,009 shares.
+        fair_e = dep * S / Fraction(1_010_000)
+        self.assertEqual(fair_e, Fraction(100_000_000, 1_010))
+        self.assertEqual(dep - fair_e, Fraction(1_000_000, 1_010))
+        gain_e = dep * Fraction(1_110_000, 1_100_000) - dep
+        self.assertEqual(gain_e, Fraction(10_000, 11))
+        self.assertEqual(gain_e, Fraction(100_000, 11) / 10)
+        self.assertEqual((100_000 * 1_000_000) // 1_010_000, 99_009)
+
+        # The guide's six-decimal displays are ROUNDED, not truncated:
+        # 100,000/11 truncates to 9,090.909090 but the guide (and the
+        # model, which formats with f"{x:,.6f}") shows 9,090.909091;
+        # 1,200,000/11 truncates to 109,090.909090, shown as
+        # 109,090.909091; 1,000,000/1,010 truncates to 990.099009,
+        # shown as 990.099010. The intro sentence must say so.
+        for fr, shown in ((Fraction(100_000, 11), "9,090.909091"),
+                          (Fraction(1_200_000, 11), "109,090.909091"),
+                          (Fraction(1_000_000, 1_010), "990.099010")):
+            trunc = fr.numerator * 10**6 // fr.denominator
+            trunc_str = f"{trunc // 1_000_000:,}.{trunc % 1_000_000:06d}"
+            self.assertNotEqual(trunc_str, shown)
+            r = round(fr * 10**6)
+            round_str = f"{r // 1_000_000:,}.{r % 1_000_000:06d}"
+            self.assertEqual(round_str, shown)
+
+    def test_stale_total_assets_cache_guide_page(self):
+        # Pins the guide page: the add() must exist with the headline
+        # numbers, the corrected display-convention sentence, and a
+        # link from the /guides/ index. The numbers are re-derived in
+        # test_stale_total_assets_cache_guide_numbers; this pins the
+        # page. The old "truncated" sentence must be gone from this
+        # guide's block (the same boilerplate still stands in other
+        # guides, each to be verified on its own round).
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-stale-total-assets-cache/"', build)
+        for num in ("90,909.090909", "9,090.909091", "109,090.909091",
+                    "1,090,909.090909", "111,111.111111", "11,111.111111",
+                    "90,909.090909", "99,999.908333", "99,009.900990",
+                    "990.099010", "909.090909", "99,009"):
+            self.assertIn(num, build)
+        self.assertIn("shown rounded to six decimals", build)
+        start = build.index('"/guides/erc4626-stale-total-assets-cache/"')
+        end = build.index('"/guides/erc4626-donation-operator-allowance/"')
+        block = build[start:end]
+        self.assertNotIn("shown truncated to six decimals", block)
+        self.assertIn('<a href="/guides/erc4626-stale-total-assets-cache/">',
+                      build)
+
     def test_reward_token_guide_numbers(self):
         # Reward-token guide (site/reward-token-model.py): yield paid
         # out as a separate token never touches the share price.
