@@ -1337,6 +1337,57 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Get the vault micro-audit</a>", nofix)
         self.assertNotIn("Run the same checks with offset 6</a>", nofix)
 
+    def test_offset6_link_hidden_when_vault_state_incomplete(self):
+        # Checker-improvement (2026-11-22): a half-filled vault state
+        # (assets without shares, or the reverse) makes the donation
+        # check refuse before any parameter matters — verified live,
+        # the same refusal comes back at offset 6. The "see whether
+        # offset 6 fixes it" link therefore points at a fix that
+        # cannot fix it, so both the sentence and the button stay
+        # hidden until the state is complete or the failure is a
+        # measured one. The audit CTA and the slippage-bound paragraph
+        # stay: a human review is still the next step, and the table's
+        # Note column already tells the visitor what is missing.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        half = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                    victim_deposit=100_000_000_000,
+                    vault_assets=1_000_000_000, vault_supply=0),
+            vic=100_000_000_000, off=0, mn=0, fee=0,
+            vassets=1_000_000_000, vshares=0)
+        self.assertIn("SOME FAILED", half)
+        self.assertIn("incomplete vault state", half)
+        self.assertNotIn("Run the same checks with offset 6</a>", half)
+        self.assertNotIn("see whether a decimals offset fixes it", half)
+        self.assertIn("Get the vault micro-audit</a>", half)
+        self.assertIn("/guides/erc4626-slippage-bounds/", half)
+        # Mirror image: shares without assets refuses the same way.
+        half2 = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                    victim_deposit=100_000_000_000,
+                    vault_assets=0, vault_supply=1_000_000_000),
+            vic=100_000_000_000, off=0, mn=0, fee=0,
+            vassets=0, vshares=1_000_000)
+        self.assertNotIn("Run the same checks with offset 6</a>", half2)
+        # Control: a giant minimum deposit also fails at offset 0, but
+        # its rows carry a different error ("below minimum deposit"),
+        # so the offset-6 link stays — only the incomplete-state
+        # refusal hides it.
+        giant = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=10**15,
+                          perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=10**15, fee=0)
+        self.assertIn("Run the same checks with offset 6</a>", giant)
+        self.assertIn("see whether a decimals offset fixes it", giant)
+        # Worker JS renderer: the same guard, in both gates.
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        self.assertIn("incomplete vault state", fn)
+        self.assertEqual(fn.count("&&!donIncomplete)"), 2)
+
     def test_pass_notice_is_green(self):
         # Visual verdict #148 item 3 (2026-11-22): on a passing run
         # the amber "What to do next" box sat directly under the green
