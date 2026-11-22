@@ -7186,6 +7186,32 @@ class TestChecker(unittest.TestCase):
         # Guide charts (plain .loss-chart) get no gridlines: the rule
         # is scoped to --bare only.
         self.assertNotIn(".loss-chart .loss-track::after", build.CSS)
+        # Visual verdict #157 (2026-11-23): #140's behind-the-fill
+        # lines read as stubs — headless pixel sampling on noprot
+        # found 0 dark pixels on the 90.9% bar's centre line at
+        # 25/50/75% and only 6 (three 2px lines in white space) on
+        # the 10% bar's. The same three lines are now ALSO drawn
+        # above the fill, at .35 alpha, so each gridline is one
+        # continuous line: a dark-red seam on red, near-black on
+        # the white track where it layers over the .8 ::after. The
+        # ::before must sit above the z-index:1 fill (z-index:2)
+        # and carry the same three gradients at .35 — no z-index
+        # would leave it under the fill, repeating #157.
+        self.assertIn(
+            ".loss-chart--bare .loss-track::before{content:\"\";"
+            "position:absolute;inset:0;z-index:2;pointer-events:none;"
+            "background-image:linear-gradient(to right,transparent "
+            "calc(25% - 1px),rgba(17,24,39,.35) calc(25% - 1px),"
+            "rgba(17,24,39,.35) calc(25% + 1px),transparent "
+            "calc(25% + 1px)),linear-gradient(to right,transparent "
+            "calc(50% - 1px),rgba(17,24,39,.35) calc(50% - 1px),"
+            "rgba(17,24,39,.35) calc(50% + 1px),transparent "
+            "calc(50% + 1px)),linear-gradient(to right,transparent "
+            "calc(75% - 1px),rgba(17,24,39,.35) calc(75% - 1px),"
+            "rgba(17,24,39,.35) calc(75% + 1px),transparent "
+            "calc(75% + 1px))}",
+            build.CSS)
+        self.assertNotIn(".loss-chart .loss-track::before", build.CSS)
 
     def test_loss_chart_label_column(self):
         # Visual verdict #124 new finding 1 (2026-11-20): the
