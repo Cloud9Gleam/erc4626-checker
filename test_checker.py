@@ -2770,7 +2770,7 @@ class TestChecker(unittest.TestCase):
         # Pattern-bank public page (2026-11-20, new build): the page
         # must carry the honesty notice (review prompts, not findings;
         # no live vulnerability claimed), the honest entry count with
-        # the duplicate-37 / missing-39 footnote, all 145 entries with
+        # the duplicate-37 / missing-39 footnote, all 155 entries with
         # a smell and a check, and CTAs to the #1 checker and the #2
         # micro-audit with the audit page's own terms — with no
         # contract address and no contest source filename leaking in.
@@ -2786,13 +2786,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn("review prompts, not findings", page)
         self.assertIn("Nothing on this page claims a live vulnerability",
                       page)
-        self.assertIn("<strong>145 pattern entries</strong>", page)
+        self.assertIn("<strong>155 pattern entries</strong>", page)
         self.assertIn("Pattern 37 appears twice", page)
         self.assertIn("Pattern 39 does not exist", page)
         self.assertIn("in numerical order within each group", page)
-        self.assertEqual(page.count("<section id=\"pattern-"), 145)
-        self.assertEqual(page.count("<strong>Smell:</strong>"), 145)
-        self.assertEqual(page.count("<strong>Check:</strong>"), 145)
+        self.assertEqual(page.count("<section id=\"pattern-"), 155)
+        self.assertEqual(page.count("<strong>Smell:</strong>"), 155)
+        self.assertEqual(page.count("<strong>Check:</strong>"), 155)
         self.assertIn('<a href="/checker/">', page)
         self.assertIn('<a href="/audit/">', page)
         self.assertIn("50 USDC prepaid", page)
@@ -2819,15 +2819,15 @@ class TestChecker(unittest.TestCase):
         pages = dict((p, b) for p, t, d, k, b in build.PAGES)
         titles = dict((p, t) for p, t, d, k, b in build.PAGES)
         page = pages["/patterns/"]
-        self.assertIn("145 generalized smells and checks", titles["/patterns/"])
-        self.assertIn("145 pattern entries, grouped by source", page)
-        self.assertIn("Re-derived contest findings (68 patterns)", page)
-        self.assertIn("this page covers 1–145", page)
+        self.assertIn("155 generalized smells and checks", titles["/patterns/"])
+        self.assertIn("155 pattern entries, grouped by source", page)
+        self.assertIn("Re-derived contest findings (78 patterns)", page)
+        self.assertIn("this page covers 1–155", page)
         self.assertIn("now holds 199 numbered patterns", page)
         self.assertIn("QuantAMM hook study (Patterns 98–100)", page)
         self.assertIn("RAAC scaled-balance study (Patterns 101–103)", page)
         self.assertIn("Brivault tournament-vault study (Patterns 104–106)", page)
-        self.assertIn("Patterns 84–145 as library-only", page)
+        self.assertIn("Patterns 84–155 as library-only", page)
         for n in range(97, 107):
             self.assertIn(f'<section id="pattern-{n}">', page)
             self.assertIn(f'href="#pattern-{n}">{n}</a>', page)
@@ -2971,7 +2971,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("BidBeasts marketplace study (Patterns 135–137)", page)
         self.assertIn("NFT Dealers marketplace study (Patterns 138–140)", page)
         self.assertIn("Token-0x Yul token study (Patterns 141–143)", page)
-        self.assertIn("MultiSigTimelock timelock study (Patterns 144–145)", page)
+        self.assertIn("MultiSigTimelock timelock study (Patterns 144–146)", page)
         for n in range(136, 146):
             self.assertIn(f'<section id="pattern-{n}">', page)
             self.assertIn(f'href="#pattern-{n}">{n}</a>', page)
@@ -2998,6 +2998,52 @@ class TestChecker(unittest.TestCase):
         self.assertIn("down to one live signer with two stale votes", page)  # 145
         self.assertNotIn("lists all 135 headings", page)
         self.assertNotIn("135 pattern entries", page)
+
+    def test_patterns_page_covers_146_to_155(self):
+        # 2026-11-22 sync slice: same pattern as 97-106 / 107-115 /
+        # 116-125 / 126-135 / 136-145. Adds 146-155 (MultiSigTimelock
+        # 146, Weather Witness 147-149, SNARKeling 150-152, Stratax
+        # 153-155); page covers 1-155, the file still holds 199. Titles
+        # verbatim from the playbook (backticks rendered as <code>);
+        # every headline number below is the playbook's own verified
+        # figure, not a new derivation. Patterns 146-155 have no Smell
+        # bullet in the playbook; their Smell lines are condensed from
+        # the playbook's numbers and exploit-shape bullets.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        page = pages["/patterns/"]
+        self.assertIn("MultiSigTimelock timelock study (Patterns 144\u2013146)", page)
+        self.assertIn("Weather Witness oracle-mint study (Patterns 147\u2013149)", page)
+        self.assertIn("SNARKeling ZK treasure-hunt study (Patterns 150\u2013152)", page)
+        self.assertIn("Stratax leveraged-position study (Patterns 153\u2013155)", page)
+        for n in range(146, 156):
+            self.assertIn(f'<section id="pattern-{n}">', page)
+            self.assertIn(f'href="#pattern-{n}">{n}</a>', page)
+        # spot numbers, each the playbook entry's own verified figure
+        self.assertIn("358 days past the 7-day delay", page)  # 146 aged clock
+        self.assertIn("confirmations read 3 with only 2 live signers", page)  # 146 stale vote
+        self.assertIn("attacker holds 3 NFTs, payer 1", page)  # 147 front-run x replay
+        self.assertIn("price still 0.00011 ether after six NFTs", page)  # 147 year-later replay
+        self.assertIn("checkUpkeep</code> is still false at t0+33h", page)  # 148 suppression
+        self.assertIn("writes weather 3 (THUNDERSTORM) for token 999", page)  # 148 ghost token
+        self.assertIn("0.00021 ether sits unrecoverable", page)  # 149 failed mints
+        self.assertIn("balance still exactly 0.0001 ether", page)  # 149 owner cannot move a wei
+        self.assertIn("claimed 10 times", page)  # 150 one proof pays ten times
+        self.assertIn("remaining treasures to 0 though only ONE treasure was ever found", page)  # 150 hunt ends
+        self.assertIn("the tenth treasure's reward never existed", page)  # 151 90-ether hunt
+        self.assertIn("treasure #10's hash at indices 8 AND 9", page)  # 152 duplicate
+        self.assertIn("treasure 10 tested twice", page)  # 152 test encodes the gap
+        self.assertIn("1 wei, 1 part in 4.56e9", page)  # 153 dust bricks open
+        self.assertIn("4559999999 of the 4560000000 base units borrowed", page)  # 153
+        self.assertIn("owner transfers to 0xdead", page)  # 154 typo bricks position
+        self.assertIn("getPrice</code> keeps returning 2000e8", page)  # 154 oracle twin
+        self.assertIn("Tenancy moves, never multiplies", page)  # 155 one-user protocol
+        self.assertIn("receives the full 1e18 (attacker stays 0)", page)  # 155 trapped collateral
+        self.assertNotIn("lists all 145 headings", page)
+        self.assertNotIn("145 pattern entries", page)
 
     def test_gate_brief_issue_1_state_tip_and_links(self):
         # Gate brief issue #1 (2026-11-20, #5 packaging build): one
