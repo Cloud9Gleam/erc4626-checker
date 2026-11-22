@@ -23649,6 +23649,163 @@ class TestChecker(unittest.TestCase):
             self.assertNotIn(wrong, section)
         self.assertNotIn("price <strong>0.995</strong>", section)
 
+    def test_fee_on_transfer_guide_first_deposit(self):
+        # 2026-11-23: the guide's first example had no numbers test
+        # (only the ten-deposit example was pinned). Re-derive it
+        # here with plain fractions.Fraction arithmetic, independent
+        # of any model file. Vault 1,000,000 assets / 1,000,000
+        # shares at 1.00; a depositor sends 100,000 tokens at a 1%
+        # fee, so 99,000 arrive, but the vault mints shares for the
+        # requested 100,000.
+        from fractions import Fraction
+        assets, shares = 1_000_000, 1_000_000
+        received = 100_000 * 99 // 100
+        self.assertEqual(received, 99_000)
+        minted = 100_000 * shares // assets
+        self.assertEqual(minted, 100_000)
+        assets += received
+        shares += minted
+        self.assertEqual((assets, shares), (1_099_000, 1_100_000))
+        price = Fraction(assets, shares)
+        self.assertEqual(price, Fraction(1099, 1100))
+        self.assertEqual(round(float(price), 7), 0.9990909)
+        # Existing holders: 1,000,000 shares now worth 999,090.91,
+        # a loss of 909.09. The depositor's 100,000 shares are worth
+        # 99,909.09 against the 100,000 paid, a loss of 90.91. The
+        # two losses sum to exactly the 1,000 fee the token burned.
+        existing = Fraction(1_000_000) * price
+        depositor = Fraction(100_000) * price
+        self.assertEqual(round(float(existing), 2), 999090.91)
+        self.assertEqual(round(float(Fraction(1_000_000) - existing), 2),
+                         909.09)
+        self.assertEqual(round(float(depositor), 2), 99909.09)
+        self.assertEqual(round(float(Fraction(100_000) - depositor), 2),
+                         90.91)
+        self.assertEqual((Fraction(1_000_000) - existing)
+                         + (Fraction(100_000) - depositor), 1000)
+        # Over 90% of the fee came out of the existing holders.
+        self.assertGreater(
+            float((Fraction(1_000_000) - existing) / 1000), 0.9)
+        # The balance-delta fix keeps the price at exactly 1.00:
+        # mint on the 99,000 that arrived, not the 100,000 asked.
+        a2, s2 = 1_000_000, 1_000_000
+        m2 = 99_000 * s2 // a2
+        self.assertEqual(m2, 99_000)
+        self.assertEqual((a2 + 99_000, s2 + m2), (1_099_000, 1_099_000))
+
+    def test_fee_on_transfer_guide_first_deposit_page(self):
+        # Pins the first example's numbers in the guide page; the
+        # numbers are re-derived in
+        # test_fee_on_transfer_guide_first_deposit.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        start = build.index('add("/guides/erc4626-fee-on-transfer/"')
+        end = build.index('add("/guides/erc4626-exit-fee/"', start)
+        self.assertLess(start, end)
+        section = build[start:end]
+        for num in ("99,000", "0.9990909", "999,090.91", "909.09",
+                    "99,909.09", "90.91", "1,099,000", "1,100,000"):
+            self.assertIn(num, section)
+        self.assertIn('<a href="/guides/erc4626-fee-on-transfer/">',
+                      build)
+
+    def test_decimals_mismatch_guide_numbers(self):
+        # 2026-11-23: the decimals-mismatch guide had no numbers
+        # test. Re-derive both worked examples with exact integer
+        # arithmetic. USDC has 6 decimals, shares usually 18, so the
+        # scale factor is exactly 10^12.
+        from fractions import Fraction
+        # 1: a price read a trillion times too small. Vault holds
+        # 1,000,000 USDC = 10^12 base units, with 10^24 raw shares
+        # outstanding (10^6 share-tokens at 18 decimals). True price
+        # is 1 USDC per share-token.
+        self.assertEqual(1_000_000 * 10**6, 10**12)
+        self.assertEqual(10**24 // 10**18, 10**6)
+        self.assertEqual(Fraction(1_000_000) / Fraction(10**6), 1)
+        naive = Fraction(10**12, 10**24)
+        self.assertEqual(naive, Fraction(1, 10**12))
+        self.assertEqual(Fraction(1) / naive, 10**12)
+        # 2: shares minted at the wrong scale. 1,000,000 USDC in,
+        # 10^12 raw shares out; read as 18-decimal share-tokens
+        # that is 10^-6 share-tokens, worth 0.000001 USDC at the
+        # true price of 1 USDC per share-token.
+        minted = 10**12
+        as_tokens = Fraction(minted, 10**18)
+        self.assertEqual(as_tokens, Fraction(1, 10**6))
+        self.assertEqual(float(as_tokens), 0.000001)
+
+    def test_decimals_mismatch_guide_page(self):
+        # Pins the guide page: the scale factor, the naive price,
+        # and the misread position value.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        start = build.index('add("/guides/erc4626-decimals-mismatch/"')
+        end = build.index('add("/guides/erc4626-fee-on-transfer/"',
+                          start)
+        self.assertLess(start, end)
+        section = build[start:end]
+        for num in ("10<sup>12</sup>", "10<sup>24</sup>",
+                    "10<sup>−12</sup>", "10<sup>−6</sup>",
+                    "0.000001 USDC", "1.00 USDC per share"):
+            self.assertIn(num, section)
+        self.assertIn('<a href="/guides/erc4626-decimals-mismatch/">',
+                      build)
+
+    def test_loss_socialization_guide_numbers(self):
+        # 2026-11-23: the loss-socialization guide had no numbers
+        # test. Re-derive both worked examples with exact integer
+        # arithmetic. Vault 1,000,000 assets / 1,000,000 shares at
+        # 1.00; the strategy loses 200,000, unrecoverable, so true
+        # assets are 800,000 and the honest price is 0.80.
+        from fractions import Fraction
+        honest = Fraction(800_000, 1_000_000)
+        self.assertEqual(honest, Fraction(4, 5))
+        # 1: no markdown. Reported price stays 1.00; an early holder
+        # redeems 800,000 shares for 800,000, draining the vault
+        # to 0, and the remaining 200,000 shares are worth 0.
+        self.assertEqual(800_000 * 1, 800_000)
+        self.assertEqual(800_000 - 800_000, 0)
+        self.assertEqual(Fraction(0, 200_000), 0)
+        # 2: half the loss recognised. Reported 900,000, price 0.90;
+        # a 500,000-share redeem pays 450,000, but the shares are
+        # truly worth 400,000, so the redeemer is overpaid 50,000.
+        self.assertEqual(Fraction(900_000, 1_000_000),
+                         Fraction(9, 10))
+        self.assertEqual(500_000 * Fraction(9, 10), 450_000)
+        self.assertEqual(500_000 * honest, 400_000)
+        self.assertEqual(450_000 - 400_000, 50_000)
+        self.assertEqual(800_000 - 450_000, 350_000)
+        self.assertEqual(Fraction(350_000, 500_000), Fraction(7, 10))
+        # Full, prompt markdown: a 500,000-share redeem pays
+        # 400,000, the remaining 500,000 shares still hold 400,000,
+        # and the price stays 0.80 for everyone.
+        self.assertEqual(800_000 - 400_000, 400_000)
+        self.assertEqual(Fraction(400_000, 500_000), honest)
+        # A depositor arriving after the loss at the stale price of
+        # 1.00 buys 100,000 shares worth 80,000 in true assets; the
+        # 20,000 difference subsidises the existing holders.
+        self.assertEqual(100_000 * honest, 80_000)
+        self.assertEqual(100_000 - 80_000, 20_000)
+
+    def test_loss_socialization_guide_page(self):
+        # Pins the guide page: both worked examples' headline
+        # numbers and the deposit-side figure.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        start = build.index('add("/guides/erc4626-loss-socialization/"')
+        end = build.index('add("/guides/erc4626-fee-changes/"', start)
+        self.assertLess(start, end)
+        section = build[start:end]
+        for num in ("800,000", "200,000", "0.80", "450,000",
+                    "400,000", "50,000", "350,000", "0.70",
+                    "100,000", "80,000", "20,000"):
+            self.assertIn(num, section)
+        self.assertIn('<a href="/guides/erc4626-loss-socialization/">',
+                      build)
+
     def test_hero_flow_arrow_is_a_slim_chevron(self):
         # Visual verdict #100 (2026-11-18): the homepage hero's flow
         # arrows were two chunky white blocks - a 6px bar plus a 24px
