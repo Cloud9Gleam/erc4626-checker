@@ -20622,6 +20622,12 @@ class TestChecker(unittest.TestCase):
         # Pins /guides/erc4626-donation-time-decay-exit-fee/ to its
         # model: seed 1 base unit, donate 100,000 USDC, fee 500 bps
         # day 0 decaying linearly to 0 on day 30, fee retained.
+        # Corrected 2026-11-22: the old model computed redeem as
+        # shares * total_assets // supply (no virtual amounts) and
+        # assumed the offset-0 victim gets 0 shares. With the OZ
+        # virtual share the attacker's single share is worth a third
+        # of the vault, not the whole of it, and the 100,000 USDC
+        # victim mints 1 share. There is no break-even victim size.
         import importlib.util
         from pathlib import Path
         model_path = (Path.home() / "workspace/taskmarket/site"
@@ -20632,50 +20638,102 @@ class TestChecker(unittest.TestCase):
         spec.loader.exec_module(model)
         USDC = model.USDC
 
-        # Big victim 100,000: day-0 net 190,000.000001, profit 90,000;
-        # day-30 net 200,000.000001, profit 100,000; day-15 fee 5,000.
-        ta, s = model.attack_offset0(100_000 * USDC)
-        gross, fee, net = model.redeem(ta, s, 1, 0)
+        # Big victim 100,000, offset 0: victim mints 1 share; day-0
+        # net 63,333.333334 (loss -36,666.666667), day-15 net
+        # 65,000.000001, day-30 net 66,666.666667.
+        atk, vic, ta, s = model.attack(0, 100_000 * USDC)
+        self.assertEqual((atk, vic), (1, 1))
+        gross, fee, net = model.redeem(ta, s, atk, 0, 0)
         self.assertEqual((gross, fee, net),
-                         (200_000_000_001, 10_000_000_000,
-                          190_000_000_001))
-        self.assertEqual(net - model.DONATION - 1, 90_000 * USDC)
-        _, _, net30 = model.redeem(ta, s, 1, 30)
-        self.assertEqual(net30, 200_000_000_001)
-        _, fee15, net15 = model.redeem(ta, s, 1, 15)
-        self.assertEqual((fee15, net15), (5_000_000_000, 195_000_000_001))
+                         (66_666_666_667, 3_333_333_333, 63_333_333_334))
+        self.assertEqual(net - model.DONATION - 1, -36_666_666_667)
+        _, fee15, net15 = model.redeem(ta, s, atk, 0, 15)
+        self.assertEqual((fee15, net15), (1_666_666_666, 65_000_000_001))
+        _, _, net30 = model.redeem(ta, s, atk, 0, 30)
+        self.assertEqual(net30, 66_666_666_667)
+        self.assertEqual(net30 - model.DONATION - 1, -33_333_333_334)
 
-        # Small victim 1,000: day-0 fee 5,050 flips profit to -4,050;
-        # day-30 profit 1,000. Break-even victim 5,263.157895 USDC:
-        # 5,263 loses 0.15, 5,264 gains 0.80.
-        ta, s = model.attack_offset0(1_000 * USDC)
-        gross, fee, net = model.redeem(ta, s, 1, 0)
+        # Small victim 1,000: deposit reverts (0 shares), funds never
+        # enter; day-0 net 47,500.000001 (loss -52,500), day-30 net
+        # 50,000.000001. No fee flip.
+        atk, vic, ta, s = model.attack(0, 1_000 * USDC)
+        self.assertEqual((atk, vic), (1, None))
+        gross, fee, net = model.redeem(ta, s, atk, 0, 0)
         self.assertEqual((gross, fee, net),
-                         (101_000_000_001, 5_050_000_000, 95_950_000_001))
-        self.assertEqual(net - model.DONATION - 1, -4_050 * USDC)
-        _, _, net30 = model.redeem(ta, s, 1, 30)
-        self.assertEqual(net30 - model.DONATION - 1, 1_000 * USDC)
-        for v, want_profit in ((5_263, -150_000), (5_264, 800_000)):
-            ta, s = model.attack_offset0(v * USDC)
-            _, _, net = model.redeem(ta, s, 1, 0)
+                         (50_000_000_001, 2_500_000_000, 47_500_000_001))
+        self.assertEqual(net - model.DONATION - 1, -52_500_000_000)
+        _, _, net30 = model.redeem(ta, s, atk, 0, 30)
+        self.assertEqual(net30 - model.DONATION - 1, -50_000_000_000)
+
+        # No break-even victim size: day-0 profit is negative at every
+        # victim size swept, best -36,666.666667 at 100,000.
+        for v, want_profit in ((1_000, -52_500_000_000),
+                               (5_263, -52_500_000_000),
+                               (5_264, -52_500_000_000),
+                               (10_000, -52_500_000_000),
+                               (50_000, -52_500_000_000),
+                               (50_001, -52_499_683_333),
+                               (100_000, -36_666_666_667),
+                               (200_000, -43_000_000_001),
+                               (1_000_000, -50_238_095_239),
+                               (10_000_000, -52_263_681_593)):
+            atk, vic, ta, s = model.attack(0, v * USDC)
+            _, _, net = model.redeem(ta, s, atk, 0, 0)
             self.assertEqual(net - model.DONATION - 1, want_profit)
+            self.assertLess(net - model.DONATION - 1, 0)
 
         # Offset 6: victim mints 1,999,999 shares; attacker day-0 net
-        # 63,333.354445 (loss -36,666.645556), day-30 net 66,666.688889.
-        vshares = (100_000 * USDC) * (1_000_000 + 1_000_000) // (
-            100_000_000_001 + 1)
-        self.assertEqual(vshares, 1_999_999)
-        ta6 = 100_000_000_001 + 100_000 * USDC
-        s6 = 1_000_000 + vshares
-        _, _, net = model.redeem(ta6, s6, 1_000_000, 0)
-        self.assertEqual(net, 63_333_354_445)
-        self.assertEqual(net - model.DONATION - 1, -36_666_645_556)
-        _, _, net30 = model.redeem(ta6, s6, 1_000_000, 30)
-        self.assertEqual(net30, 66_666_688_889)
+        # 47,500.011875 (loss -52,499.988126), day-15 net 48,750.012188,
+        # day-30 net 50,000.012500.
+        atk, vic, ta, s = model.attack(6, 100_000 * USDC)
+        self.assertEqual((atk, vic), (1_000_000, 1_999_999))
+        gross, fee, net = model.redeem(ta, s, atk, 6, 0)
+        self.assertEqual((gross, fee, net),
+                         (50_000_012_500, 2_500_000_625, 47_500_011_875))
+        self.assertEqual(net - model.DONATION - 1, -52_499_988_126)
+        _, fee15, net15 = model.redeem(ta, s, atk, 6, 15)
+        self.assertEqual((fee15, net15), (1_250_000_312, 48_750_012_188))
+        _, _, net30 = model.redeem(ta, s, atk, 6, 30)
+        self.assertEqual(net30, 50_000_012_500)
+        self.assertEqual(net30 - model.DONATION - 1, -49_999_987_501)
 
-        # No duplicate add() for this guide in build.py.
+        # Victim redeems first, offset 6: day-30 victim takes
+        # 99,999.975000, attacker after 50,000.012501; day-0 victim fee
+        # 4,999.998750, attacker after 52,500.011876 -- lifted by half
+        # the retained fee (2,499.999375), not the whole fee.
+        gross_v, fee_v, net_v = model.redeem(ta, s, vic, 6, 30)
+        self.assertEqual((gross_v, fee_v, net_v),
+                         (99_999_975_000, 0, 99_999_975_000))
+        gross_a = model.assets_for(atk, s - vic, ta - net_v, 6)
+        self.assertEqual(gross_a, 50_000_012_501)
+        gross_v, fee_v, net_v = model.redeem(ta, s, vic, 6, 0)
+        self.assertEqual((gross_v, fee_v, net_v),
+                         (99_999_975_000, 4_999_998_750, 94_999_976_250))
+        gross_a = model.assets_for(atk, s - vic, ta - net_v, 6)
+        self.assertEqual(gross_a, 52_500_011_876)
+        self.assertEqual(gross_a - 50_000_012_500, 2_499_999_376)
+
+        # The guide page states the corrected numbers and no longer
+        # states the old ones (the 5,263.16 mention that remains is
+        # the retraction sentence, naming the old error).
         build = (Path.home() / "workspace/taskmarket/site/build.py"
                  ).read_text()
+        start = build.find('add("/guides/erc4626-donation-time-decay-exit-fee/"')
+        end = build.find('add("/guides/', start + 10)
+        section = build[start:end]
+        for new in ("66,666.666667", "63,333.333334", "50,000.012500",
+                    "47,500.011875", "There is no break-even victim size",
+                    "2,499.999375"):
+            self.assertIn(new, section)
+        for old in ("190,000.000001", "200,000.000001", "95,950.000001",
+                    "66,666.688889", "63,333.354445", "5,263.157895",
+                    "turns a 1,000 profit into a 4,050 loss",
+                    "receives <strong>0 shares</strong>",
+                    "66,666.688890", "73,333.354445", "6,666.665555",
+                    "126,666.645556"):
+            self.assertNotIn(old, section)
+
+        # No duplicate add() for this guide in build.py.
         self.assertEqual(
             build.count('add("/guides/erc4626-donation-time-decay-exit-fee/"'),
             1)
