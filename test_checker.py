@@ -1207,7 +1207,9 @@ class TestChecker(unittest.TestCase):
         # the banner carried the same sentence verbatim. The split is
         # now by role — the strip is the first-screen headline (verdict
         # + the one headline evidence), the banner is the result
-        # heading (verdict + which checks failed + the number). The
+        # heading (which checks failed + the number + the full loss
+        # sentence; since 2026-11-23 it no longer restates the verdict
+        # words). The
         # Worker JS renderer mirrors the strip; it is verified by the
         # strip-dedup node harness, not by this suite.
         import sys
@@ -1306,7 +1308,14 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=0, fee=0)
         banner = failed[failed.index('<h2 id="results"'):
                         failed.index("</h2>")]
-        self.assertIn("SOME FAILED", banner)
+        # Visual verdict 2026-11-23 01:07: the banner no longer
+        # restates the verdict words ("Result: SOME FAILED" lived
+        # in the strip and the banner at once); it heads the
+        # results and keeps the count, the failed titles and the
+        # full loss sentence. The verdict lives in the strip only.
+        self.assertIn("Full results &mdash; 1 of 6 failed: Donation inflation",
+                      banner)
+        self.assertNotIn("Result: SOME FAILED", banner)
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
                       "100,000 USDC deposit loses 0.909091 USDC", banner)
         # The banner and the strip agree wherever the visitor lands —
@@ -1334,7 +1343,11 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10**15, fee=0)
         ebanner = errored[errored.index('<h2 id="results"'):
                           errored.index("</h2>")]
-        self.assertIn("SOME FAILED", ebanner)
+        # Visual verdict 2026-11-23 01:07: no verdict words in the
+        # banner — the failed titles carry the detail instead.
+        self.assertIn("Full results &mdash; 2 of 6 failed: Donation inflation, "
+                      "Minimum viable deposit", ebanner)
+        self.assertNotIn("Result: SOME FAILED", ebanner)
         self.assertNotIn("loses", ebanner)
         # An ALL PASS banner carries no loss number.
         passed = build.results_html(
@@ -1343,7 +1356,8 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
         pbanner = passed[passed.index('<h2 id="results"'):
                          passed.index("</h2>")]
-        self.assertIn("ALL PASS", pbanner)
+        self.assertIn("Full results &mdash; 6 of 6 checks passed", pbanner)
+        self.assertNotIn("Result: ALL PASS", pbanner)
         self.assertNotIn("loses", pbanner)
 
     def test_results_notice_is_action_box(self):
@@ -1413,7 +1427,13 @@ class TestChecker(unittest.TestCase):
                     vault_assets=1_000_000_000, vault_supply=0),
             vic=100_000_000_000, off=0, mn=0, fee=0,
             vassets=1_000_000_000, vshares=0)
-        self.assertIn("SOME FAILED", half)
+        # Visual verdict 2026-11-23 01:07: the banner heads the
+        # results ("Full results — 2 of 6 failed ...") instead of
+        # restating the verdict; the verdict words live in the
+        # strip only.
+        self.assertIn("Full results &mdash; 2 of 6 failed: Donation inflation, "
+                      "Minimum viable deposit", half)
+        self.assertNotIn("Result: SOME FAILED", half)
         self.assertIn("incomplete vault state", half)
         self.assertNotIn("Run the same checks with offset 6</a>", half)
         self.assertNotIn("see whether a decimals offset fixes it", half)
@@ -1496,12 +1516,14 @@ class TestChecker(unittest.TestCase):
         # was stated three times — strip ("Result: SOME FAILED."),
         # banner ("Result: SOME FAILED — 1 of 6 failed ..."), and the
         # "What to do next" notice ("A check failed." / "This preset
-        # passes the model."). The strip and the banner each have a
-        # pinned reason to stay (#119/#146 above the fold, #147 the
-        # anchor landing skips the strip), so the removable third
-        # statement is the notice's lead sentence. The notice is
-        # next-step content only now; the verdict lives in exactly
-        # two places, in both renderers and both states.
+        # passes the model."). The strip has a pinned reason to stay
+        # (#119/#146 above the fold) and the banner keeps the count
+        # and failed titles for #results landings (#147), so the
+        # removable statements were the notice's lead sentence
+        # (2026-11-22) and the banner's verdict words (2026-11-23).
+        # The notice is next-step content only now; the verdict lives
+        # in exactly one place — the strip — in both renderers and
+        # both states.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -1510,8 +1532,10 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertNotIn("A check failed", failed)
-        # Banner still states the verdict; the notice keeps its CTAs.
-        self.assertIn("SOME FAILED", failed)
+        # The banner no longer states the verdict (it lives in the
+        # strip only); the notice keeps its CTAs and the banner keeps
+        # the count and failed titles.
+        self.assertNotIn("SOME FAILED", failed)
         self.assertIn("1 of 6 failed: Donation inflation", failed)
         self.assertIn("/audit/?result=failed", failed)
         self.assertIn("offset 6</a>", failed)
@@ -1521,7 +1545,7 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
         self.assertNotIn("This preset passes the model", passed)
-        self.assertIn("ALL PASS", passed)
+        self.assertNotIn("ALL PASS", passed)
         self.assertIn("6 of 6 checks passed", passed)
         self.assertIn("/audit/?result=passed", passed)
         self.assertIn("preset=noprot#results", passed)
@@ -21794,8 +21818,14 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn('class="result-banner fail"', failed)
-        self.assertIn("Result: SOME FAILED &mdash; "
+        self.assertIn("Full results &mdash; "
                       "1 of 6 failed: Donation inflation", failed)
+        # Visual verdict 2026-11-23 01:07: the banner no longer
+        # restates the verdict words — "Result: SOME FAILED" used
+        # to appear twice within one screen (strip + banner). The
+        # verdict lives in the strip only; the banner keeps the
+        # count, the failed titles and the loss sentence.
+        self.assertNotIn("Result: SOME FAILED", failed)
         self.assertIn('<svg class="banner-mark"', failed)
         self.assertIn('M3.5 3.5l9 9M12.5 3.5l-9 9', failed)
         self.assertNotIn("&#10005;", failed)
@@ -21804,8 +21834,9 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
         self.assertIn('class="result-banner pass"', passed)
-        self.assertIn("Result: ALL PASS &mdash; "
+        self.assertIn("Full results &mdash; "
                       "6 of 6 checks passed", passed)
+        self.assertNotIn("Result: ALL PASS", passed)
         self.assertIn('<svg class="banner-mark"', passed)
         self.assertIn('M2.5 8.5 6.5 12.5 13.5 3.5', passed)
         self.assertNotIn("&#10003;", passed)
@@ -21924,13 +21955,13 @@ class TestChecker(unittest.TestCase):
             h2 = html.split("</h2>")[0]
             self.assertIn('<span class="banner-text">', h2)
             self.assertIn('<span class="banner-actions">', h2)
-            # Mark is inside the text group, before the verdict text.
+            # Mark is inside the text group, before the heading text.
             text = h2.split('<span class="banner-text">')[1].split(
                 '</span>')[0]
             self.assertIn('<svg class="banner-mark"', text)
-            self.assertIn("Result:", text)
+            self.assertIn("Full results", text)
             self.assertLess(text.index('<svg class="banner-mark"'),
-                            text.index("Result:"))
+                            text.index("Full results"))
             # Text group precedes the actions group; the actions
             # group holds only the button — no status span, no text
             # beside the button.
