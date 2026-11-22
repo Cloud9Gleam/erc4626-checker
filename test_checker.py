@@ -3026,7 +3026,7 @@ class TestChecker(unittest.TestCase):
         # Pattern-bank public page (2026-11-20, new build): the page
         # must carry the honesty notice (review prompts, not findings;
         # no live vulnerability claimed), the honest entry count with
-        # the duplicate-37 / missing-39, missing-195 and missing-207 footnote, all 199 entries with
+        # the duplicate-37 / missing-39, missing-195 and 207-title-only footnote, all 199 entries with
         # a smell and a check, and CTAs to the #1 checker and the #2
         # micro-audit with the audit page's own terms — with no
         # contract address and no contest source filename leaking in.
@@ -3046,7 +3046,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Pattern 37 appears twice", page)
         self.assertIn("Pattern 39 does not exist", page)
         self.assertIn("Pattern 195 does not exist", page)
-        self.assertIn("Pattern 207 does not exist", page)
+        self.assertIn("Pattern 207 has no entry here", page)
+        self.assertIn("with gaps at 39, 186, 195, 198–200, 203, 205 and 206", page)
         self.assertIn("in numerical order within each group", page)
         self.assertEqual(page.count("<section id=\"pattern-"), 199)
         self.assertEqual(page.count("<strong>Smell:</strong>"), 199)
@@ -3059,6 +3060,42 @@ class TestChecker(unittest.TestCase):
         self.assertNotRegex(page, r"0x[0-9a-fA-F]{6,}")
         self.assertNotIn(".sol", page)
         self.assertIn("library-only", page)
+
+    def test_patterns_gaps_match_source_file(self):
+        # 2026-11-22: the /patterns/ footnote once listed 207 as a gap
+        # and omitted 39 — both wrong against the playbook. 207 IS a
+        # `## Pattern 207` heading in common-patterns.md (clean-negative
+        # title, no Smell/Check, so no page section); 39 has no heading.
+        # The gaps list on the page must equal the source file's actual
+        # missing numbers 1..208, recomputed here, not a hand-kept list.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        page = pages["/patterns/"]
+        pb = (Path.home() / "workspace/taskmarket/codehawks-prep"
+              / "common-patterns.md").read_text()
+        have = set(int(n) for n in re.findall(r"^## Pattern (\d+)", pb, re.M))
+        self.assertIn(207, have)
+        self.assertNotIn(39, have)
+        missing = set(n for n in range(1, 209) if n not in have)
+        m = re.search(r"with gaps at ([^)]+)\)", page)
+        self.assertIsNotNone(m, "gaps list missing from page")
+        listed = set()
+        for part in re.split(r",\s*|\s+and\s+", m.group(1)):
+            part = part.strip()
+            if not part:
+                continue
+            if "\u2013" in part or "-" in part:
+                lo, hi = re.split(r"[\u2013-]", part)
+                listed.update(range(int(lo), int(hi) + 1))
+            else:
+                listed.add(int(part))
+        self.assertEqual(listed, missing)
+        self.assertIn("Pattern 207 has no entry here", page)
+        self.assertNotIn('<section id="pattern-207">', page)
 
     def test_patterns_page_covers_97_to_106(self):
         # 2026-11-22 sync slice: the playbook grew to 199 numbered
@@ -3582,9 +3619,10 @@ class TestChecker(unittest.TestCase):
         # 107-115 / 116-125 / 126-135 / 136-145 / 146-155 / 156-165 /
         # 166-175 / 176-185 / 187-196. Adds 197, 201, 202, 204, 208
         # (Biconomy Nexus 197 and 208, NFT Dealers 201, OpenEden 202,
-        # Company Simulator 204); 207 does not exist in the source file
-        # (clean negative, never filed) and 198-200, 203, 205, 206 are
-        # missing numbers, so the page goes 194 -> 199 entries covering
+        # Company Simulator 204); 207 is a clean negative filed as a
+        # title only in the source file (no smell/check), so it has no
+        # section; 198-200, 203, 205, 206 are missing numbers, so the
+        # page goes 194 -> 199 entries covering
         # 1-208 and now matches the file — the "being added group by
         # group" sentence is retired. Titles verbatim from the playbook
         # (backticks rendered as <code>); every headline number below
