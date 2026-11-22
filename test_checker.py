@@ -1100,18 +1100,25 @@ class TestChecker(unittest.TestCase):
         # the form. The strip now carries the headline number itself,
         # in the exact words the share card (ogMeta) uses, so the two
         # agree: the worst measured victim loss and the donation that
-        # caused it. A custom victim deposit re-words the sentence
-        # around the deposit actually run.
+        # caused it. The strip's sentence is the short form (no
+        # victim-deposit clause — 2026-11-22, checker-improvement):
+        # the full sentence wrapped at desktop width and left the jump
+        # link alone on line 2; the banner below keeps the full
+        # sentence, so the deposit size is still on the page.
         # Visual verdict #152 follow-up (2026-11-22): the banner broke
         # "1,000,000 USDC donation" across lines, so the donation phrase
         # rides in a nowrap span (same span in the JS lossSentence).
-        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
-                      "100,000 USDC deposit loses 0.909091 USDC", failed)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
+                      "victim loses 0.909091 USDC", failed)
         custom = build.verdict_strip_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
                     victim_deposit=1_000_000_000), vic=1_000_000_000)
-        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
-                      "1,000 USDC deposit loses 0.999001 USDC", custom)
+        # A custom victim deposit no longer re-words the strip — the
+        # strip never names the deposit size now; the banner still
+        # re-words around the deposit actually run.
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
+                      "victim loses 0.999001 USDC", custom)
+        self.assertNotIn("1,000 USDC deposit loses", custom)
         # Visual verdict #124 (g) (2026-11-20): a bare "&darr;" at the
         # end read as expand / decoration / jump-to-the-failed-item.
         # The strip must say in words where it goes — the full results
@@ -1210,10 +1217,12 @@ class TestChecker(unittest.TestCase):
         results = run_all(Vault(decimals_offset=0, min_deposit=0,
                                 perf_fee_bps=0))
         strip = build.verdict_strip_html(results)
-        # Measured loss: strip is verdict + loss sentence only.
+        # Measured loss: strip is verdict + short loss sentence only
+        # (no victim-deposit clause — the banner below keeps it).
         self.assertIn("Result: SOME FAILED", strip)
-        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
-                      "100,000 USDC deposit loses 0.909091 USDC", strip)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
+                      "victim loses 0.909091 USDC", strip)
+        self.assertNotIn("100,000 USDC deposit loses", strip)
         self.assertNotIn("1 of 6 failed", strip)
         self.assertNotIn("Donation inflation", strip)
         # The banner still names the failures — the detail moved, it
@@ -1248,6 +1257,36 @@ class TestChecker(unittest.TestCase):
                         phtml.index("</h2>")]
         self.assertIn("6 of 6 checks passed", pbanner)
 
+    def test_verdict_strip_short_loss_sentence(self):
+        # 2026-11-22, checker-improvement: the strip's loss sentence
+        # is the short form — donation + worst loss, no victim-deposit
+        # clause — so the strip fits one line at desktop width (the
+        # full sentence wrapped and left the jump link alone on line
+        # 2). The banner keeps the full sentence, so the deposit size
+        # is still on the page; the strip and banner never disagree
+        # on the numbers. The Worker JS renderer mirrors the strip;
+        # it is verified by the strip-short node harness, not by
+        # this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        results = run_all(Vault(decimals_offset=0, min_deposit=0,
+                                perf_fee_bps=0))
+        strip = build.verdict_strip_html(results)
+        self.assertIn("victim loses 0.909091 USDC", strip)
+        self.assertNotIn("deposit loses", strip)
+        html = build.results_html(results, vic=100_000_000_000,
+                                  off=0, mn=0, fee=0)
+        banner = html[html.index('<h2 id="results"'):html.index("</h2>")]
+        self.assertIn("100,000 USDC deposit loses 0.909091 USDC", banner)
+        # The short form is a re-wording, not a new number: both
+        # sentences name the same donation and the same worst loss.
+        self.assertIn("1,000,000 USDC donation", strip)
+        self.assertIn("1,000,000 USDC donation", banner)
+        self.assertIn("0.909091 USDC", strip)
+        self.assertIn("0.909091 USDC", banner)
+
     def test_results_banner_carries_loss_sentence(self):
         # Visual verdict #147 (2026-11-22): the strip above the form
         # already carried the headline number, but a visitor landing
@@ -1270,11 +1309,14 @@ class TestChecker(unittest.TestCase):
         self.assertIn("SOME FAILED", banner)
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
                       "100,000 USDC deposit loses 0.909091 USDC", banner)
-        # The banner and the strip agree wherever the visitor lands.
+        # The banner and the strip agree wherever the visitor lands —
+        # same donation, same worst loss; the strip is the headline
+        # length, the banner the full sentence with the deposit size.
         strip = build.verdict_strip_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
-        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: a "
-                      "100,000 USDC deposit loses 0.909091 USDC", strip)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
+                      "victim loses 0.909091 USDC", strip)
+        self.assertNotIn("100,000 USDC deposit loses", strip)
         # A custom victim deposit re-words the sentence around the
         # deposit actually run.
         custom = build.results_html(
