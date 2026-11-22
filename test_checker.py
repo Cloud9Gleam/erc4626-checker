@@ -21265,6 +21265,70 @@ class TestChecker(unittest.TestCase):
             build.count('add("/guides/erc4626-donation-withdrawal-cap/"'),
             1)
 
+    def test_withdrawal_cap_guide_numbers(self):
+        # Pins /guides/erc4626-withdrawal-cap/ to its model, S5b:
+        # the 100-base-unit flash-seed variant. The 5-unit payout
+        # was wrong in the guide (50,251.256312, 29 base units high)
+        # and in the model's own comment — neither was asserted, so
+        # the error sat uncaught while every asserted number passed.
+        # Re-derived here with plain integer arithmetic, independent
+        # of the model file; importing the model re-runs its
+        # assertions, including the new 5-unit pin.
+        import importlib.util
+        from pathlib import Path
+        model_path = (Path.home() / "workspace/taskmarket/site"
+                      / "withdrawal-cap-model.py")
+        spec = importlib.util.spec_from_file_location(
+            "withdrawal_cap_model", model_path)
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        USDC = 1_000_000
+        # S5b setup: 100-base-unit seed, 1,000,000 flash donation,
+        # victim deposits 1,000,000 and mints 99 share units; the
+        # vault then holds 2,000,000,000,100 base units over a
+        # supply of 199.
+        A, S = 2_000_000_000_100, 199
+        self.assertEqual(1_000_000 * USDC * 100 // 1_000_000_000_100,
+                         99)
+        # One call redeeming all 100 attacker units.
+        self.assertEqual(100 * A // S, 1_005_025_125_678)
+        self.assertEqual(1_005_025_125_678 - 1_000_000 * USDC,
+                         5_025_125_678)
+        # Split into 25 calls of 4 units: each pays 40,201.005027,
+        # total 3 base units short of the single call.
+        self.assertEqual(4 * A // S, 40_201_005_027)
+        self.assertEqual(25 * 40_201_005_027, 1_005_025_125_675)
+        self.assertEqual(1_005_025_125_678 - 1_005_025_125_675, 3)
+        # Victim loses 5,025.125575 on the 99 shares left behind.
+        self.assertEqual(1_000_000 * USDC - 994_974_874_425,
+                         5_025_125_575)
+        # Per-block cap: 5 units pay 50,251.256283 — over the
+        # 50,000 cap, blocked; 4 units pay 40,201.005027 and fit;
+        # 1 more unit pays 10,050.251256 against 9,798.994973
+        # remaining in the block budget.
+        self.assertEqual(5 * A // S, 50_251_256_283)
+        self.assertEqual(1 * A // S, 10_050_251_256)
+        self.assertEqual(50_000 * USDC - 40_201_005_027,
+                         9_798_994_973)
+        self.assertGreater(50_251_256_283, 50_000 * USDC)
+        self.assertLess(40_201_005_027, 50_000 * USDC)
+
+        # Guide text: the corrected number is in, the old one is out.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        start = build.find('add("/guides/erc4626-withdrawal-cap/"')
+        end = build.find('\nadd(', start + 1)
+        guide = build[start:end]
+        self.assertIn("50,251.256283", guide)
+        self.assertNotIn("50,251.256312", guide)
+        self.assertIn("1,005,025.125678", guide)
+        self.assertIn("1,005,025.125675", guide)
+        self.assertIn("5,025.125575", guide)
+        self.assertIn("40,201.005027", guide)
+        self.assertIn("10,050.251256", guide)
+        self.assertIn("9,798.994973", guide)
+
     def test_donation_dead_shares_guide_numbers(self):
         # Pins /guides/erc4626-donation-dead-shares/ to its model.
         # Importing the model re-runs its module-level assertions
