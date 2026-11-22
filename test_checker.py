@@ -3761,8 +3761,8 @@ class TestChecker(unittest.TestCase):
                       '<summary>CodeHawks First Flight — practice and study reviews (33)'
                       '<span class="track-toggle"><span class="when-closed">Show 33 reviews</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
-                      '<span class="track-preview">Thunder Loan flash-loan drain · Puppy Raffle '
-                      '9 findings · Vanguard router-bucket bypass</span></summary>',
+                      '<span class="track-preview">Thunder Loan (flash-loan drain) · Puppy Raffle '
+                      '(9 findings) · Vanguard (router-bucket bypass)</span></summary>',
                       track)
         # The two one-item groups preview their single item, not a count —
         # and both are open by default (2026-11-20, verdict #131 item 3).
@@ -3885,13 +3885,19 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #136 item 3 (2026-11-21): Track record entries
         # were dense single paragraphs — title + counts + findings +
         # tests in one run, the date pasted at the sentence end. Each
-        # entry now splits at its first top-level ';' into a lead line
+        # entry then split at its first top-level ';' into a lead line
         # (title + counts + proof, a complete sentence) and a smaller,
         # muted detail line; the date floats at the top-right of the
         # title row (visual verdict #137, 2026-11-21 — see the CSS in
         # test_audit_track_record_entries_carry_review_dates).
-        # Only the wording's punctuation changes: the split ';' becomes
-        # the lead's final '.', nothing else is reworded.
+        # Visual verdict 2026-11-22 (real browser, desktop 1919x998):
+        # #136's split was not enough — the title row still carried
+        # title + pill + the whole lead sentence + the floated date in
+        # one paragraph, the ugliest block on the site. The lead now
+        # has its own full-width block line too, so each entry scans
+        # as title row / lead / detail. Only the markup changes: the
+        # ' — ' separator is gone, the lead text is byte-identical
+        # (same words, same final '.'), the detail is untouched.
         import re
         import sys
         from pathlib import Path
@@ -3899,17 +3905,18 @@ class TestChecker(unittest.TestCase):
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         track = audit[audit.index("<h2>Track record</h2>"):]
+        self.assertEqual(track.count('<span class="track-lead">'), 41)
         self.assertEqual(track.count('<span class="track-detail">'), 39)
         self.assertEqual(track.count('<span class="track-date">'), 41)
-        # The two entries with no top-level ';' stay single-paragraph:
-        # Gamma's only ';' sits inside a parenthesis, Dutch clock has
-        # none — their dates still float to the title row's right via CSS.
+        # The two entries with no detail span (Gamma, Dutch clock)
+        # still carry a lead span — only the detail line is absent.
         for slug in ("gamma", "dutch-clock"):
             m = re.search(r'<li><span class="track-date">Reviewed [^<]*</span>'
                           r'<a href="/research/%s/">.*?</li>'
                           % re.escape(slug), track, re.S)
             self.assertIsNotNone(m, slug)
             self.assertNotIn('<span class="track-detail">', m.group(0), slug)
+            self.assertIn('<span class="track-lead">', m.group(0), slug)
         # Every entry: the date span is source-first in the <li>
         # (floated to the title row's right), and every split entry's
         # lead ends with '.' right before the detail span, the detail
@@ -3926,27 +3933,29 @@ class TestChecker(unittest.TestCase):
                 continue
             self.assertRegex(entry,
                              r'</a>(?:<span class="track-findings">[^<]*</span>)?'
-                             r' — [^<]*\.\s<span class="track-detail">',
+                             r'<span class="track-lead">[^<]*\.\s*</span>\s*'
+                             r'<span class="track-detail">',
                              entry[:80])
             self.assertRegex(entry,
                              r'<span class="track-detail">[^<]*\.</span></li>',
                              entry[:80])
         # Spot checks: the leads are complete sentences, details intact.
         self.assertIn('<a href="/research/thunder-loan/">Thunder Loan</a>'
-                      '<span class="track-findings">4 findings · 3H 1M</span> — '
-                      'four flash-loan findings, all forge-proven (3 High, '
-                      '1 Medium graded High by the canonical report). '
+                      '<span class="track-findings">4 findings · 3H 1M</span>'
+                      '<span class="track-lead">four flash-loan findings, all '
+                      'forge-proven (3 High, '
+                      '1 Medium graded High by the canonical report). </span>'
                       '<span class="track-detail">6 of 7 canonical High+Medium '
                       'findings independently reproduced (four forge-proven, '
                       'two code-read), the seventh — the '
                       'fee-on-transfer Medium — never considered, 15/15 tests '
                       'passing.</span>', track)
         self.assertIn('<a href="/research/zaros/">Zaros Part 2</a>'
-                      '<span class="track-findings">66 findings · 15H 32M 19L</span> — '
-                      '66 of 70 '
+                      '<span class="track-findings">66 findings · 15H 32M 19L</span>'
+                      '<span class="track-lead">66 of 70 '
                       'awarded findings re-derived (16 High, 35 Medium, '
                       '19 Low; $70,000 pool), four presented as MISSes (1 High, '
-                      '3 Medium). '
+                      '3 Medium). </span>'
                       '<span class="track-detail">forge PoCs for M-NEGCAP 2/2, '
                       'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
         # Visual verdict #145 (2026-11-21): Gamma was the first "N of M"
@@ -3959,10 +3968,10 @@ class TestChecker(unittest.TestCase):
         self.assertRegex(
             track,
             r'<a href="/research/gamma/">Gamma Perpetual Vault</a>'
-            r'<span class="track-findings">25 findings · 5H 8M 12L</span> — '
-            r'25 of 27 validated\s+contest findings re-verified '
+            r'<span class="track-findings">25 findings · 5H 8M 12L</span>'
+            r'<span class="track-lead">25 of 27 validated\s+contest findings re-verified '
             r'\(5 High, 9 Medium, 13 Low; \$50,000 pool\), two presented '
-            r'as MISSes \(1 Medium, 1 Low\), four with\s+forge PoCs, one live on-chain\.</li>')
+            r'as MISSes \(1 Medium, 1 Low\), four with\s+forge PoCs, one live on-chain\.</span></li>')
         # 2026-11-21 22:37, full audit of all 41 Track record entries:
         # the 21:37 round's "Gamma was the only one" was incomplete —
         # Thunder Loan's "6 of 7" also left the seventh's fate
@@ -3981,9 +3990,9 @@ class TestChecker(unittest.TestCase):
         self.assertRegex(
             track,
             r'<a href="/research/thunder-loan/">Thunder Loan</a>'
-            r'<span class="track-findings">4 findings · 3H 1M</span> — '
-            r'four flash-loan findings, all forge-proven \(3 High, '
-            r'1 Medium graded High by the canonical report\)\. '
+            r'<span class="track-findings">4 findings · 3H 1M</span>'
+            r'<span class="track-lead">four flash-loan findings, all forge-proven \(3 High, '
+            r'1 Medium graded High by the canonical report\)\.\s*</span>'
             r'<span class="track-detail">6 of 7 canonical High\+Medium '
             r'findings independently reproduced \(four forge-proven, '
             r'two code-read\), the seventh — the '
@@ -3991,6 +4000,8 @@ class TestChecker(unittest.TestCase):
             r'passing\.</span>')
         self.assertIn(".track-detail{display:block;font-size:.92em;"
                       "color:#4b5563;margin-top:.25em}", build.CSS)
+        self.assertIn(".track-lead{display:block;margin-top:.25em}",
+                      build.CSS)
 
     def test_track_record_miss_severities_are_stated(self):
         # Visual verdict #144 (2026-11-21): the Track record entries
