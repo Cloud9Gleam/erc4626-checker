@@ -1026,7 +1026,7 @@ class TestChecker(unittest.TestCase):
         import build
 
         def card_titles(html):
-            cards = html.split("<section class='check-card'>")[1:]
+            cards = html.split("<section class='check-card")[1:]
             return [c.split("</span> ", 1)[1].split("</h3>", 1)[0]
                     for c in cards]
 
@@ -21309,7 +21309,7 @@ class TestChecker(unittest.TestCase):
             ("Minimum viable deposit", "/guides/erc4626-minimum-deposit/"),
         ]
         self.assertEqual(html.count("class='check-guide'"), 6)
-        cards = html.split("<section class='check-card'>")[1:]
+        cards = html.split("<section class='check-card")[1:]
         self.assertEqual(len(cards), 6)
         # Card order follows run_all(), not CHECK_META — match by title.
         # Each chunk runs to the next card's opening tag, so cut it at
@@ -21336,6 +21336,50 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".check-guide{font-size:.85em;color:#6b7280", src)
         self.assertIn(".check-guide a{color:#6b7280", src)
         self.assertNotIn("Read the guide", src)
+
+    def test_results_cards_two_column_grid(self):
+        # Visual verdict #152 (2026-11-22, checker-improvement):
+        # the six cards stacked in one ~1020px column took ~3 screens
+        # to read at 1920px. At desktop width they form a two-column
+        # grid; the donation card (table + chart) spans both columns.
+        # Below 1024px the single column stays. Structure, not
+        # appearance, is what this test can pin: the grid wrapper,
+        # the wide class on exactly the donation card, and the CSS
+        # rule that turns the wrapper into a grid at desktop width.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        for v, kwargs in (
+                (Vault(decimals_offset=6, min_deposit=1_000_000,
+                       perf_fee_bps=1000), {}),
+                (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                 {"off": 0, "mn": 0, "fee": 0})):
+            html = build.results_html(run_all(v), **kwargs)
+            self.assertEqual(html.count('<div class="check-grid">'), 1)
+            self.assertEqual(html.count("<section class='check-card"), 6)
+            self.assertEqual(
+                html.count("<section class='check-card check-card--wide'>"),
+                1)
+            don = html.split(
+                "<section class='check-card check-card--wide'>")[1]
+            self.assertIn("Donation inflation", don.split("</h3>", 1)[0])
+            # The grid opens before the first card and closes after
+            # the last one, with nothing but a newline between the
+            # last card's close and the grid close.
+            self.assertLess(html.index('<div class="check-grid">'),
+                            html.index("<section class='check-card"))
+            last_close = html.rindex("</section>")
+            grid_close = html.index("</div>", last_close)
+            self.assertEqual(
+                html[last_close + len("</section>"):grid_close].strip(),
+                "")
+        self.assertIn(
+            "@media (min-width:1024px){.check-grid{display:grid;"
+            "grid-template-columns:1fr 1fr;gap:1em;margin:1em 0}"
+            ".check-grid .check-card{margin:0}"
+            ".check-card--wide{grid-column:1/-1}}",
+            build.CSS)
 
     def test_short_cards_state_their_pass_rule(self):
         # Visual verdict #104 item 1 (corrected): the short cards
@@ -21379,7 +21423,7 @@ class TestChecker(unittest.TestCase):
                  {"off": 0, "mn": 0, "fee": 0})):
             html = build.results_html(run_all(v), **kwargs)
             self.assertEqual(html.count("<p class='check-rule'>"), 4)
-            cards = html.split("<section class='check-card'>")[1:]
+            cards = html.split("<section class='check-card")[1:]
             by_title = {}
             for card in cards:
                 card = card.split("</section>", 1)[0]
