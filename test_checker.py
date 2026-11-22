@@ -16941,6 +16941,24 @@ class TestChecker(unittest.TestCase):
                     "A guide that only re-reported the baseline and the round trip"):
             self.assertIn(new, section)
 
+        # (12) The overstatement is 10,000, not "10%": a maxWithdraw
+        # view reporting the 100,000 liquid balance as payable
+        # overstates what the queue can pay by 10,000 — 11.1% of
+        # the 90,000 net capacity (100,000 / 90,000 = 1.111...).
+        # "10%" is the tax rate (and 10% of the reported figure),
+        # not the overstatement against the true figure.
+        self.assertEqual(100_000 - 90_000, 10_000)
+        self.assertEqual(round((100_000 - 90_000) / 90_000 * 100, 1),
+                         11.1)
+        self.assertIn("overstates what the queue can pay by 10,000",
+                      section)
+        self.assertIn("11.1% more than the 90,000 net the queue "
+                      "actually serves", section)
+        self.assertIn("11.1% of the 90,000 net capacity", section)
+        for old in ("overstating the queue by 10%",
+                    "overstates the queue by the tax rate"):
+            self.assertNotIn(old, section)
+
     def test_donation_smoothed_nav_guide_numbers(self):
         # Pins the numbers on /guides/erc4626-donation-smoothed-nav/
         # to its model: a 1,000,000 USDC / 1,000,000 share vault at
