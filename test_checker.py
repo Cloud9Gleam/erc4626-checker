@@ -990,7 +990,7 @@ class TestChecker(unittest.TestCase):
         failed = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertLess(failed.index("A check failed"),
+        self.assertLess(failed.index("This is a model of the math"),
                         failed.index("check-card"))
         self.assertIn("/audit/?result=failed", failed)
         self.assertIn("offset 6</a>", failed)
@@ -999,7 +999,7 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
-        self.assertLess(passed.index("This preset passes"),
+        self.assertLess(passed.index("Six checks are the floor"),
                         passed.index("check-card"))
         self.assertIn("/audit/?result=passed", passed)
         # Worker JS renderer: the notice block must precede the cards
@@ -1417,7 +1417,12 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
         self.assertIn("<div class='notice notice-pass'>", passed)
-        self.assertIn("This preset passes the model", passed)
+        # Visual verdict 17:07 follow-up (2026-11-22): the notice no
+        # longer restates the verdict — "This preset passes the model"
+        # was the third statement of it (strip + banner already say
+        # ALL PASS). The notice opens with the floor sentence now.
+        self.assertIn("Six checks are the floor, not the ceiling", passed)
+        self.assertNotIn("This preset passes the model", passed)
         self.assertNotIn("<div class='notice'><h3>What to do next</h3>",
                          passed)
         failed = build.results_html(
@@ -1434,10 +1439,57 @@ class TestChecker(unittest.TestCase):
         fn = js[js.index("function resultsHTML"):]
         self.assertIn(
             "<div class='notice notice-pass'><h3>What to do next</h3>"
-            "<p>This preset passes the model", fn)
+            "<p>Six checks are the floor", fn)
         self.assertIn(
-            "<div class='notice'><h3>What to do next</h3><p>A check failed.",
+            "<div class='notice'><h3>What to do next</h3><p>This is a model of the math",
             fn)
+        # Neither renderer restates the verdict in the notice (see
+        # test_result_notice_does_not_restate_verdict).
+        self.assertNotIn("A check failed.", fn)
+        self.assertNotIn("This preset passes the model", fn)
+
+    def test_result_notice_does_not_restate_verdict(self):
+        # Visual verdict 17:07 follow-up (2026-11-22,
+        # checker-improvement): on the live checker page the verdict
+        # was stated three times — strip ("Result: SOME FAILED."),
+        # banner ("Result: SOME FAILED — 1 of 6 failed ..."), and the
+        # "What to do next" notice ("A check failed." / "This preset
+        # passes the model."). The strip and the banner each have a
+        # pinned reason to stay (#119/#146 above the fold, #147 the
+        # anchor landing skips the strip), so the removable third
+        # statement is the notice's lead sentence. The notice is
+        # next-step content only now; the verdict lives in exactly
+        # two places, in both renderers and both states.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertNotIn("A check failed", failed)
+        # Banner still states the verdict; the notice keeps its CTAs.
+        self.assertIn("SOME FAILED", failed)
+        self.assertIn("1 of 6 failed: Donation inflation", failed)
+        self.assertIn("/audit/?result=failed", failed)
+        self.assertIn("offset 6</a>", failed)
+        self.assertIn("/guides/erc4626-slippage-bounds/", failed)
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertNotIn("This preset passes the model", passed)
+        self.assertIn("ALL PASS", passed)
+        self.assertIn("6 of 6 checks passed", passed)
+        self.assertIn("/audit/?result=passed", passed)
+        self.assertIn("preset=noprot#results", passed)
+        # Worker JS renderer: same openings, no old lead sentences.
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        self.assertNotIn("A check failed", fn)
+        self.assertNotIn("This preset passes the model", fn)
+        self.assertIn("<p>This is a model of the math", fn)
+        self.assertIn("<p>Six checks are the floor", fn)
 
     def test_api_params_table_has_scroll_hint(self):
         # Mobile-360 render (2026-11-20, checker-improvement): the
@@ -8371,9 +8423,9 @@ class TestChecker(unittest.TestCase):
         # green now (.notice-pass), so this pin carries the new class;
         # the FAIL notice below still pins the plain amber box.
         self.assertIn("<div class='notice notice-pass'><h3>What to do next</h3>"
-                      "<p>This preset passes", body)
+                      "<p>Six checks are the floor", body)
         self.assertIn("<div class='notice'><h3>What to do next</h3>"
-                      "<p>A check failed.",
+                      "<p>This is a model of the math",
                       build.checker_body(off=0, mn=0, fee=0,
                                          preset="noprot"))
         # Form card top padding tightened; the audit form untouched.
