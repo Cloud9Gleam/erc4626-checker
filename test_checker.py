@@ -9716,10 +9716,10 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(min(100_000 * USDC, 90_000 * USDC),
                          90_000 * USDC)
         # Case 6: exit mirror — at $1.10 redeem 100,000 shares pays
-        # 110,000 USDC, withdraw 100,000 USDC burns 90,909.090909
+        # 110,000 USDC, withdraw 100,000 USDC burns 90,909.090910
         # shares (ceil 90,909,090,910 base units); at $0.90 redeem
         # 100,000 shares pays 90,000 USDC, withdraw 100,000 USDC
-        # would burn 111,111.111111 shares (ceil 111,111,111,112),
+        # would burn 111,111.111112 shares (ceil 111,111,111,112),
         # over the redeem cap, so it is blocked.
         self.assertEqual((100_000 * USDC * 1_100_000 * USDC)
                          // (1_000_000 * USDC), 110_000 * USDC)
@@ -9730,6 +9730,55 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(-(-(100_000 * USDC * 1_000_000 * USDC)
                            // (900_000 * USDC)), 111_111_111_112)
         self.assertGreater(111_111_111_112, 100_000 * USDC)
+
+        # Withdraw rounds UP (previewWithdraw), so the exit-mirror
+        # numbers are one base unit above the deposit-side floors:
+        # 90,909.090910 and 111,111.111112 shares, not the
+        # 90,909.090909 / 111,111.111111 the guide printed before
+        # 2026-11-22 (it had copied the deposit-side floor into the
+        # withdraw sentence). Differential vs the checker's Vault
+        # class on the same mature vault (offset 0, virtual amounts
+        # included): preview_withdraw equals the model ceil exactly
+        # at both prices; preview_redeem is within 1 base unit of
+        # the model's no-virtual floor, and rounds to the guide's
+        # displayed 110,000 / 90,000 at whole-USDC precision.
+        from erc4626_checker import Vault
+        for assets, supply, ceil_shares in (
+                (1_100_000 * USDC, 1_000_000 * USDC, 90_909_090_910),
+                (900_000 * USDC, 1_000_000 * USDC, 111_111_111_112)):
+            vault = Vault(decimals_offset=0)
+            vault.total_assets = assets
+            vault.total_supply = supply
+            self.assertEqual(
+                vault.preview_withdraw(100_000 * USDC), ceil_shares)
+            self.assertEqual(
+                model.shares_for_withdraw(
+                    100_000 * USDC, assets, supply), ceil_shares)
+            self.assertLessEqual(
+                abs(vault.preview_redeem(100_000 * USDC)
+                    - model.assets_for_redeem(
+                        100_000 * USDC, assets, supply)), 1)
+
+        # The guide page states the corrected withdraw numbers in
+        # the exit-mirror paragraph and keeps the floor numbers in
+        # the deposit paragraphs.
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        start = build.find('add("/guides/erc4626-maxmint-vs-maxdeposit/"')
+        end = build.find('add("/guides/', start + 10)
+        section = build[start:end]
+        self.assertIn(
+            "burns only <strong>90,909.090910 shares</strong>", section)
+        self.assertIn(
+            "would burn <strong>111,111.111112 shares</strong>", section)
+        self.assertIn(
+            "mints only <strong>90,909.090909 shares</strong>", section)
+        self.assertIn(
+            "would mint <strong>111,111.111111 shares</strong>", section)
+        self.assertNotIn(
+            "burns only <strong>90,909.090909 shares</strong>", section)
+        self.assertNotIn(
+            "would burn <strong>111,111.111111 shares</strong>", section)
 
     def test_zap_deposit_guide_numbers(self):
         # Pins /guides/erc4626-zap-deposit/ to its model: a 1,000,000
