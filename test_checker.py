@@ -20529,10 +20529,17 @@ class TestChecker(unittest.TestCase):
     def test_donation_hook_offset6_guide_numbers(self):
         # Pins /guides/erc4626-donation-deposit-hook-reentrancy-offset6/
         # to its model: the same five scenarios as the offset-0 guide,
-        # re-run at offset 6. The offset kills the donation attack in
-        # the control (-999,989.000110), the hook recovers 473,906.035035
-        # of it donation-first, and hook-first is 9 base units from the
-        # offset-0 result. The guide uses exact integers: Alice's
+        # re-run at offset 6.
+        # Corrected 2026-11-22: the old model computed redeem as
+        # shares * total_assets // supply (no virtual amounts) and
+        # let a 0-share deposit's funds enter the vault. With the OZ
+        # virtual amounts the control seed redeems 0.999999, not
+        # 10.999890; donation-first recovers 69,230.713019 of the
+        # donation, not 473,906.035035; and the no-op defense does
+        # not split the donation in half -- the virtual shares strand
+        # 999,999.166669 of it. Hook-first is nearly unchanged
+        # (-84,615.384625, thirteen base units from the offset-0
+        # -84,615.384612). The guide uses exact integers: Alice's
         # hook-first share count is ...363,785,124 (a float print shows
         # ...363.785126) and Mallory's pre-donation shares are
         # 100,000,100,000.000001 (a float print shows .000000).
@@ -20553,33 +20560,38 @@ class TestChecker(unittest.TestCase):
                          50_000_050_000_000_000)
 
         # 1. Control: Alice mints 0.100000 shares, Mallory redeems the
-        # seed for 10.999890, profit -999,989.000110.
+        # seed for 0.999999, profit -999,999.000002; 1,099,999.000002
+        # stays stranded.
         _, vault = hook.fresh(offset=6)
         vault.donate("mallory", 1_000_000 * USDC)
         minted = vault.deposit("alice", 100_000 * USDC, "alice")
         self.assertEqual(minted, 100_000)
         out = vault.redeem("mallory", 1)
-        self.assertEqual(out, 10_999_890)
-        self.assertEqual(out - 1_000_000 * USDC, -999_989_000_110)
+        self.assertEqual(out, 999_999)
+        self.assertEqual(out - 1_000_000 * USDC - 1, -999_999_000_002)
+        self.assertEqual(vault.total_assets, 1_099_999_000_002)
 
         # 2. Donation first, hook deposit: Mallory's deposit mints
-        # 0.100000, Alice's 0.109090; Mallory redeems 573,917.035925,
-        # profit -526,082.964075; Alice's shares worth 626,082.964076.
+        # 0.100000, Alice's 0.109090; Mallory redeems 169,231.713018,
+        # profit -930,768.286983; Alice's shares worth 184,613.952662;
+        # 846,154.334321 stranded; the hook recovers 69,230.713019.
         _, vault = hook.fresh(hook_mode="auto-credit", offset=6)
         vault.donate("mallory", 1_000_000 * USDC)
         m1 = vault.deposit("mallory", 100_000 * USDC, "mallory")
         m2 = vault.deposit("alice", 100_000 * USDC, "alice")
         self.assertEqual((m1, m2), (100_000, 109_090))
         out = vault.redeem("mallory", vault.shares["mallory"])
-        self.assertEqual(out, 573_917_035_925)
-        self.assertEqual(out - 1_100_000 * USDC, -526_082_964_075)
-        self.assertEqual(vault.share_value("alice"), 626_082_964_076)
-        self.assertEqual(out + vault.share_value("alice"),
-                         1_200_000_000_001)
+        self.assertEqual(out, 169_231_713_018)
+        self.assertEqual(out - 1_100_000 * USDC - 1, -930_768_286_983)
+        self.assertEqual(vault.share_value("alice"), 184_613_952_662)
+        self.assertEqual(vault.total_assets - vault.share_value("alice"),
+                         846_154_334_321)
+        self.assertEqual(out + vault.share_value("alice")
+                         + 846_154_334_321, 1_200_000 * USDC + 1)
 
         # 3. Hook first: Mallory holds 100,000,100,000.000001 shares
         # pre-donation; Alice double-mints 18,181,836,363.785124;
-        # Mallory redeems 1,015,384.615384, profit -84,615.384616.
+        # Mallory redeems 1,015,384.615376, profit -84,615.384625.
         _, vault = hook.fresh(hook_mode="auto-credit", offset=6)
         vault.deposit("mallory", 100_000 * USDC, "mallory")
         self.assertEqual(vault.shares["mallory"],
@@ -20588,36 +20600,114 @@ class TestChecker(unittest.TestCase):
         vault.deposit("alice", 100_000 * USDC, "alice")
         self.assertEqual(vault.shares["alice"], 18_181_836_363_785_124)
         out = vault.redeem("mallory", vault.shares["mallory"])
-        self.assertEqual(out, 1_015_384_615_384)
-        self.assertEqual(out - 1_100_000 * USDC, -84_615_384_616)
-        self.assertEqual(vault.share_value("alice"), 184_615_384_617)
+        self.assertEqual(out, 1_015_384_615_376)
+        self.assertEqual(out - 1_100_000 * USDC - 1, -84_615_384_625)
+        self.assertEqual(vault.share_value("alice"), 184_615_384_615)
+        self.assertEqual(out + vault.share_value("alice"),
+                         1_199_999_999_991)
 
-        # 4. Victim-side hook: Alice's deposit mints 0.100000; Mallory
-        # redeems the seed for 5.499972.
+        # 4. Victim-side hook: Alice's deposit mints 0.100000;
+        # Mallory redeems the seed for 0.916665.
         _, vault = hook.fresh(hook_mode="auto-credit", offset=6)
         vault.donate("mallory", 1_000_000 * USDC)
         m = vault.deposit("alice", 100_000 * USDC, "alice")
         self.assertEqual(m, 100_000)
-        self.assertEqual(vault.redeem("mallory", 1), 5_499_972)
+        out = vault.redeem("mallory", 1)
+        self.assertEqual(out, 916_665)
+        self.assertEqual(out - 1_000_000 * USDC - 1, -999_999_083_336)
 
         # 5. No-op defense: both mint 0.100000 once; Mallory redeems
-        # all for 600,002.999985, profit -499,997.000015.
+        # all for 100,000.916666, profit -999,999.083335; Alice's
+        # shares worth 99,999.916666; 999,999.166669 stranded.
         _, vault = hook.fresh(hook_mode="noop", offset=6)
         vault.donate("mallory", 1_000_000 * USDC)
         m1 = vault.deposit("mallory", 100_000 * USDC, "mallory")
         m2 = vault.deposit("alice", 100_000 * USDC, "alice")
         self.assertEqual((m1, m2), (100_000, 100_000))
         out = vault.redeem("mallory", vault.shares["mallory"])
-        self.assertEqual(out, 600_002_999_985)
-        self.assertEqual(out - 1_100_000 * USDC, -499_997_000_015)
+        self.assertEqual(out, 100_000_916_666)
+        self.assertEqual(out - 1_100_000 * USDC - 1, -999_999_083_335)
+        self.assertEqual(vault.share_value("alice"), 99_999_916_666)
+        self.assertEqual(vault.total_assets - vault.share_value("alice"),
+                         999_999_166_669)
 
-        # No duplicate add() for this guide in build.py.
+        # Differential vs the checker's own Vault class: every
+        # preview and redeem in the model equals Vault on the same
+        # state, at offset 6 as at offset 0.
+        from erc4626_checker import Vault
+        for hook_mode in (None, "auto-credit", "noop"):
+            _, vault = hook.fresh(hook_mode=hook_mode, offset=6)
+            vault.donate("mallory", 1_000_000 * USDC)
+            ref = Vault(total_assets=vault.total_assets,
+                        total_supply=vault.total_supply,
+                        decimals_offset=6)
+            self.assertEqual(
+                vault.preview_deposit(100_000 * USDC),
+                ref.preview_deposit(100_000 * USDC))
+            self.assertEqual(vault.preview_redeem(1),
+                             ref.preview_redeem(1))
+            self.assertEqual(vault.preview_redeem(100_001),
+                             ref.preview_redeem(100_001))
+        # Hook-first differential at offset 6: the hook mint and the
+        # deposit mint are both the Vault preview at the pre-deposit
+        # state, and the final redeem matches Vault on the same state.
+        _, vault = hook.fresh(hook_mode="auto-credit", offset=6)
+        ref = Vault(total_assets=1, total_supply=1, decimals_offset=6)
+        self.assertEqual(vault.preview_deposit(100_000 * USDC),
+                         ref.preview_deposit(100_000 * USDC))
+        vault.deposit("mallory", 100_000 * USDC, "mallory")
+        vault.donate("mallory", 1_000_000 * USDC)
+        vault.deposit("alice", 100_000 * USDC, "alice")
+        ref2 = Vault(total_assets=vault.total_assets,
+                     total_supply=vault.total_supply, decimals_offset=6)
+        self.assertEqual(vault.preview_redeem(vault.shares["mallory"]),
+                         ref2.preview_redeem(vault.shares["mallory"]))
+        self.assertEqual(vault.share_value("alice"),
+                         ref2.preview_redeem(vault.shares["alice"]))
+
+        # The guide page states the corrected numbers and no longer
+        # states the old ones (the old figures that remain are the
+        # retraction sentences, naming the old errors).
         build = (Path.home() / "workspace/taskmarket/site/build.py"
                  ).read_text()
+        start = build.find(
+            'add("/guides/erc4626-donation-deposit-hook-reentrancy-offset6/"')
+        end = build.find('add("/guides/', start + 10)
+        section = build[start:end]
+        for new in ("0.999999", "999,999.000002", "169,231.713018",
+                    "930,768.286983", "69,230.713019", "184,613.952662",
+                    "846,154.334321", "1,015,384.615376",
+                    "84,615.384625", "184,615.384615", "0.916665",
+                    "100,000.916666", "999,999.083335",
+                    "99,999.916666", "999,999.166669",
+                    "thirteen base units", "takes back 69,230"):
+            self.assertIn(new, section)
+        for old, count in (("10.999890", 1),
+                           ("573,917.035925", 1),
+                           ("526,082.964075", 1),
+                           ("626,082.964076", 1),
+                           ("473,906.035035", 1),
+                           ("1,015,384.615384", 1),
+                           ("84,615.384616", 1),
+                           ("184,615.384617", 1),
+                           ("5.499972", 1),
+                           ("600,002.999985", 1),
+                           ("499,997.000015", 1),
+                           ("599,997.000016", 1),
+                           ("999,989.000110", 1)):
+            self.assertEqual(section.count(old), count,
+                             f"{old}: expected {count} in the guide")
+        for gone in ("takes half of it back",
+                     "about 47% of what the offset took",
+                     "splits almost exactly in half",
+                     "they split the gift",
+                     "she put in 100,000 and nets "
+                     "<strong>+526,082.964076</strong>"):
+            self.assertNotIn(gone, section)
         self.assertEqual(
-            build.count('add("/guides/erc4626-donation-deposit-hook-reentrancy-offset6/"'),
+            build.count(
+                'add("/guides/erc4626-donation-deposit-hook-reentrancy-offset6/"'),
             1)
-
     def test_donation_time_decay_exit_fee_guide_numbers(self):
         # Pins /guides/erc4626-donation-time-decay-exit-fee/ to its
         # model: seed 1 base unit, donate 100,000 USDC, fee 500 bps
@@ -21242,6 +21332,15 @@ class TestChecker(unittest.TestCase):
         # its model (offset 0): seed 1 base unit / 1 share-base-unit
         # at $1.00; Mallory has 100,000 USDC to deposit plus
         # 1,000,000 USDC to donate; Alice has 100,000 USDC.
+        # Corrected 2026-11-22: the old model computed redeem as
+        # shares * total_assets // supply (no virtual amounts) and
+        # let a 0-share deposit's funds enter the vault. With the OZ
+        # virtual amounts the seed share is one of two effective
+        # supply units, so Mallory redeems 500,000.000001 -- a LOSS
+        # of 500,000.000000, not a profit of 100,000.000001 -- and a
+        # 0-share deposit reverts, so Alice loses nothing. Hook-first
+        # still reverses the donation (-84,615.384612), five base
+        # units of dust from the old -84,615.384607.
         import importlib.util
         from pathlib import Path
         model_path = (Path.home() / "workspace/taskmarket/site"
@@ -21252,34 +21351,39 @@ class TestChecker(unittest.TestCase):
         spec.loader.exec_module(model)
         USDC = model.USDC
 
-        # 1. Control, donation only: Alice mints 0 shares, Mallory
-        # redeems the seed for 1,100,000.000001, profit 100,000.000001.
+        # 1. Control, donation only: Alice's deposit mints 0 shares
+        # and REVERTS -- her funds never enter; Mallory redeems the
+        # seed for 500,000.000001, a loss of 500,000.000000, and
+        # 500,000.000000 stays stranded.
         _, vault = model.fresh()
         vault.donate("mallory", 1_000_000 * USDC)
-        self.assertEqual(vault.deposit("alice", 100_000 * USDC, "alice"),
-                         0)
+        with self.assertRaises(ValueError):
+            vault.deposit("alice", 100_000 * USDC, "alice")
+        self.assertEqual(vault.total_assets, 1_000_000 * USDC + 1)
         out = vault.redeem("mallory", 1)
-        self.assertEqual(out, 1_100_000 * USDC + 1)
-        self.assertEqual(out - 1_000_000 * USDC - 1, 100_000 * USDC)
+        self.assertEqual(out, 500_000_000_001)
+        self.assertEqual(out - 1_000_000 * USDC - 1, -500_000 * USDC)
+        self.assertEqual(vault.total_assets, 500_000 * USDC)
 
-        # 2. Donation first, hook deposit: hook mint 0, deposit 0,
-        # Mallory still holds only the seed; redeem 1,200,000.000001,
-        # profit identical to the control.
+        # 2. Donation first, hook deposit: both deposits revert
+        # (preview 0); Mallory still holds only the seed; redeem
+        # 500,000.000001, profit -500,000.000000 -- identical to
+        # the control.
         _, vault = model.fresh(hook_mode="auto-credit")
         vault.donate("mallory", 1_000_000 * USDC)
-        self.assertEqual(
-            vault.deposit("mallory", 100_000 * USDC, "mallory"), 0)
+        with self.assertRaises(ValueError):
+            vault.deposit("mallory", 100_000 * USDC, "mallory")
         self.assertEqual(vault.shares["mallory"], 1)
-        self.assertEqual(vault.deposit("alice", 100_000 * USDC, "alice"),
-                         0)
+        with self.assertRaises(ValueError):
+            vault.deposit("alice", 100_000 * USDC, "alice")
         out = vault.redeem("mallory", 1)
-        self.assertEqual(out, 1_200_000 * USDC + 1)
-        self.assertEqual(out - 1_100_000 * USDC - 1, 100_000 * USDC)
+        self.assertEqual(out, 500_000_000_001)
+        self.assertEqual(out - 1_000_000 * USDC - 1, -500_000 * USDC)
 
         # 3. Hook first: Mallory holds 200,001 shares; Alice's
         # double mint is 36,363.636362 shares; Mallory redeems
-        # 1,015,384.615393, profit -84,615.384607; Alice's shares are
-        # worth 184,615.384608; the ledger closes exactly.
+        # 1,015,384.615389, profit -84,615.384612; Alice's shares
+        # are worth 184,615.384607; five base units of dust.
         _, vault = model.fresh(hook_mode="auto-credit")
         vault.deposit("mallory", 100_000 * USDC, "mallory")
         self.assertEqual(vault.shares["mallory"], 200_000 * USDC + 1)
@@ -21288,39 +21392,104 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(vault.shares["alice"], 36_363_636_362)
         self.assertEqual(vault.total_supply, 236_363_636_363)
         out = vault.redeem("mallory", vault.shares["mallory"])
-        self.assertEqual(out, 1_015_384_615_393)
-        self.assertEqual(out - 1_100_000 * USDC, -84_615_384_607)
-        self.assertEqual(vault.share_value("alice"), 184_615_384_608)
+        self.assertEqual(out, 1_015_384_615_389)
+        self.assertEqual(out - 1_100_000 * USDC - 1, -84_615_384_612)
+        self.assertEqual(vault.share_value("alice"), 184_615_384_607)
         self.assertEqual(out + vault.share_value("alice"),
-                         1_200_000 * USDC + 1)
+                         1_199_999_999_996)
 
-        # 4. Victim-side hook: Alice's hook mint 0, deposit 0;
-        # Mallory redeems the seed for 1,100,000.000001, as control.
+        # 4. Victim-side hook: Alice's deposit reverts; Mallory
+        # redeems the seed for 500,000.000001, as control.
         _, vault = model.fresh(hook_mode="auto-credit")
         vault.donate("mallory", 1_000_000 * USDC)
-        self.assertEqual(vault.deposit("alice", 100_000 * USDC, "alice"),
-                         0)
+        with self.assertRaises(ValueError):
+            vault.deposit("alice", 100_000 * USDC, "alice")
         self.assertEqual(vault.shares["alice"], 0)
         out = vault.redeem("mallory", 1)
-        self.assertEqual(out, 1_100_000 * USDC + 1)
+        self.assertEqual(out, 500_000_000_001)
 
-        # 5. No-op defense: single mint (0 at the inflated price);
-        # Alice also deposits 0; Mallory redeems 1,200,000.000001.
+        # 5. No-op defense: both deposits revert; Mallory redeems
+        # 500,000.000001.
         _, vault = model.fresh(hook_mode="noop")
         vault.donate("mallory", 1_000_000 * USDC)
-        self.assertEqual(
-            vault.deposit("mallory", 100_000 * USDC, "mallory"), 0)
+        with self.assertRaises(ValueError):
+            vault.deposit("mallory", 100_000 * USDC, "mallory")
         self.assertEqual(vault.shares["mallory"], 1)
-        self.assertEqual(vault.deposit("alice", 100_000 * USDC, "alice"),
-                         0)
+        with self.assertRaises(ValueError):
+            vault.deposit("alice", 100_000 * USDC, "alice")
         out = vault.redeem("mallory", 1)
-        self.assertEqual(out, 1_200_000 * USDC + 1)
+        self.assertEqual(out, 500_000_000_001)
 
-        # No duplicate add() for this guide in build.py.
+        # Differential vs the checker's own Vault class: every
+        # preview and redeem in the model equals Vault on the same
+        # state, and a 0-share deposit raises exactly where the
+        # model says it reverts.
+        from erc4626_checker import Vault
+        for hook_mode in (None, "auto-credit", "noop"):
+            _, vault = model.fresh(hook_mode=hook_mode)
+            vault.donate("mallory", 1_000_000 * USDC)
+            ref = Vault(total_assets=vault.total_assets,
+                        total_supply=vault.total_supply,
+                        decimals_offset=0)
+            self.assertEqual(
+                vault.preview_deposit(100_000 * USDC),
+                ref.preview_deposit(100_000 * USDC))
+            self.assertEqual(vault.preview_redeem(1),
+                             ref.preview_redeem(1))
+            with self.assertRaises(ValueError):
+                ref.deposit(100_000 * USDC)
+            self.assertEqual(vault.redeem("mallory", 1),
+                             ref.redeem(1))
+        # Hook-first differential: the hook mint and the deposit
+        # mint are both the Vault preview at the pre-deposit state,
+        # and the final redeem matches Vault on the same state.
+        _, vault = model.fresh(hook_mode="auto-credit")
+        ref = Vault(total_assets=1, total_supply=1, decimals_offset=0)
+        self.assertEqual(vault.preview_deposit(100_000 * USDC),
+                         ref.preview_deposit(100_000 * USDC))
+        vault.deposit("mallory", 100_000 * USDC, "mallory")
+        vault.donate("mallory", 1_000_000 * USDC)
+        vault.deposit("alice", 100_000 * USDC, "alice")
+        ref2 = Vault(total_assets=vault.total_assets,
+                     total_supply=vault.total_supply, decimals_offset=0)
+        self.assertEqual(vault.preview_redeem(vault.shares["mallory"]),
+                         ref2.preview_redeem(vault.shares["mallory"]))
+        self.assertEqual(vault.share_value("alice"),
+                         ref2.preview_redeem(vault.shares["alice"]))
+
+        # The guide page states the corrected numbers and no longer
+        # states the old ones (the old figures that remain are the
+        # retraction sentences, naming the old errors).
         build = (Path.home() / "workspace/taskmarket/site/build.py"
                  ).read_text()
+        start = build.find(
+            'add("/guides/erc4626-donation-deposit-hook-reentrancy/"')
+        end = build.find('add("/guides/', start + 10)
+        section = build[start:end]
+        for new in ("500,000.000001", "500,000.000000",
+                    "1,015,384.615389", "84,615.384612",
+                    "184,615.384607", "36,363.636362",
+                    "18,181.818181", "reverts", "stranded",
+                    "one of two effective supply units",
+                    "five base units"):
+            self.assertIn(new, section)
+        # "84,615.384607" also appears inside the new "184,615.384607"
+        # and as Alice's new gain, so the old figure is pinned with its
+        # retract phrasing, not the bare number.
+        for old, count in (("1,100,000.000001", 1),
+                           ("1,200,000.000001", 1),
+                           ("1,015,384.615393", 1),
+                           ("a loss of 84,615.384607", 1),
+                           ("184,615.384608", 1)):
+            self.assertEqual(section.count(old), count,
+                             f"{old}: expected {count} in the guide")
+        for gone in ("a profit of <strong>100,000.000001</strong>",
+                     "his 100,000 deposit comes back inside it",
+                     "for the whole vault"):
+            self.assertNotIn(gone, section)
         self.assertEqual(
-            build.count('add("/guides/erc4626-donation-deposit-hook-reentrancy/"'),
+            build.count(
+                'add("/guides/erc4626-donation-deposit-hook-reentrancy/"'),
             1)
     def test_donation_rebase_collateral_guide_numbers(self):
         # Pins the donation x rebase-collateral model: a 1,000,000
