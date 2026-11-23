@@ -1207,17 +1207,18 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
 
-    def test_results_notice_sits_after_first_card(self):
-        # Visual verdict #161 item 2 (2026-11-23, checker-improvement):
-        # the #146 placement put the failure notice directly under the
-        # banner, before the evidence cards — measured 349px on noprot
-        # desktop (711px at 360px), so the donation table sat a screen
-        # below the banner. The notice now sits directly after the
-        # first evidence card, inside the grid as a full-width item:
-        # banner -> first card -> next step -> rest. #146's reason
-        # still holds (one card down, not six); the failing table is
-        # the first thing under the banner again. Content unchanged —
-        # only the position moves, in both renderers.
+    def test_results_notice_trails_all_cards(self):
+        # Visual verdict #162 (2026-11-23, checker-improvement):
+        # the #161 item 2 placement put the notice directly after
+        # the first evidence card, inside the grid — the visitor
+        # read one card, then a ~270px promo, then the core Donation
+        # card, and a failing run's impact was diluted the moment
+        # the evidence landed. The notice now trails all six cards,
+        # outside the grid, as it did before #161: banner -> six
+        # cards -> next step. Content unchanged — only the position
+        # moves, in both renderers. The dead .check-grid .notice
+        # CSS rule goes with it; the base .notice box styling
+        # carries the card outside the grid.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -1225,11 +1226,14 @@ class TestChecker(unittest.TestCase):
         failed = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        first_close = failed.index("</section>")
-        second_card = failed.index("<section class='check-card", first_close)
+        last_close = failed.rindex("</section>")
+        grid_close = failed.index("</div>", last_close)
         notice_at = failed.index("This is a model of the math")
-        self.assertLess(first_close, notice_at)
-        self.assertLess(notice_at, second_card)
+        self.assertEqual(failed.count("<section class='check-card"), 6)
+        self.assertLess(last_close, grid_close)
+        self.assertLess(grid_close, notice_at)
+        self.assertEqual(
+            failed.count("<section class='check-card", 0, notice_at), 6)
         self.assertIn("/audit/?result=failed", failed)
         self.assertIn("offset 6</a>", failed)
         self.assertIn("/guides/erc4626-slippage-bounds/", failed)
@@ -1237,23 +1241,23 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
-        first_close = passed.index("</section>")
-        second_card = passed.index("<section class='check-card", first_close)
+        last_close = passed.rindex("</section>")
+        grid_close = passed.index("</div>", last_close)
         notice_at = passed.index("Six checks are the floor")
-        self.assertLess(first_close, notice_at)
-        self.assertLess(notice_at, second_card)
+        self.assertLess(last_close, grid_close)
+        self.assertLess(grid_close, notice_at)
+        self.assertEqual(
+            passed.count("<section class='check-card", 0, notice_at), 6)
         self.assertIn("/audit/?result=passed", passed)
         # Worker JS renderer: the notice string is built before the
-        # cards loop but appended after the first card's close, not
-        # before the grid; the grid CSS spans it full-width.
+        # cards loop but appended after the grid closes, not after
+        # the first card; the grid CSS no longer spans it.
         js = build.checker_results_html_js()
         fn = js[js.index("function resultsHTML"):]
         self.assertIn('let notice="";', fn)
-        self.assertIn('if(notice){h+=notice;notice="";}', fn)
-        self.assertLess(fn.index('h+="</section>"'),
-                        fn.index('if(notice){h+=notice;'))
-        self.assertIn(".check-grid .notice{grid-column:1/-1;margin:0}",
-                      build.CSS)
+        self.assertIn('h+="</div>";\n  if(notice){h+=notice;}', fn)
+        self.assertNotIn('if(notice){h+=notice;notice="";}', fn)
+        self.assertNotIn(".check-grid .notice", build.CSS)
 
     def test_failing_checks_render_first(self):
         # Visual verdict #147 follow-up (2026-11-22,
@@ -1663,15 +1667,11 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Get the vault micro-audit</a>", failed)
         self.assertIn("Run the same checks with offset 6</a>", failed)
         self.assertIn("/audit/?result=failed", failed)
-        # The action box sits after the first evidence card, before
-        # the second — see test_results_notice_sits_after_first_card
-        # (visual verdict #161 item 2: the banner placement cost the
-        # evidence its first screen).
-        first_close = failed.index("</section>")
-        self.assertLess(first_close, failed.index("What to do next"))
-        self.assertLess(failed.index("What to do next"),
-                        failed.index("<section class='check-card",
-                                     first_close))
+        # The action box trails all six cards — see
+        # test_results_notice_trails_all_cards (visual verdict #162:
+        # after-first-card still broke the scan).
+        last_close = failed.rindex("</section>")
+        self.assertLess(last_close, failed.index("What to do next"))
         passed = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
@@ -1680,11 +1680,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Get the vault micro-audit</a>", passed)
         self.assertIn("See what a failing vault looks like</a>", passed)
         self.assertIn("/audit/?result=passed", passed)
-        first_close = passed.index("</section>")
-        self.assertLess(first_close, passed.index("What to do next"))
-        self.assertLess(passed.index("What to do next"),
-                        passed.index("<section class='check-card",
-                                     first_close))
+        last_close = passed.rindex("</section>")
+        self.assertLess(last_close, passed.index("What to do next"))
         # The buttons wrap, not overflow, at 360px.
         self.assertIn(".notice-actions a{white-space:normal}", build.CSS)
         self.assertIn(".notice p.notice-actions{display:flex", build.CSS)
@@ -23426,9 +23423,11 @@ class TestChecker(unittest.TestCase):
             "grid-template-columns:1fr 1fr;gap:1em;margin:1em 0}"
             ".check-grid .check-card{margin:0;display:flex;"
             "flex-direction:column}"
-            ".check-card--wide{grid-column:1/-1}"
-            ".check-grid .notice{grid-column:1/-1;margin:0}}",
+            ".check-card--wide{grid-column:1/-1}}",
             build.CSS)
+        # Visual verdict #162 (2026-11-23): the notice no longer
+        # sits inside the grid, so the .check-grid .notice rule
+        # that spanned it full-width is gone with it.
 
     def test_verdict160_check_cards_size_to_content(self):
         # Visual verdict #160 (2026-11-23, checker-improvement):
