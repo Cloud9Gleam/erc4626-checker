@@ -5684,9 +5684,11 @@ class TestChecker(unittest.TestCase):
         # the CTA below the flow left a ~150px blank band under the
         # intro text), so the flow sits after the CTA and before the
         # paragraph that follows the hero. The left column is filled
-        # by the intro, the CTA and the hero-stats strip; a model-
-        # caveat line was tried here and dropped, because with all
-        # three the column overshot the checks panel by ~71px.
+        # by the intro and the CTA (the hero-stats strip moved out
+        # from under the CTA to a full-width row under hero-top in
+        # verdict #173); a model-caveat line was tried here and
+        # dropped, because with all three the column overshot the
+        # checks panel by ~71px.
         hero_start = home.index('<div class="hero">')
         hero_end = home.index('<p>This site is one independent researcher')
         hero = home[hero_start:hero_end]
@@ -5884,12 +5886,16 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<p class="hero-cta">', home)
         # The order rules live in the <=640px block: anchor on the
         # checker-form rule, the last rule of that block before them.
+        # The stats strip has no order rule any more (visual verdict
+        # #173): it is a direct child of .hero, after hero-top, so on
+        # phones it follows hero-top in normal flow — nothing to
+        # reorder. Only the column's own paragraphs are ordered.
         anchor = build.CSS.index("#checker-form{grid-template-columns:1fr}")
         for rule in (".hero-top>div>p{order:2}",
-                     ".hero-top>div>p.hero-cta{order:1}",
-                     ".hero-top>div>.hero-stats{order:3}"):
+                     ".hero-top>div>p.hero-cta{order:1}"):
             self.assertIn(rule, build.CSS)
             self.assertLess(anchor, build.CSS.index(rule))
+        self.assertNotIn(".hero-top>div>.hero-stats{order:3}", build.CSS)
 
     def test_homepage_hero_is_full_bleed(self):
         # Visual verdict #105 item 2: at 1919px the homepage hero was
@@ -6354,31 +6360,30 @@ class TestChecker(unittest.TestCase):
         aside = hero[hero.index('<aside class="hero-checks">'):]
         self.assertNotIn("<a ", aside)
 
-    def test_hero_stats_sits_flush_at_column_bottom(self):
-        # Visual verdict #90 (desktop 1919x998): the right panel's
-        # bottom edge sat ~14px below the left column's stats text
-        # (panel y576 vs stats text y562) — the hero's ugliest point.
-        # Cause: .hero-stats is a <p>, and the base rule gives every
-        # <p> margin-bottom .65em (~10px at the strip's .9em size);
-        # the strip must therefore carry margin-bottom:0 or it floats
-        # above the panel's bottom edge. The remaining ~3px is
-        # line-height leading below the last text line, not a layout
-        # error (the panel's own note text has the same slack above
-        # its padding).
-        # The strip is pinned to the column bottom by the column's
-        # justify-content:space-between (first item at the top, last
-        # item at the bottom), NOT by margin-top:auto on the strip
-        # itself — the auto margin concentrated all the column's slack
-        # into one ~60px dead band between the CTA and the strip
-        # (verdict #90 secondary observation), while space-between
-        # spreads it evenly across the column's gaps. Invariant
-        # (reflection #353 rule candidate (aj), adopted here): the
+    def test_hero_stats_spans_full_hero_row(self):
+        # Visual verdict #173 (2026-11-24): the #90 invariant retires
+        # with the strip's move out of the left column. It read: the
         # stats strip's box bottom must equal the panel's bottom edge
-        # — i.e. no bottom margin on the pinned strip.
+        # — i.e. no bottom margin on the pinned strip — because the
+        # strip was pinned at the column foot by the column's
+        # justify-content:space-between (verdict #90: the panel's
+        # bottom edge sat ~14px below the stats text, the hero's
+        # ugliest point, because the base p rule gives every <p>
+        # margin-bottom .65em). The strip is no longer in the column,
+        # so there is no column foot to pin to: it spans the full
+        # 1024px hero-top row as a direct child of .hero, with its
+        # own 1024px cap, margin-top clearing the taller column and
+        # margin-bottom 0 handing the gap to the flow's own .9em
+        # margin. The column keeps justify-content:space-between —
+        # it now spreads the intro/CTA slack across the column's gaps
+        # (measured 1919px: left column 317.8 vs panel 305.6, the CTA
+        # ends 1.2px above the panel bottom). The base p margin rule
+        # is unchanged.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn("p{margin:.65em 0}", build.CSS)
         col = build.CSS.index(".hero-top>div{")
         col_rule = build.CSS[col:build.CSS.index("}", col) + 1]
@@ -6386,7 +6391,21 @@ class TestChecker(unittest.TestCase):
         start = build.CSS.index(".hero-stats{display:flex;")
         rule = build.CSS[start:build.CSS.index("}", start) + 1]
         self.assertNotIn("margin-top:auto", rule)
-        self.assertIn("margin-bottom:0", rule)
+        self.assertIn("max-width:1024px;margin:1em auto 0", rule)
+        # Markup: the strip is a direct child of .hero, after
+        # hero-top closes and before the flow — not inside the left
+        # column, whose last child is now the CTA paragraph.
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index("This site is one independent researcher",
+                              hero_start)
+        hero = home[hero_start:hero_end]
+        stats_idx = hero.index('<p class="hero-stats">')
+        self.assertLess(hero.index("</aside>"), stats_idx)
+        self.assertLess(stats_idx, hero.index('<div class="flow"'))
+        col_end = hero.index("</aside>")
+        # The CTA is the left column's last child: it sits before the
+        # aside closes, while the strip sits after it.
+        self.assertLess(hero.index('<p class="hero-cta">'), col_end)
 
     def test_hero_checks_panel_note_fills_right_column(self):
         # Visual verdict #65: the stats strip fixed the left column,
@@ -6421,7 +6440,22 @@ class TestChecker(unittest.TestCase):
         self.assertLess(aside.index("Minimum viable deposit"),
                         aside.index("hero-checks-note"))
 
-    def test_hero_stats_strip_fills_left_column(self):
+    def test_hero_stats_strip_spans_full_hero_width(self):
+        # Visual verdict #173 (2026-11-24): the strip moves OUT of
+        # the left column. The #64/#71 placement (strip at the column
+        # foot, level with the panel) was decided when the column was
+        # ~890px wide; the #171 hero-top cap narrowed it to ~634px,
+        # the column grew taller, and the empty green below the panel
+        # grew from ~50px (#110 era) to 87.4px (measured
+        # hidden_files/measure-verdict173.py at 1919px) — the #171
+        # verdict's "stats only in the left column, lower half
+        # unbalanced" is that growth. The strip now spans the full
+        # 1024px hero-top row under both columns, level with the
+        # .flow diagram: the panel gap is the columns' own height
+        # difference (12.2px), and the strip reads as a divider band.
+        # The #64/#71/#90 pinning invariant (strip bottom == panel
+        # bottom) retires with the move — there is no column foot to
+        # pin to any more. Copy and facts are unchanged.
         # Visual verdict #64: the intro text ended ~150px above the
         # checks panel's bottom edge, leaving a blank deep-green band
         # in the left column. The fix is content, not width: a stat
@@ -6484,7 +6518,9 @@ class TestChecker(unittest.TestCase):
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn(
-            ".hero-stats{display:flex;gap:1.5em;padding-top:.9em;",
+            ".hero-stats{display:flex;gap:1.5em;padding-top:.9em;"
+            "border-top:1px solid rgba(255,255,255,.28);font-size:.9em;"
+            "color:#e6f5ea;max-width:1024px;margin:1em auto 0}",
             build.CSS)
         self.assertIn(".hero-stats strong{display:block;font-size:1.5em;",
                       build.CSS)
@@ -6500,10 +6536,13 @@ class TestChecker(unittest.TestCase):
         stats = '<p class="hero-stats">'
         self.assertIn(stats, hero)
         stats_idx = hero.index(stats)
-        # Inside the left column: after the CTA, before the panel.
+        # Full-width strip: after hero-top closes, before the flow.
+        # It is no longer inside the left column (see the #173 note
+        # above): the CTA is the column's last child now.
+        self.assertLess(hero.index("</aside>"), stats_idx)
+        self.assertLess(stats_idx, hero.index('<div class="flow"'))
         self.assertLess(hero.index("Run the free checker"),
                         stats_idx)
-        self.assertLess(stats_idx, hero.index('<aside class="hero-checks">'))
         # Rule (p): the hero model count drifts with every new model,
         # so derive it fresh from the site's *-model.py files instead
         # of hardcoding it (the old literal 152 went stale when the
