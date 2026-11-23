@@ -5217,6 +5217,41 @@ class TestChecker(unittest.TestCase):
                               track[track.index("<details"):])),
             [("25", "27"), ("66", "70")])
 
+    def test_track_record_intro_split_into_rule_and_example(self):
+        # Visual verdict #159 (d) (2026-11-23, checker-improvement):
+        # the Track record intro was one 7-line, 109-word paragraph
+        # (measured in a real render: 196.3px at 1919px) — rule sentence
+        # + Gamma example fused into a wall. It is now two blocks: the
+        # rule sentence in its own paragraph, the Gamma example in a
+        # separate paragraph with the site's detail-block treatment
+        # (green left border, .track-example). Wording is untouched, so
+        # the pinned strings in test_audit_track_record_pill_meaning_
+        # is_annotated still match verbatim; this test pins the split
+        # itself so a future edit cannot silently re-fuse them.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index("<h2>Track record</h2>"):]
+        intro = track[:track.index("<details")]
+        # Three paragraphs before the first group: method, rule, example.
+        paras = re.findall(r"<p[^>]*>(.*?)</p>", intro, re.S)
+        self.assertEqual(len(paras), 3)
+        rule = re.sub(r"\s+", " ", paras[1])
+        self.assertTrue(rule.startswith("Two numbers can appear"))
+        self.assertTrue(rule.endswith("quotes the contest's own award."))
+        self.assertNotIn("Gamma", rule)
+        self.assertIn('<p class="track-example">', intro)
+        example = re.sub(r"\s+", " ", paras[2])
+        self.assertTrue(example.startswith("For example, Gamma's pill"))
+        self.assertIn("MISSes instead of counting them as verified.",
+                      example)
+        # The CSS class exists exactly once, in the shared stylesheet.
+        self.assertEqual(build.CSS.count(".track-example{"), 1)
+        self.assertEqual(audit.count('class="track-example"'), 1)
+
     def test_track_summary_toggle(self):
         # Visual verdict #115 (c) residual, measured 2026-11-19: the
         # five Track record summaries fill only 45-73% of their grey
