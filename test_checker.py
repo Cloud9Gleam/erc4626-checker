@@ -23301,9 +23301,48 @@ class TestChecker(unittest.TestCase):
             "@media (min-width:1024px){.check-grid{display:grid;"
             "grid-auto-flow:dense;"
             "grid-template-columns:1fr 1fr;gap:1em;margin:1em 0}"
-            ".check-grid .check-card{margin:0}"
+            ".check-grid .check-card{margin:0;display:flex;"
+            "flex-direction:column}"
+            ".check-grid .check-card .check-guide{margin-top:auto}"
             ".check-card--wide{grid-column:1/-1}}",
             build.CSS)
+
+    def test_verdict159_shareprice_card_guide_pinned_to_bottom(self):
+        # Visual verdict #159 (b) (2026-11-23, checker-improvement):
+        # the equal-height grid stretched the Share-price card 93.4px
+        # empty at the bottom (and Minimum viable deposit 102.2px on
+        # noprot). The fix pins each card's Guide link to the bottom
+        # with margin-top:auto inside a flex-column card, so the
+        # blank sits above the link instead of below it. Every one
+        # of the six checks has a guide, so every card has a Guide
+        # paragraph as its last child to pin.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".check-grid .check-card{margin:0;display:flex;"
+            "flex-direction:column}",
+            build.CSS)
+        self.assertIn(
+            ".check-grid .check-card .check-guide{margin-top:auto}",
+            build.CSS)
+        for v, kwargs in (
+                (Vault(decimals_offset=6, min_deposit=1_000_000,
+                       perf_fee_bps=1000), {}),
+                (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                 {"off": 0, "mn": 0, "fee": 0})):
+            html = build.results_html(run_all(v), **kwargs)
+            self.assertEqual(html.count("<p class='check-guide'>"), 6)
+            for section in html.split(
+                    "<section class='check-card")[1:]:
+                card = section.split("</section>", 1)[0].rstrip()
+                # The Guide paragraph is the card's last child, so
+                # margin-top:auto pins it to the stretched bottom.
+                self.assertTrue(card.endswith("</p>"), card[-120:])
+                last_p = card.rsplit("<p ", 1)[-1]
+                self.assertTrue(last_p.startswith("class='check-guide'"),
+                                last_p[:60])
 
     def test_check_grid_never_orphans_a_card(self):
         # Visual verdict #154 (2026-11-22, checker-improvement):
