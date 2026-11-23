@@ -1399,10 +1399,29 @@ class TestChecker(unittest.TestCase):
         self.assertLess(passed.index("ALL PASS"),
                         passed.index('href="#results"'))
         self.assertIn('<a href="#results">see the full results', passed)
-        # An ALL PASS strip carries no loss number: the donation check
-        # passed, so quoting its (nonzero but within-bound) worst loss
-        # next to a pass would read as a failure.
-        self.assertNotIn("loses", passed)
+        # Visual verdict #161 (2026-11-23): the passing strip used to
+        # carry no number at all — the worst loss (0.000900 USDC) lived
+        # a screen down in the donation card, so the default page's
+        # first screen showed no number. Intentionally overturns the
+        # 2026-11-22 decision ("quoting a within-bound loss next to a
+        # pass would read as a failure") on wording, not on the fact:
+        # the sentence says "worst loss", the bound language the
+        # donation card itself uses, never "victim loses". The donation
+        # phrase rides in a nowrap span, same as the FAIL strip.
+        # usdc_trim strips the trailing zero: 900 base units reads
+        # "0.0009" here, "0.000900" in the table — same number.
+        self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
+                      "worst loss 0.0009 USDC", passed)
+        self.assertNotIn("victim loses", passed)
+        # A zero-loss run stays bare: offset 18 loses nothing on any
+        # donation row, so there is no headline number to carry and
+        # none is invented.
+        zero = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertIn("Result: ALL PASS", zero)
+        self.assertNotIn("worst loss", zero)
+        self.assertNotIn("donation:", zero)
 
     def test_verdict_strip_no_number_when_no_measured_loss(self):
         # Visual verdict #146 (2026-11-21): a donation failure with no
