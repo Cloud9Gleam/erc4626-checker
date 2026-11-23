@@ -2497,6 +2497,97 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             '<a href="/guides/erc4626-audit-checklist/">', build)
 
+    def test_fee_changes_guide_numbers(self):
+        # Fee-changes guide (/guides/erc4626-fee-changes/): two worked
+        # examples. Re-derived here with plain Fractions, independent
+        # of the model file, then cross-checked against the model.
+        A, S = Fraction(1_000_000), Fraction(1_000_000)
+        # Example 1: 100,000 yield on a 1,000,000 / 1,000,000 vault,
+        # price 1.00. The strategy earned 10%.
+        Y = Fraction(100_000)
+        self.assertEqual(Y / A, Fraction(1, 10))
+        self.assertEqual(Y * Fraction(10, 100), 10_000)
+        self.assertEqual(Y - Y * Fraction(10, 100), 90_000)
+        self.assertEqual((A + 90_000) / S, Fraction(109, 100))  # 1.09
+        self.assertEqual(Y * Fraction(100, 100), 100_000)
+        self.assertEqual(Y - Y * Fraction(100, 100), 0)
+        self.assertEqual((A + 0) / S, 1)  # price stays 1.00
+        # Example 2: management fee, asset-deduction model. 5% a year
+        # on 1,000,000 is 50,000; 73 days is exactly one fifth of a
+        # 365-day year, so 10,000 paid and price 0.99.
+        self.assertEqual(A * Fraction(5, 100), 50_000)
+        self.assertEqual(Fraction(73, 365), Fraction(1, 5))
+        self.assertEqual(A * Fraction(5, 100) * Fraction(73, 365),
+                         10_000)
+        self.assertEqual((A - 10_000) / S, Fraction(99, 100))
+        self.assertEqual(A * Fraction(2, 100), 20_000)
+        self.assertEqual((A - 20_000) / S, Fraction(98, 100))  # 0.98
+        self.assertEqual(A * Fraction(20, 100), 200_000)
+        self.assertEqual((A - 200_000) / S, Fraction(4, 5))  # 0.80
+        # Convention note (test comment, not a page change): this
+        # guide deducts the management fee from assets, so the price
+        # falls. The fee-accrual guide mints fee shares instead, so
+        # its price stays 1.00 and the holder's claim dilutes. Both
+        # are internally exact; the 5%-for-73-days case (= 1% of
+        # supply) under share-minting leaves a full holder's claim at
+        # 1,000,000 / 1,010,000 of the vault.
+        self.assertEqual(Fraction(1_000_000) * A / (S + 10_000),
+                         Fraction(100_000_000, 101))
+        # Model cross-check: the checker's fee_conservation check runs
+        # the same shape at one tenth the scale (10,000 USDC yield,
+        # 1000 bps) — fee 1,000, holder gain 9,000, identity exact.
+        # The guide's 10,000 / 90,000 is that row times ten.
+        for off in (0, 6, 18):
+            kw = dict(decimals_offset=off, min_deposit=1_000_000,
+                      perf_fee_bps=1000)
+            fee_res = {r["name"]: r for r in run_all(Vault(**kw))}
+            self.assertTrue(fee_res["fee_conservation"]["pass"])
+        v = Vault(decimals_offset=6, min_deposit=1_000_000,
+                  perf_fee_bps=1000)
+        detail = {r["name"]: r
+                  for r in run_all(v)}["fee_conservation"]["detail"][0]
+        self.assertIn("1,000.000000", detail)
+        self.assertIn("9,000.000000", detail)
+        self.assertEqual(Fraction(1_000) + Fraction(9_000), 10_000)
+
+    def test_fee_changes_guide_page(self):
+        # Pins the guide page: the add() must exist with the claims
+        # the numbers test re-derives, and a link from the /guides/
+        # index.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-fee-changes/"', build)
+        start = build.index('add("/guides/erc4626-fee-changes/"')
+        end = build.index('add("/guides/erc4626-fee-accrual/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for claim in ("10% performance fee",
+                      "100,000",
+                      "10,000",
+                      "90,000",
+                      "1.09",
+                      "1.00",
+                      "50,000",
+                      "73 days",
+                      "0.99",
+                      "20,000",
+                      "0.98",
+                      "200,000",
+                      "0.80",
+                      "one fifth of a year",
+                      "Read the fee setter, not the fee",
+                      "Ask for a timelock",
+                      "Check what the fee is charged on",
+                      "Compare the docs to the code",
+                      "10,000 bps",
+                      '<a href="/guides/erc4626-fee-conservation/">',
+                      '<a href="/checker/">',
+                      '<a href="/audit/">'):
+            self.assertIn(claim, block)
+        self.assertIn(
+            '<a href="/guides/erc4626-fee-changes/">', build)
+
     def test_fee_basis_guide_numbers(self):
         # Fee-basis guide (site/fee-basis-model.py): a 2% management fee
         # collected by minting 2% of the supply transfers only f/(1+f) of
