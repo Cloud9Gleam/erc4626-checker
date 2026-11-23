@@ -2301,6 +2301,202 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             '<a href="/guides/erc4626-preview-consistency/">', build)
 
+    def test_audit_checklist_guide_numbers(self):
+        # Audit-checklist guide (/guides/erc4626-audit-checklist/):
+        # it states the six checks and the headline numbers for each.
+        # Re-derived here with plain integer arithmetic, independent
+        # of the model file, then cross-checked against the model.
+        # Helpers: OZ conversions with virtual shares 10**offset and
+        # virtual assets 1, floor unless up=True (ceil).
+        U = 1_000_000
+
+        def sh(a, A, S, off, up=False):
+            n, d = a * (S + 10 ** off), A + 1
+            return -(-n // d) if up else n // d
+
+        def ast(s, A, S, off, up=False):
+            n, d = s * (A + 1), S + 10 ** off
+            return -(-n // d) if up else n // d
+
+        def dep(A, S, a, off, min_dep):
+            if a < min_dep:
+                raise ValueError("below minimum deposit")
+            s = sh(a, A, S, off)
+            if s == 0:
+                raise ValueError("zero shares minted")
+            return A + a, S + s, s
+
+        def red(A, S, s, off):
+            out = ast(s, A, S, off)
+            return A - out, S - s, out
+
+        # Section 2: donation / first-depositor inflation. Attacker
+        # seeds the minimum, donates 1 / 1,000 / 1,000,000 /
+        # 1,000,000,000 USDC, victim deposits 100,000 USDC, both
+        # redeem, attacker first. Expected rows (donation, attacker
+        # net, victim loss) in base units, from /tmp/indep-auditchecklist.py.
+        expected = {
+            0: [(1 * U, -1, 0), (1_000 * U, -994, 6),
+                (1_000_000 * U, -90_909, 909_091),
+                (1_000_000_000 * U, -999_899_111, 99_890)],
+            6: [(1 * U, -1, 0), (1_000 * U, -1_000, 0),
+                (1_000_000 * U, -999_999, 1),
+                (1_000_000_000 * U, -999_998_101, 900)],
+            18: [(1 * U, -1, 0), (1_000 * U, -1_000, 0),
+                 (1_000_000 * U, -1_000_000, 0),
+                 (1_000_000_000 * U, -999_999_001, 0)],
+        }
+        for off, min_dep in ((0, 0), (6, U), (18, U)):
+            for d, exp_net, exp_loss in expected[off]:
+                A, S = 0, 0
+                atk_in = max(min_dep, U)
+                A, S, atk_sh = dep(A, S, atk_in, off, min_dep)
+                A += d
+                A, S, vic_sh = dep(A, S, 100_000 * U, off, min_dep)
+                A, S, atk_out = red(A, S, atk_sh, off)
+                A, S, vic_out = red(A, S, vic_sh, off)
+                self.assertEqual(atk_out - (atk_in + d), exp_net)
+                self.assertEqual(100_000 * U - vic_out, exp_loss)
+                self.assertLessEqual(exp_net, 0)  # attacker never profits
+            worst = max(loss for _, _, loss in expected[off])
+            self.assertEqual(worst, {0: 909_091, 6: 900, 18: 0}[off])
+            if off in (6, 18):
+                self.assertLessEqual(worst, 1000)  # the 0.001 USDC bound
+            else:
+                self.assertGreater(worst, 1000)  # offset 0 fails it
+        # Model cross-check: the same rows out of check_donation,
+        # and the guide's three verdicts (offset 0 fails, 6 and 18
+        # pass with worst 0.909091 / 0.0009 / 0).
+        for kw, worst in ((dict(decimals_offset=0, min_deposit=0),
+                           909_091),
+                          (dict(decimals_offset=6, min_deposit=U,
+                               perf_fee_bps=1000), 900),
+                          (dict(decimals_offset=18, min_deposit=U,
+                               perf_fee_bps=1000), 0)):
+            results = {r["name"]: r for r in run_all(Vault(**kw))}
+            rows = results["donation_inflation"]["detail"]
+            self.assertEqual(len(rows), 4)
+            self.assertEqual(max(r["victim_loss"] for r in rows), worst)
+            self.assertTrue(all(r["attacker_net"] <= 0 for r in rows))
+            self.assertEqual(len(results), 6)
+            self.assertEqual(list(results), ["rounding", "donation_inflation",
+                                             "minimum_viable_deposit",
+                                             "preview_consistency",
+                                             "fee_conservation",
+                                             "share_price_sanity"])
+            self.assertEqual(results["donation_inflation"]["pass"],
+                             kw["decimals_offset"] != 0)
+        # Section 1: rounding directions. Seed 10,000 USDC (price
+        # ~1:1), then deposit floors, withdraw ceils, each within one
+        # unit of the exact ratio, redeem never overpays.
+        for off in (0, 6, 18):
+            A, S = 10_000 * U, 10_000 * U * 10 ** off
+            for a in (U, 100 * U, 10_000 * U):
+                exact = Fraction(a) * (S + 10 ** off) / (A + 1)
+                self.assertEqual(sh(a, A, S, off),
+                                 exact.numerator // exact.denominator)
+                self.assertEqual(sh(a, A, S, off, up=True),
+                                 -(-exact.numerator // exact.denominator))
+                self.assertLessEqual(sh(a, A, S, off, up=True)
+                                     - sh(a, A, S, off), 1)
+                _, _, out = red(A + a, S + sh(a, A, S, off),
+                                sh(a, A, S, off), off)
+                self.assertLessEqual(out, a)
+            v = Vault(decimals_offset=off, min_deposit=0)
+            self.assertTrue(
+                {r["name"]: r for r in run_all(v)}["rounding"]["pass"])
+        # Section 3: preview consistency -- preview equals execution
+        # exactly, on all three presets. Exact values (seeded the way
+        # the checker does: empty vault, 50,000 USDC seed).
+        preview_vals = {
+            0: (10_000_000_000, 1_000_000, 1_000_000),
+            6: (10_000_000_000_000_000, 1, 1),
+            18: (10_000_000_000_000_000_000_000_000_000, 1, 0),
+        }
+        for off, (exp_dep, exp_mint, exp_red) in preview_vals.items():
+            A, S = 0, 0
+            A, S, _ = dep(A, S, 50_000 * U, off, 0)
+            self.assertEqual(sh(10_000 * U, A, S, off), exp_dep)
+            A, S, got = dep(A, S, 10_000 * U, off, 0)
+            self.assertEqual(got, exp_dep)
+            self.assertEqual(ast(1_000_000, A, S, off, up=True), exp_mint)
+            A, S = A + exp_mint, S + 1_000_000
+            self.assertEqual(ast(1_000_000, A, S, off), exp_red)
+            _, _, out = red(A, S, 1_000_000, off)
+            self.assertEqual(out, exp_red)
+            v = Vault(decimals_offset=off, min_deposit=0)
+            self.assertTrue(
+                {r["name"]: r
+                 for r in run_all(v)}["preview_consistency"]["pass"])
+        # Section 4: fee conservation -- yield in equals holder gain
+        # plus fee accrued, to within one base unit. The checker's
+        # scale: 10,000 USDC of yield, 1000 bps fee.
+        self.assertEqual(Fraction(10_000) * Fraction(1000, 10_000), 1_000)
+        self.assertEqual(10_000 - 1_000, 9_000)
+        self.assertEqual(Fraction(1_000) + Fraction(9_000), 10_000)
+        v = Vault(decimals_offset=6, min_deposit=U, perf_fee_bps=1000)
+        fee_res = {r["name"]: r for r in run_all(v)}["fee_conservation"]
+        detail = fee_res["detail"][0]
+        self.assertTrue(fee_res["pass"])
+        self.assertIn("1,000.000000", detail)
+        self.assertIn("9,000.000000", detail)
+        # Section 5: share-price sanity -- price never negative,
+        # never below its pre-deposit value on a plain deposit.
+        # Price per 1,000,000 shares, two 100,000 USDC deposits.
+        price_vals = {0: 1_000_000, 6: 1, 18: 0}
+        for off, exp_price in price_vals.items():
+            A, S = 0, 0
+            A, S, _ = dep(A, S, 100_000 * U, off, 0)
+            before = ast(1_000_000, A, S, off)
+            A, S, _ = dep(A, S, 100_000 * U, off, 0)
+            after = ast(1_000_000, A, S, off)
+            self.assertEqual(before, exp_price)
+            self.assertEqual(after, exp_price)
+            self.assertGreaterEqual(before, 0)
+            self.assertGreaterEqual(after, before - 1)
+            v = Vault(decimals_offset=off, min_deposit=0)
+            self.assertTrue(
+                {r["name"]: r
+                 for r in run_all(v)}["share_price_sanity"]["pass"])
+
+    def test_audit_checklist_guide_page(self):
+        # Pins the guide page: the add() must exist with the claims
+        # the numbers test re-derives, and a link from the /guides/
+        # index.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-audit-checklist/"', build)
+        start = build.index('add("/guides/erc4626-audit-checklist/"')
+        end = build.index('add("/guides/erc4626-rounding-errors/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for claim in ("six checks",
+                      "They are not a full audit",
+                      "1 / 1,000 / 1,000,000 / 1,000,000,000 USDC",
+                      "100,000 USDC",
+                      "at most 0.001 USDC",
+                      "worst loss 0.909091 USDC",
+                      "worst 0.0009 USDC",
+                      "passes with zero loss",
+                      "Rounding directions",
+                      "Donation / first-depositor inflation",
+                      "Preview consistency",
+                      "Fee conservation",
+                      "Share-price sanity",
+                      "Deposit mints floor, mint charges ceil",
+                      "previewDeposit",
+                      "previewMint",
+                      "previewRedeem",
+                      "Yield in equals holder gain plus fee accrued",
+                      "never below its pre-deposit value",
+                      '<a href="/checker/">',
+                      '<a href="/audit/">',
+                      '<a href="/guides/erc4626-preview-consistency/">'):
+            self.assertIn(claim, block)
+        self.assertIn(
+            '<a href="/guides/erc4626-audit-checklist/">', build)
+
     def test_fee_basis_guide_numbers(self):
         # Fee-basis guide (site/fee-basis-model.py): a 2% management fee
         # collected by minting 2% of the supply transfers only f/(1+f) of
