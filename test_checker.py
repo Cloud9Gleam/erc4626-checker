@@ -5062,6 +5062,33 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Four groups are presented as <strong>MISSes</strong>",
                       zaros)
 
+    def test_research_index_has_live_filter(self):
+        # 2026-11-23 checker-improvement: the /research/ index was a
+        # flat 49-entry list with no way to find one review — the same
+        # defect the /guides/ index filter fixed the previous round.
+        # Pins the filter (same shape as filterGuides): input + count
+        # span + script + self-call on load, and the static count
+        # matching the real entry count.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        index = pages["/research/"]
+        self.assertIn('<ul class="research-list">', index)
+        self.assertIn('id="research-filter"', index)
+        self.assertIn('placeholder="Filter research', index)
+        self.assertIn('id="research-count"', index)
+        self.assertIn("function filterResearch(q)", index)
+        self.assertIn("filterResearch('');", index)
+        self.assertIn("49 reviews", index)
+        entries = index.count('<li><a href="/research/')
+        self.assertEqual(entries, 49)
+        # The /guides/ filter is untouched by this change.
+        guides = pages["/guides/"]
+        self.assertIn("function filterGuides(q)", guides)
+        self.assertIn('id="guide-count"', guides)
+
     def test_thunder_loan_canonical_counts_reconcile(self):
         # Visual verdict #146 (2026-11-21): the /audit/ line said "4
         # findings" and then "6 of 7 canonical High+Medium findings
