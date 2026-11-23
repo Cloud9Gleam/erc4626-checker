@@ -7659,7 +7659,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #136 (2026-11-21): the legend names the
         # axis maximum now, not the worst row as the scale — the
         # worst row's value is still named, as the axis reference.
-        self.assertIn("The axis runs 0–1 USDC (the worst row is 0.909091 USDC)", html)
+        self.assertIn("Axis 0–1 USDC (worst row 0.909091 USDC)", html)
         self.assertEqual(html.count("loss-fill fail"), 2)
         self.assertEqual(html.count("loss-fill pass"), 0)
         # The two small rows (0 and 0.000006 USDC) would draw a 0.0%
@@ -7671,7 +7671,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-too-small"), 0)
         self.assertEqual(html.count("loss-track--tiny"), 0)
         self.assertNotIn("too small to draw", html)
-        self.assertIn("Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.", html)
+        self.assertIn("Rows under 0.5% of the worst row (1 USDC, 1,000 USDC) — see the table.", html)
         # Visual verdict #114 new finding (d): the chart legend lived
         # in two places — the omitted-rows header above the bars and
         # the scale/red footnote below them. It is now one block.
@@ -7682,7 +7682,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #116 new finding (c): the legend is a list
         # now — one line per idea, each with a bold label — not one
         # paragraph of four sentences.
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>Scale:</strong> The axis runs 0–1 USDC (the worst row is 0.909091 USDC). Gridlines mark 25%, 50% and 75% of the axis.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows under 0.5% of the worst row (1 USDC, 1,000 USDC) — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at 25%, 50%, 75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertNotIn("<p class='loss-head'>", html)
         self.assertLess(html.index("loss-title"), html.index("loss-row"))
         self.assertLess(html.index("loss-axis"), html.index("loss-head"))
@@ -7694,7 +7694,7 @@ class TestChecker(unittest.TestCase):
         # now (visual verdict #130): the reference is the pass bound
         # on a bound-scaled chart, the worst row otherwise — both
         # branches must be present in the template.
-        self.assertIn("Rows losing under 0.5% of \"+(boundScale?"
+        self.assertIn("Rows under 0.5% of \"+(boundScale?"
                       "\"the pass bound\":\"the worst row\")+\" (",
                       build.checker_results_html_js())
         self.assertIn("loss-head", build.checker_results_html_js())
@@ -7755,7 +7755,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("width:90.9%", html)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1,000 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> The axis runs 0–1 USDC (the worst row is 0.909091 USDC). Gridlines mark 25%, 50% and 75% of the axis.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows under 0.5% of the worst row (1,000 USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at 25%, 50%, 75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("too little to draw", html)
         self.assertNotIn("<p class='loss-note'>", html)
@@ -7773,7 +7773,7 @@ class TestChecker(unittest.TestCase):
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows losing under 0.5% of the worst row (1 USDC) are not drawn; the table above lists every row.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either; see the table above.</li><li><strong>Scale:</strong> The axis runs 0–1 USDC (the worst row is 0.909091 USDC). Gridlines mark 25%, 50% and 75% of the axis.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows under 0.5% of the worst row (1 USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at 25%, 50%, 75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         # Visual verdict #139 (2026-11-21): the legend follows the
         # axis now — title, bars, axis, then the key.
         self.assertLess(html.index("loss-title"), html.index("loss-row"))
@@ -8034,13 +8034,13 @@ class TestChecker(unittest.TestCase):
         # The legend Scale line says what the lines mark — the axis
         # maximum on a breaching chart (visual verdict #136), the
         # pass bound on a bound-scaled one.
-        self.assertIn("Gridlines mark 25%, 50% and 75% of the axis.",
+        self.assertIn("gridlines at 25%, 50%, 75%.",
                       html)
         # Worker-side template carries both sentences (one per scale
         # branch).
-        self.assertIn("Gridlines mark 25%, 50% and 75% of the axis.",
+        self.assertIn("gridlines at 25%, 50%, 75%.",
                       build.checker_results_html_js())
-        self.assertIn("Gridlines mark 25%, 50% and 75% of that scale.",
+        self.assertIn("gridlines at 25%, 50%, 75%.",
                       build.checker_results_html_js())
         # Guide charts (plain .loss-chart) get no gridlines: the rule
         # is scoped to --bare only.
@@ -8341,7 +8341,7 @@ class TestChecker(unittest.TestCase):
         # sentence form is retired (verdict #123) — the JS carries no
         # Peak line any more.
         js = build.checker_results_html_js()
-        self.assertIn("Rows losing under 0.5% of \"+(boundScale?"
+        self.assertIn("Rows under 0.5% of \"+(boundScale?"
                       "\"the pass bound\":\"the worst row\")+\" (", js)
         # Visual verdict #137 (2026-11-21): the Worker template
         # carries the same sentence for the passing case.
@@ -9449,7 +9449,7 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("Rows losing under 0.5% of the worst row (1 USDC, 1,000 USDC) are not drawn; the table above lists every row.",
+        self.assertIn("Rows under 0.5% of the worst row (1 USDC, 1,000 USDC) — see the table.",
                       html)
         self.assertIn("0.909091", html)
 
@@ -20241,7 +20241,7 @@ class TestChecker(unittest.TestCase):
         v = Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)
         html = build.results_html(run_all(v), off=0, mn=0, fee=0)
         self.assertIn(
-            "The axis runs 0–1 USDC (the worst row is 0.909091 USDC)",
+            "Axis 0–1 USDC (worst row 0.909091 USDC)",
             html)
         self.assertNotIn(
             "Bars are scaled to the worst row in this table", html)
