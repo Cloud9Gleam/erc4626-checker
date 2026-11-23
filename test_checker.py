@@ -2206,6 +2206,101 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             '<a href="/guides/erc4626-rounding-errors/">', build)
 
+    def test_preview_consistency_guide_numbers(self):
+        # Preview-consistency guide (/guides/erc4626-preview-consistency/):
+        # three worked examples, re-derived here with plain Fractions,
+        # independent of the model file. The guide's examples are
+        # "suppose" scenarios -- a deposit fee and a backwards-rounding
+        # preview the checker model has no mode for -- so what is pinned
+        # is the arithmetic under the stated plain ratios, plus the
+        # operative conclusions the model DOES verify directly.
+        # Example 1: a fee the preview does not know about. Vault
+        # 10,000 USDC / 10,000 shares, price exactly 1.00.
+        A, S = Fraction(10_000), Fraction(10_000)
+        self.assertEqual(A / S, 1)
+        preview = Fraction(1_000) * S / A   # previewDeposit(1,000 USDC)
+        self.assertEqual(preview, 1_000)
+        fee = Fraction(1_000) * Fraction(1, 100)  # 1% deposit fee
+        self.assertEqual(fee, 10)
+        minted = (Fraction(1_000) - fee) * S / A
+        self.assertEqual(minted, 990)
+        self.assertEqual(preview - minted, 10)  # 10 shares, 10 USDC gone
+        # After the deposit the price is still 1.00 (10,990 / 10,990),
+        # so redeeming the 990 shares returns 990 USDC: 1,000 in, 990 out.
+        A2, S2 = A + Fraction(990), S + Fraction(990)
+        self.assertEqual(A2 / S2, 1)
+        self.assertEqual(Fraction(990) * A2 / S2, 990)
+        # Example 2: preview rounds up, execution rounds down. Vault
+        # 10 USDC / 3 shares, price 10/3 (the guide's "3.33 USDC").
+        A, S = Fraction(10), Fraction(3)
+        self.assertEqual(A / S, Fraction(10, 3))
+        self.assertAlmostEqual(float(A / S), 3.33, places=2)
+        exact = Fraction(1) * S / A
+        self.assertEqual(exact, Fraction(3, 10))
+        self.assertEqual(-(-exact.numerator // exact.denominator), 1)
+        self.assertEqual(exact.numerator // exact.denominator, 0)
+        # Example 3: the same shape, the other direction.
+        # previewMint(1,000 shares) at 1.00 quotes 1,000 USDC; a 1%
+        # fee on top means the user pays 1,010 USDC.
+        quoted = Fraction(1_000) * Fraction(1)
+        self.assertEqual(quoted, 1_000)
+        self.assertEqual(quoted * Fraction(101, 100), 1_010)
+        # Model cross-checks: the same toy vaults in the checker.
+        # Ex 1: preview_deposit(1,000 USDC) is 1,000 shares exactly
+        # (the OZ +1/+1 cancels at this ratio).
+        v = Vault(total_assets=10_000_000_000,
+                  total_supply=10_000_000_000, decimals_offset=0)
+        self.assertEqual(v.preview_deposit(1_000_000_000), 1_000_000_000)
+        # Ex 2: the model mints 0 shares for 1 USDC and the deposit
+        # reverts -- the guide's "must fail, not silently keep the
+        # assets" (same operative conclusion as the rounding guide).
+        toy = Vault(total_assets=10_000_000, total_supply=3,
+                    decimals_offset=0)
+        self.assertEqual(toy.preview_deposit(1_000_000), 0)
+        with self.assertRaises(ValueError):
+            toy.deposit(1_000_000)
+        # The guide's "the checker tests exactly this": preview vs
+        # execution for the deposit, mint and redeem pairs, exact
+        # equality, on all three presets (withdraw is not one of the
+        # pairs, and the guide does not claim it is).
+        for kw in (dict(decimals_offset=0, min_deposit=0),
+                   dict(decimals_offset=6, min_deposit=1_000_000,
+                        perf_fee_bps=1000),
+                   dict(decimals_offset=18, min_deposit=1_000_000,
+                        perf_fee_bps=1000)):
+            results = {r["name"]: r for r in run_all(Vault(**kw))}
+            self.assertTrue(results["preview_consistency"]["pass"])
+            self.assertEqual(len(results), 6)
+
+    def test_preview_consistency_guide_page(self):
+        # Pins the guide page: the add() must exist with the claims
+        # the numbers test re-derives, and a link from the /guides/
+        # index.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-preview-consistency/"', build)
+        start = build.index('add("/guides/erc4626-preview-consistency/"')
+        end = build.index('add("/guides/erc4626-fee-conservation/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for claim in ("1,000 shares",
+                      "990 shares",
+                      "10 shares, 10 USDC",
+                      "1,000 USDC in, 990 USDC out",
+                      "ceil(1 &times; 3 / 10)",
+                      "floor(1 &times; 3 / 10)",
+                      "<strong>0 shares</strong>",
+                      "3.33 USDC",
+                      "1,010 USDC",
+                      "exact equality, to the unit",
+                      "previewDeposit",
+                      "previewMint",
+                      "previewRedeem"):
+            self.assertIn(claim, block)
+        self.assertIn(
+            '<a href="/guides/erc4626-preview-consistency/">', build)
+
     def test_fee_basis_guide_numbers(self):
         # Fee-basis guide (site/fee-basis-model.py): a 2% management fee
         # collected by minting 2% of the supply transfers only f/(1+f) of
