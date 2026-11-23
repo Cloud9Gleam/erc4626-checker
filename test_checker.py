@@ -5978,11 +5978,23 @@ class TestChecker(unittest.TestCase):
         # hidden_files/measure-home-wide.py at 1919px: hero green
         # sides 419/434px -> 291/306px, hero lead 2 lines -> 1 line
         # of ~80 chars, nav and hero left edges aligned at ~291px.
+        # (2026-11-24 update, verdict #175 item 1: the nav has left
+        # the 1280px tier. #171 capped hero-top at 1024px and #173
+        # moved hero-stats to 1024px, so the nav was the only text
+        # row still starting at the 1280 edge — brand at x=312 vs
+        # main/hero-top/footer at x=440 at 1919px, a 128px
+        # first-screen misalignment on every page, measured with
+        # hidden_files/measure-verdict175.py. The hero band
+        # BACKGROUND stays 1280px — a full-bleed band, only its text
+        # is 1024px — and the header band itself is still
+        # full-width; only .nav-inner narrows to 1024px.)
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
+            ".nav-inner{max-width:1024px;margin:0 auto;", build.CSS)
+        self.assertNotIn(
             ".nav-inner{max-width:1280px;margin:0 auto;", build.CSS)
         self.assertIn(
             ".wrap{max-width:1024px;margin:0 auto;", build.CSS)
@@ -5990,6 +6002,37 @@ class TestChecker(unittest.TestCase):
             ".hero-bleed .hero{background:transparent;max-width:1280px;",
             build.CSS)
         self.assertNotIn(".wrap{max-width:1280px", build.CSS)
+
+    def test_verdict175_nav_aligns_with_content_column(self):
+        # Visual verdict #175 item 1 (2026-11-24): at 1919px the
+        # brand sat at x=312 while main/hero-top/footer all started
+        # at x=440 — a 128px first-screen misalignment on every
+        # page, because the nav was the last text row left on the
+        # 1280px tier after #171/#173 moved the hero text to 1024px.
+        # The nav rejoins the 1024px tier; the hero band BACKGROUND
+        # stays 1280px (full-bleed, only its text is 1024px), and
+        # the <640px scrollable-row rules are untouched, so mobile
+        # keeps its one-row header. Measured with
+        # hidden_files/measure-verdict175.py: brand 312.0 -> 440.0,
+        # matching main/hero-top/footer; 360px brand stays 20.0.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".nav-inner{max-width:1024px;margin:0 auto;", build.CSS)
+        self.assertIn(
+            ".wrap{max-width:1024px;margin:0 auto;", build.CSS)
+        self.assertIn(
+            ".hero-top{max-width:1024px;margin:0 auto}", build.CSS)
+        self.assertIn(
+            ".hero-bleed .hero{background:transparent;max-width:1280px;",
+            build.CSS)
+        self.assertIn(
+            "@media (max-width:640px){.nav-inner{flex-wrap:nowrap;",
+            build.CSS)
+        self.assertIn(
+            ".nav-inner .brand{flex:none}", build.CSS)
 
     def test_desk_background_treatment(self):
         # Visual verdict #124 (h) / #125 (g) (2026-11-20): at 1919px
