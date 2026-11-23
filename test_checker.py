@@ -2272,11 +2272,31 @@ class TestChecker(unittest.TestCase):
         USDC = 1_000_000
         body = build.checker_body()
         self.assertIn(
-            '<pre><code id="api-curl">curl "https://check.n1netw3n.live/api/check?preset=noprot"</code></pre>',
+            '<pre><code id="api-curl">curl "https://check.n1netw3n.live/api/check?preset=alphaprimer&amp;offset=6&amp;min_usdc=1&amp;fee_bps=1000&amp;victim_usdc=100000&amp;vault_assets_usdc=0&amp;vault_shares=0"</code></pre>',
             body)
         self.assertIn("Copy curl example", body)
         self.assertEqual(body.count("function copyCodeBlock"), 1)
         self.assertIn('id="api-curl-status"', body)
+        # Visual verdict #167 item 1 (2026-11-24): the curl example used
+        # to hardcode preset=noprot on every page, so the default ALL
+        # PASS page's example described a different vault than the one
+        # shown. It now carries the run's own parameters — the same
+        # query string as the JSON API link above it — and a noprot /
+        # offset18 body carries its own preset instead.
+        curl_m = re.search(r'<code id="api-curl">curl "([^"]*)"</code>', body)
+        self.assertIsNotNone(curl_m)
+        link_m = re.search(r'<a href="(/api/check\?[^"]*)">JSON API', body)
+        self.assertIsNotNone(link_m)
+        self.assertEqual(curl_m.group(1).replace("&amp;", "&"),
+                         "https://check.n1netw3n.live"
+                         + link_m.group(1).replace("&amp;", "&"))
+        noprot_body = build.checker_body(off=0, mn=0, fee=0, preset="noprot")
+        self.assertIn("api/check?preset=noprot&amp;offset=0&amp;min_usdc=0&amp;fee_bps=0",
+                      noprot_body)
+        self.assertNotIn("api/check?preset=alphaprimer", noprot_body)
+        off18_body = build.checker_body(off=18, preset="offset18")
+        self.assertIn("api/check?preset=offset18&amp;offset=18",
+                      off18_body)
         # The email block: one wrapper, one pre block, one copy button.
         para = build.email_para(0, 0, 0, 100_000_000_000,
                                 1_000_000 * USDC, 1_000_000)
@@ -9220,6 +9240,32 @@ class TestChecker(unittest.TestCase):
         # The curl example is a plain <pre> outside .email-para and
         # keeps the dark full-width code style.
         self.assertIn('<pre><code id="api-curl">', html)
+
+    def test_api_curl_follows_the_run_in_the_worker(self):
+        # Visual verdict #167 item 1 (2026-11-24): the Worker serves
+        # every /checker/ run from one template, so the curl example
+        # must be a placeholder the handler fills from the parameters
+        # actually run — not the baked-in preset=noprot literal. The
+        # JSON API link and the curl share one query string, built once
+        # as apiLink, so the two can never drift apart again. The live
+        # per-preset behaviour is pinned by
+        # hidden_files/verdict168-api-curl-harness.mjs.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # One occurrence in the CHECKER_TEMPLATE JSON, one in the
+        # fetch handler's replace chain.
+        self.assertEqual(worker.count("{{API_CURL}}"), 2)
+        self.assertIn('const apiLink = "/api/check?preset=" + preset',
+                      worker)
+        self.assertIn('.replace("{{API_LINK}}", apiLink)', worker)
+        self.assertIn('.replace("{{API_CURL}}", "curl \\"https://check.n1netw3n.live" + apiLink + "\\"")',
+                      worker)
+        self.assertNotIn("api/check?preset=noprot", worker.split("const PRESETS")[0])
+        self.assertIn("preset=noprot", worker)
 
     def test_pay_note_is_full_width_strip(self):
         # Visual verdict #93 leftover (2026-11-18): on /audit/ the
