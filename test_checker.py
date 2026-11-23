@@ -24495,6 +24495,189 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/guides/first-depositor-attack/">',
                       build)
 
+    def test_vault_share_price_manipulation_guide_numbers(self):
+        # Vault-share-price-manipulation guide: the price is one
+        # division, total assets over total shares, and the guide's
+        # claims are the checker's six checks. Re-derived here with
+        # plain fractions.Fraction arithmetic, independent of any
+        # model file. Price is pinned in the model's own unit, USDC
+        # per 1,000,000 shares, which is numerically
+        # Fraction(total_assets, total_supply).
+        U = 10**6
+
+        def price_per_1m(A, S):
+            return Fraction(A, S)
+
+        # The canonical flow, offset 0: 1 USDC seed, 1,000,000 USDC
+        # donation, 100,000 USDC victim deposit. Conversions use the
+        # OpenZeppelin rule -- virtual shares 10**offset, virtual
+        # assets 1.
+        S, A = 0, 0
+        seed = (1 * U * (S + 1)) // (A + 1)
+        self.assertEqual(seed, 1_000_000)
+        S, A = seed, 1 * U
+        # One division: 1 USDC over 1,000,000 shares is 1 USDC
+        # per 1,000,000 shares.
+        self.assertEqual(price_per_1m(A, S), 1)
+        # Direct donation: assets up, shares unchanged, price up --
+        # by a factor of 1,000,001 on a 1 USDC seed.
+        A += 1_000_000 * U
+        self.assertEqual(price_per_1m(A, S), 1_000_001)
+        vic = (100_000 * U * (S + 1)) // (A + 1)
+        self.assertEqual(vic, 99_999)
+        S += vic
+        A += 100_000 * U
+        self.assertEqual(price_per_1m(A, S),
+                         Fraction(1_100_001_000_000, 1_099_999))
+        # The same donation at offset 6 barely moves the price:
+        # the virtual shares dilute it, which is what "bounded by
+        # a decimals offset" means -- 1.000001 USDC per 1M shares
+        # instead of 1,000,001.
+        vs = 10**6
+        S6, A6 = 0, 0
+        seed6 = (1 * U * (S6 + vs)) // (A6 + 1)
+        self.assertEqual(seed6, 1_000_000_000_000)
+        S6, A6 = seed6, 1 * U
+        A6 += 1_000_000 * U
+        self.assertEqual(price_per_1m(A6, S6),
+                         Fraction(1_000_001, 1_000_000))
+        vic6 = (100_000 * U * (S6 + vs)) // (A6 + 1)
+        self.assertEqual(vic6, 99_999_999_999)
+        S6 += vic6
+        A6 += 100_000 * U
+        self.assertEqual(price_per_1m(A6, S6),
+                         Fraction(1_100_001_000_000, 1_099_999_999_999))
+        # Rounding directions, exact integer inequalities:
+        # deposit floors, withdraw ceils, redeem never overpays,
+        # each within one base unit of the exact ratio.
+        S3, A3 = 10_000_000_000, 10_000_000_000
+        for a in (1_000_000, 100_000_000, 10_000_000_000):
+            num = a * (S3 + 1)
+            den = A3 + 1
+            dep = num // den
+            wd = -(-num // den)
+            self.assertTrue(dep * den <= num < (dep + 1) * den)
+            self.assertTrue((wd - 1) * den < num <= wd * den)
+            self.assertLessEqual((dep * (A3 + 1)) // (S3 + 1), a)
+        # Fee conservation: 10,000 USDC yield at 1000 bps is
+        # 1,000 USDC fee and 9,000 USDC holder gain; yield is
+        # fee plus gain exactly.
+        yld = 10_000 * U
+        fee = yld * 1000 // 10_000
+        self.assertEqual(fee, 1_000 * U)
+        self.assertEqual(yld - fee, 9_000 * U)
+        # Preview == execution at 1:1: a 10,000 USDC deposit mints
+        # 10,000,000,000 shares; minting 1,000,000 shares costs
+        # 1,000,000 base units; redeeming 1,000,000 shares pays
+        # 1,000,000 base units.
+        S5, A5 = 50_000_000_000, 50_000_000_000
+        prev = (10_000 * U * (S5 + 1)) // (A5 + 1)
+        self.assertEqual(prev, 10_000_000_000)
+        S5 += prev
+        A5 += 10_000 * U
+        mint_assets = -(-(1_000_000 * (A5 + 1)) // (S5 + 1))
+        self.assertEqual(mint_assets, 1_000_000)
+        S5 += 1_000_000
+        A5 += mint_assets
+        red = (1_000_000 * (A5 + 1)) // (S5 + 1)
+        self.assertEqual(red, 1_000_000)
+        # Share-price sanity: two 100,000 USDC deposits leave the
+        # price per 1,000,000 shares at 1.000000 USDC -- never
+        # negative, never below the pre-deposit value.
+        S7, A7 = 0, 0
+        d1 = (100_000 * U * (S7 + 1)) // (A7 + 1)
+        S7, A7 = d1, 100_000 * U
+        pb = (1_000_000 * (A7 + 1)) // (S7 + 1)
+        d2 = (100_000 * U * (S7 + 1)) // (A7 + 1)
+        S7, A7 = S7 + d2, A7 + 100_000 * U
+        pa = (1_000_000 * (A7 + 1)) // (S7 + 1)
+        self.assertEqual((pb, pa), (1_000_000, 1_000_000))
+        self.assertTrue(pb >= 0 and pa >= pb - 1)
+        # Minimum viable deposit: 1 USDC mints 1,000,000 shares
+        # in an empty vault; the smallest deposit minting one
+        # share is 1 base unit.
+        self.assertEqual((1 * U * 1) // 1, 1_000_000)
+        self.assertEqual(-(-1 // 1), 1)
+
+        # The model agrees, through the Vault class and the six
+        # checks the guide names.
+        v = Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)
+        v.deposit(1 * U)
+        v.donate(1_000_000 * U)
+        self.assertEqual(v.deposit(100_000 * U), 99_999)
+        self.assertEqual(Fraction(v.total_assets, v.total_supply),
+                         Fraction(1_100_001_000_000, 1_099_999))
+        # run_all returns exactly the six checks the guide lists.
+        results = {r["name"]: r for r in run_all(
+            Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0))}
+        self.assertEqual(set(results), {
+            "rounding", "donation_inflation",
+            "preview_consistency", "fee_conservation",
+            "share_price_sanity", "minimum_viable_deposit"})
+        # The five non-donation checks pass at all three presets
+        # (donation fails at offset 0 by design), with the exact
+        # numbers the guide's claims rest on.
+        for off, mn, fee_bps in ((0, 0, 0), (6, 1_000_000, 1000),
+                                 (18, 1_000_000, 1000)):
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee_bps)
+            results = {r["name"]: r for r in run_all(v)}
+            self.assertTrue(results["rounding"]["pass"])
+            self.assertTrue(results["preview_consistency"]["pass"])
+            self.assertTrue(results["fee_conservation"]["pass"])
+            self.assertTrue(results["share_price_sanity"]["pass"])
+            self.assertTrue(results["minimum_viable_deposit"]["pass"])
+            fee_detail = results["fee_conservation"]["detail"][0]
+            self.assertIn("yield 10,000.000000", fee_detail)
+            # The 1,000 USDC fee / 9,000 USDC holder gain split is
+            # the 1000 bps preset; the offset-0 preset runs fee 0.
+            if fee_bps:
+                self.assertIn("fee 1,000.000000", fee_detail)
+                self.assertIn("holder gain 9,000.000000", fee_detail)
+            price_detail = results["share_price_sanity"]["detail"][0]
+            # The price per 1,000,000 shares is preset-dependent:
+            # 1.000000 USDC at offset 0, 0.000001 at offset 6, and
+            # 0.000000 at offset 18 -- the virtual shares inflate
+            # the share count, so one million shares are worth about
+            # one base unit at offset 6 and less than one at offset
+            # 18. Unchanged across the second deposit in all three.
+            self.assertIn({0: "1.000000", 6: "0.000001",
+                           18: "0.000000"}[off], price_detail)
+            self.assertIn("(unchanged)", price_detail)
+            min_detail = results["minimum_viable_deposit"]["detail"]
+            self.assertIn("1,000,000", min_detail[0])
+            self.assertIn("1 base unit mints 1 share",
+                          min_detail[2])
+
+    def test_vault_share_price_manipulation_guide_page(self):
+        # Pins the guide page: the add() must exist with the claims
+        # the numbers test re-derives, and a link from the /guides/
+        # index. This guide states definitions and invariants, not
+        # headline amounts, so the page test pins the claims
+        # themselves -- the numbers live in
+        # test_vault_share_price_manipulation_guide_numbers.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/vault-share-price-manipulation/"', build)
+        start = build.index(
+            'add("/guides/vault-share-price-manipulation/"')
+        end = build.index('add("/guides/erc4626-audit-checklist/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for claim in ("one division", "total assets over total shares",
+                      "Six checks", "rounding directions",
+                      "donation inflation", "preview",
+                      "fee conservation", "share-price sanity",
+                      "minimum viable deposit",
+                      "price never negative",
+                      "never below",
+                      "1 USDC deposit must mint at least one share",
+                      "bounded by a decimals offset"):
+            self.assertIn(claim, block)
+        self.assertIn(
+            '<a href="/guides/vault-share-price-manipulation/">', build)
+
 
 if __name__ == "__main__":
     unittest.main()
