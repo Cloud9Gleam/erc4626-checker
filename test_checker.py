@@ -6296,6 +6296,40 @@ class TestChecker(unittest.TestCase):
         self.assertLess(hero.index("Is your vault"),
                         hero.index('<aside class="hero-checks">'))
 
+    def test_hero_top_capped_at_content_tier(self):
+        # Visual verdict #170 item 5 (2026-11-24, measured
+        # hidden_files/measure-verdict171.py at 1919px): the key
+        # hero paragraph ("A vault with no protection loses ...")
+        # ran 107 chars/line in the 889.6px left column of the
+        # 1280px hero — past the ~60-80ch readable range the #114
+        # prose cap protects elsewhere. The band itself stays the
+        # 1280px wide tier (#119, pinned by
+        # test_page_column_is_layered_wide_tier); only the top row
+        # is capped at the site's 1024px content tier, so the left
+        # column is ~634px (~76 chars/line) and the row aligns with
+        # the .flow diagram below it, which has carried the same
+        # 1024px cap since the #121 compromise. The 128px symmetric
+        # side gaps are that accepted compromise, not a new hole.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".hero-top{max-width:1024px;margin:0 auto}",
+                      build.CSS)
+        self.assertIn(
+            ".hero-bleed .hero{background:transparent;max-width:1280px;",
+            build.CSS)
+        self.assertIn(
+            ".flow{display:flex;align-items:stretch;justify-content:center;"
+            "gap:.9em;max-width:1024px;margin:.9em auto}", build.CSS)
+        # The flex-row rule and the <=900px column rule are untouched.
+        self.assertIn(
+            ".hero-top{display:flex;gap:2em;align-items:stretch}",
+            build.CSS)
+        self.assertIn(
+            "@media (max-width:900px){.hero-top{flex-direction:column}"
+            ".hero-checks{flex:none;align-self:stretch}}", build.CSS)
+
     def test_hero_has_one_cta_no_duplicate_in_checks_panel(self):
         # Visual verdict #103 item 3: the hero carried two
         # button-style CTAs to /checker/ — the filled white .cta on
@@ -7696,7 +7730,7 @@ class TestChecker(unittest.TestCase):
         # the white card, with the note stating the scale.
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
-                      "grid-column:3;background:transparent;border:0}",
+                      "grid-column:2;background:transparent;border:0}",
                       build.CSS)
         # Visual verdict #136 (2026-11-21): the legend names the
         # axis maximum now, not the worst row as the scale — the
@@ -7828,17 +7862,20 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
 
-    def test_loss_chart_values_in_fixed_column_before_bar(self):
+    def test_loss_chart_values_under_label_in_key_column(self):
         # Visual verdict #110 item 2 (2026-11-19): on
         # /checker/?preset=noprot the two values sat ~660px apart in
         # different colours — 0.909091 white inside the 100% bar,
         # 0.099890 dark outside the 11% bar (the verdict #96 hug-the-
         # bar-end design) — and the eye had to jump to find them.
-        # Values are now flex items in the row, between the donation
-        # label and the track: one x for every row, one colour, each
-        # immediately left of its bar's start. This is not a return
-        # to #96's fixed right-hand column (orphaned ~630px from a
-        # short bar's end); the value is adjacent to its bar.
+        # Visual verdict #172 (2026-11-24): the three-column grid
+        # retired — the label + value zone took ~48% of the chart,
+        # so the 10% bar sat beside ~400px of text. Values now sit
+        # under their donation label in the key column, both lines
+        # right-aligned to the same track edge: one x for every row,
+        # one colour, each adjacent to its bar's start. This is not
+        # a return to #96's fixed right-hand column (orphaned ~630px
+        # from a short bar's end); the value is adjacent to its bar.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -7846,7 +7883,8 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        # Full row: label, value, track — in that order, value dark.
+        # Full row: key (label over value), track — in that order,
+        # value dark.
         # Visual verdict #106 (noprot item 1): a breaching row also
         # carries how many times its loss exceeds the pass bound, so
         # the short red bar is not misread as a small loss — the worst
@@ -7854,15 +7892,17 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #123 new finding ③ (2026-11-20): the label
         # carries its unit and the multiple's referent inline, so it
         # no longer duplicates the table's bare number.
-        self.assertIn("<div class='loss-row'><span class='loss-label'>"
+        self.assertIn("<div class='loss-row'><span class='loss-key'>"
+                      "<span class='loss-label'>"
                       "1,000,000 USDC</span><span class='loss-value'>"
-                      "0.909091 USDC &middot; 909&times; the bound</span>"
+                      "0.909091 USDC &middot; 909&times; the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:90.9%'></span></span></div>", html)
         # Short bar: same value position, same colour, no --pct.
-        self.assertIn("<div class='loss-row'><span class='loss-label'>"
+        self.assertIn("<div class='loss-row'><span class='loss-key'>"
+                      "<span class='loss-label'>"
                       "1,000,000,000 USDC</span><span class='loss-value'>"
-                      "0.099890 USDC &middot; 99.9&times; the bound</span>"
+                      "0.099890 USDC &middot; 99.9&times; the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:10.0%'></span></span></div>", html)
         # Visual verdict #124 new finding ③ (2026-11-20): the
@@ -7875,8 +7915,16 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #123 new finding ③ follow-up (2026-11-20):
         # the longer label squeezes the mobile track to ~30px, so
         # below 640px the bare-chart value takes its own line and
-        # the track gets the full row width again.
-        self.assertIn(".loss-chart--bare .loss-axis{grid-column:1}",
+        # the track gets the full row width again. The key wrapper
+        # is the grid item on mobile too, left-aligned like the
+        # label and value always were below 640px.
+        self.assertIn(".loss-chart--bare .loss-key,.loss-chart--bare "
+                      ".loss-track,.loss-chart--bare .loss-axis"
+                      "{grid-column:1}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-key .loss-label,"
+                      ".loss-chart--bare .loss-key .loss-value"
+                      "{text-align:left}",
                       build.CSS)
         # No trace of the hug-the-bar-end mechanism: no inside class,
         # no --pct variable anywhere in the chart markup or CSS.
@@ -7884,18 +7932,21 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("--pct:", html)
         self.assertNotIn("loss-value--inside", build.CSS)
         self.assertNotIn("--pct", build.CSS)
-        # The CSS pins the new positioning: a grid item in column 2,
-        # dark text, never absolutely positioned.
-        self.assertIn(".loss-chart--bare .loss-value{grid-column:2;"
-                      "white-space:nowrap;text-align:left;color:#111827}",
+        # The CSS pins the new positioning: the value is a block
+        # line inside the key column, dark text, never absolutely
+        # positioned — and it is no longer a grid item of its own.
+        self.assertIn(".loss-chart--bare .loss-key .loss-value"
+                      "{white-space:nowrap;color:#111827}",
                       build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-value{grid-column:2",
+                         build.CSS)
         # 2026-11-19 gridlines (verdict #120 item 3): position:relative
         # is back on the bare track, but for a different job — it
         # anchors the gridline ::after overlay, not an absolutely
         # positioned value. The value stays static (asserted above);
         # the overlay is pinned by test_loss_chart_gridlines.
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
-                      "grid-column:3;background:transparent;border:0}",
+                      "grid-column:2;background:transparent;border:0}",
                       build.CSS)
         # Guide charts (plain .loss-chart, values as flex items) are
         # untouched: the new rule is scoped to --bare only.
@@ -7980,9 +8031,10 @@ class TestChecker(unittest.TestCase):
             {"donation": 1_000_000_000_000, "victim_loss": 100000,
              "attacker_net": -1}]}]
         html = build.results_html(mixed_share, vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("<div class='loss-row'><span class='loss-label'>"
+        self.assertIn("<div class='loss-row'><span class='loss-key'>"
+                      "<span class='loss-label'>"
                       "1,000 USDC</span><span class='loss-value'>"
-                      "0.000900 USDC &middot; 90% of the bound</span>"
+                      "0.000900 USDC &middot; 90% of the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill pass' "
                       "style='width:0.9%'></span></span></div>", html)
         self.assertIn("0.100000 USDC &middot; 100&times; the bound", html)
@@ -8013,8 +8065,9 @@ class TestChecker(unittest.TestCase):
         # legend. Gridlines at 25/50/75% of the scale (worst row),
         # drawn as a ::after overlay. The overlay is positioned, so
         # the track carries position:relative again — for the overlay
-        # only; the value stays a static flex item (see the #110 test
-        # above), never absolutely positioned inside the track.
+        # only; the value stays static in the key column (see the
+        # #110/#172 test above), never absolutely positioned inside
+        # the track.
         # Visual verdict #121 item 4 (2026-11-19): alpha .25 was too
         # faint — measured luminance delta ~17 on a red fill, ~58 on
         # the white track — so the lines are darkened to .5 here.
@@ -8045,7 +8098,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
-                      "grid-column:3;background:transparent;border:0}",
+                      "grid-column:2;background:transparent;border:0}",
                       build.CSS)
         # The fill sits above the gridlines: positioned, z-index:1,
         # over the z-index:auto ::after (pinned in full below, with
@@ -8159,7 +8212,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(".loss-chart--bare{display:grid;"
-                      "grid-template-columns:10em auto 1fr;"
+                      "grid-template-columns:auto 1fr;"
                       "column-gap:.7em;row-gap:.5em;align-items:center}",
                       build.CSS)
         self.assertIn(".loss-chart--bare{grid-template-columns:1fr;"
@@ -8176,41 +8229,55 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-track{flex:1;height:1.7em;",
                       build.CSS)
 
-    def test_loss_chart_label_column(self):
-        # Visual verdict #124 new finding 1 (2026-11-20): the
-        # donation-chart label column was 22em (~344px) while the
-        # longest donation label ("1,000,000,000") is ~102px of text,
-        # so on the noprot page the track was only ~28% of the row and
-        # the 100% bar (239px) was shorter than its own label column.
-        # The bare chart's labels are only the four fixed donation
-        # sizes, so 8em (~125px) leaves ~23px of slack and the track
-        # takes the freed width. Visual verdict #140 item 3
-        # (2026-11-21): the label now carries its unit ("1,000,000
-        # USDC"), so the column widens 8em -> 10em (~160px) for the
-        # added " USDC" — longest label ~137px of text, same ~23px
-        # of slack. Guide charts (plain .loss-chart)
-        # keep the 22em column — their labels are words — so the
-        # rule is scoped to --bare. Below 640px the bare label is
-        # full-width too: the two-class desktop rule would otherwise
-        # beat the one-class mobile rule and break the label/value/
-        # track stacking.
+    def test_loss_chart_key_column(self):
+        # Visual verdict #172 (2026-11-24, checker-improvement):
+        # the three-column grid retired — the label + value zone
+        # took ~48% of the chart (437px of 903px pixel-measured),
+        # so the 10% bar (46px) sat beside ~400px of text and the
+        # chart read as a text list. The donation and its loss now
+        # share one auto key column (.loss-key): label over value,
+        # both right-aligned to the track edge, sized by the longer
+        # line (~245px); the track takes the rest (~646px, 72%).
+        # History: #124 cut the 22em label column to 8em (the
+        # longest label was ~102px of text); #140 widened it to
+        # 10em when the label gained its "USDC" unit (~137px of
+        # text). The unit stays — the label still reads
+        # "1,000,000,000 USDC" — only the column is gone. Guide
+        # charts (plain .loss-chart) keep the 22em column — their
+        # labels are words — so the key rules are scoped to
+        # --bare. Below 640px the key is full-width too, left-
+        # aligned like the label/value always were on mobile.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        self.assertIn(".loss-chart--bare .loss-label{grid-column:1}",
+        self.assertIn(".loss-chart--bare .loss-key{grid-column:1}",
                       build.CSS)
+        self.assertIn(".loss-chart--bare .loss-key .loss-label,"
+                      ".loss-chart--bare .loss-key .loss-value"
+                      "{display:block;text-align:right}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-key .loss-value"
+                      "{white-space:nowrap;color:#111827}",
+                      build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-label{grid-column:1}",
+                         build.CSS)
         self.assertIn(".loss-label{flex:0 0 22em;text-align:right;color:#374151}",
                       build.CSS)
         self.assertIn(".loss-chart--bare{grid-template-columns:1fr;"
                       "row-gap:.3em}",
                       build.CSS)
+        self.assertIn(".loss-chart--bare .loss-key,.loss-chart--bare "
+                      ".loss-track,.loss-chart--bare .loss-axis"
+                      "{grid-column:1}",
+                      build.CSS)
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        # Row markup untouched: label, value, track in that order.
-        self.assertIn("<div class='loss-row'><span class='loss-label'>1,000,000 USDC</span>"
-                      "<span class='loss-value'>0.909091 USDC &middot; 909&times; the bound</span>"
+        # Row markup: key wrapper (label over value), then track.
+        self.assertIn("<div class='loss-row'><span class='loss-key'>"
+                      "<span class='loss-label'>1,000,000 USDC</span>"
+                      "<span class='loss-value'>0.909091 USDC &middot; 909&times; the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill fail' style='width:90.9%'></span></span></div>",
                       html)
 
@@ -8254,7 +8321,7 @@ class TestChecker(unittest.TestCase):
         # CSS: grid container, display:contents rows, axis rules,
         # chart title rule; no trace of the retired unit label.
         self.assertIn(".loss-chart--bare{display:grid;"
-                      "grid-template-columns:10em auto 1fr;"
+                      "grid-template-columns:auto 1fr;"
                       "column-gap:.7em;row-gap:.5em;align-items:center}",
                       build.CSS)
         self.assertIn(".loss-chart--bare .loss-row{display:contents}",
@@ -8271,7 +8338,7 @@ class TestChecker(unittest.TestCase):
         # at 0/25/50/75/100%; the labels drop .55em to clear them.
         # On mobile the three middle labels hide, and the middle
         # ticks hide with them (only 0 and scale-max ticks remain).
-        self.assertIn(".loss-axis{grid-column:3;position:relative;"
+        self.assertIn(".loss-axis{grid-column:2;position:relative;"
                       "height:1.6em;font-size:.8em;color:#6b7280;"
                       "border-top:1px solid #9ca3af;"
                       "background-image:linear-gradient(#9ca3af,#9ca3af),"
@@ -9628,7 +9695,7 @@ class TestChecker(unittest.TestCase):
         self.assertIsNotNone(m, ".loss-row rule not found")
         self.assertIn("margin:.25em 0", m.group(0))
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
-                      "grid-column:3;background:transparent;border:0}",
+                      "grid-column:2;background:transparent;border:0}",
                       build.CSS)
         self.assertNotIn(".loss-chart--bare .loss-track--empty{background:transparent;"
                          "border-color:",
