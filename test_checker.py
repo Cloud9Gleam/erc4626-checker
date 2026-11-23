@@ -480,6 +480,115 @@ class TestChecker(unittest.TestCase):
             shares = v.deposit(victim)
             self.assertEqual(shares, preview)
             self.assertTrue(shares >= same_tx_floor)
+
+    def test_minshares_wrapper_guide_numbers(self):
+        # Pins /guides/erc4626-minshares-wrapper/ to the model:
+        # independent integer recomputation (OZ conversion rule,
+        # virtual shares 10**offset, virtual assets 1), then the
+        # Vault class cross-check. Victim 100,000 USDC, floor 99%
+        # of the clean pre-donation quote, attacker seed 1 USDC,
+        # donations 1 / 1,000 / 1,000,000 / 1,000,000,000 USDC.
+        U = 10 ** 6
+        victim = 100_000 * U
+        donations = [1 * U, 1_000 * U, 1_000_000 * U, 1_000_000_000 * U]
+
+        def to_shares(assets, supply, total):
+            return assets * (supply + 1) // (total + 1)
+
+        # Clean quote: 100,000 USDC into an empty vault mints exactly
+        # 100,000,000,000 shares; the 99% floor is exact (no remainder).
+        clean = to_shares(victim, 0, 0)
+        self.assertEqual(clean, 100_000_000_000)
+        floor = clean * 99 // 100
+        self.assertEqual(floor, 99_000_000_000)
+        self.assertEqual(clean * 99 % 100, 0)
+
+        # Table 1: every attacked mint is below the floor, so the
+        # wrapper reverts all four. These are the same mints as in
+        # the slippage-bounds guide.
+        mints = []
+        for d in donations:
+            supply, total = 1_000_000, 1 * U  # 1 USDC seed
+            total += d
+            mints.append(to_shares(victim, supply, total))
+        self.assertEqual(mints, [50_000_024_999, 99_900_199, 99_999, 100])
+        self.assertTrue(all(m < floor for m in mints))
+
+        # Table 2: a floor built from the same-transaction preview
+        # is always below the mint it is meant to bound, so the
+        # attack passes its own check every time.
+        for mint, want_floor in zip(mints, [49_500_024_749, 98_901_197,
+                                            98_999, 99]):
+            same_tx_floor = mint * 99 // 100
+            self.assertEqual(same_tx_floor, want_floor)
+            self.assertTrue(same_tx_floor < mint)
+
+        # Floor rounding can loosen the bound by less than one share.
+        self.assertTrue(0 <= clean * 99 - floor * 100 < 100)
+        # Small victim: 10 USDC, floor 9,900,000 shares, attacked mint
+        # 9 shares against a 1,000,000 USDC donation — exactly
+        # 1,100,000x below the floor.
+        small = 10 * U
+        small_floor = to_shares(small, 0, 0) * 99 // 100
+        self.assertEqual(small_floor, 9_900_000)
+        small_mint = to_shares(small, 1_000_000, 1 * U + 1_000_000 * U)
+        self.assertEqual(small_mint, 9)
+        self.assertEqual(small_floor // small_mint, 1_100_000)
+        self.assertEqual(small_floor % small_mint, 0)
+
+        # Stale-but-clean quote: the vault holds a 100,000 USDC deposit
+        # at price 1.00; 1% legitimate yield (1,000 USDC) accrues; a
+        # clean 100,000 USDC deposit mints 99,009,900,990 — still above
+        # the floor, with 9,900,990 shares of headroom, 0.0099% of the
+        # clean quote. NOTE on the state: the vault must hold the
+        # victim-sized deposit for the +1 virtual terms to be
+        # negligible; a 1 USDC seed state would mint 99,009,901,970
+        # instead (980 shares more) — same verdict, different figure.
+        # The guide's scenario is the victim-sized vault, as in the
+        # quote-sources guide.
+        stale = to_shares(victim, 100_000_000_000, 101_000_000_000)
+        self.assertEqual(stale, 99_009_900_990)
+        self.assertTrue(stale >= floor)
+        self.assertEqual(stale - floor, 9_900_990)
+        self.assertEqual(Fraction(stale - floor, clean),
+                         Fraction(9_900_990, 100_000_000_000))
+        self.assertAlmostEqual(float(Fraction(stale - floor, clean) * 100),
+                               0.00990099, places=8)
+
+        # The model agrees: the same flows through the Vault class.
+        for d, want in zip(donations, mints):
+            v = Vault(decimals_offset=0, min_deposit=0)
+            v.deposit(1_000_000)
+            v.donate(d)
+            self.assertEqual(v.preview_deposit(victim), want)
+            self.assertEqual(v.deposit(victim), want)
+        v = Vault(decimals_offset=0, min_deposit=0)
+        v.deposit(victim)
+        v.donate(1_000_000_000)
+        self.assertEqual(v.preview_deposit(victim), 99_009_900_990)
+
+    def test_minshares_wrapper_guide_page(self):
+        # Pins the guide page: the add() must exist with the
+        # headline numbers, and a link from the /guides/ index.
+        # The numbers are re-derived in
+        # test_minshares_wrapper_guide_numbers; this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-minshares-wrapper/"', build)
+        start = build.index('add("/guides/erc4626-minshares-wrapper/"')
+        end = build.index('add("/guides/erc4626-minimum-deposit/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for num in ("50,000,024,999", "99,900,199", "99,999",
+                    "99,000,000,000", "100,000,000,000",
+                    "49,500,024,749", "98,901,197", "98,999",
+                    "99,009,900,990", "9,900,000", "1,100,000",
+                    "0.0099%"):
+            self.assertIn(num, block)
+        self.assertIn('<a href="/guides/erc4626-minshares-wrapper/">',
+                      build)
+
     def test_perf_fee_guide_numbers(self):
         # Pins /guides/erc4626-performance-fee/ to its model: a performance
         # fee is 20% of yield above the high-water mark, paid in shares
