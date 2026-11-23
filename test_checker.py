@@ -23299,32 +23299,39 @@ class TestChecker(unittest.TestCase):
                 "")
         self.assertIn(
             "@media (min-width:1024px){.check-grid{display:grid;"
-            "grid-auto-flow:dense;"
+            "align-items:start;grid-auto-flow:dense;"
             "grid-template-columns:1fr 1fr;gap:1em;margin:1em 0}"
             ".check-grid .check-card{margin:0;display:flex;"
             "flex-direction:column}"
-            ".check-grid .check-card .check-guide{margin-top:auto}"
             ".check-card--wide{grid-column:1/-1}}",
             build.CSS)
 
-    def test_verdict159_shareprice_card_guide_pinned_to_bottom(self):
-        # Visual verdict #159 (b) (2026-11-23, checker-improvement):
-        # the equal-height grid stretched the Share-price card 93.4px
-        # empty at the bottom (and Minimum viable deposit 102.2px on
-        # noprot). The fix pins each card's Guide link to the bottom
-        # with margin-top:auto inside a flex-column card, so the
-        # blank sits above the link instead of below it. Every one
-        # of the six checks has a guide, so every card has a Guide
-        # paragraph as its last child to pin.
+    def test_verdict160_check_cards_size_to_content(self):
+        # Visual verdict #160 (2026-11-23, checker-improvement):
+        # verdict #159 (b)'s margin-top:auto pin did not remove the
+        # short-card blank — it moved it above the Guide link
+        # (Share-price still ~83px empty, Minimum 58px default /
+        # 97px noprot, headless re-measurement; the 17:07 "blank
+        # gone" claim measured below the guide, not the gap above
+        # it). The equal-height tiling is retired for the check
+        # grid: align-items:start lets each card size to its
+        # content. The pinning rule is gone (asserted absent for
+        # the check grid specifically — the homepage card links
+        # still use margin-top:auto, that pattern is untouched).
+        # Every card still ends with its Guide paragraph as the
+        # last child.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
+            ".check-grid{display:grid;align-items:start;",
+            build.CSS)
+        self.assertIn(
             ".check-grid .check-card{margin:0;display:flex;"
             "flex-direction:column}",
             build.CSS)
-        self.assertIn(
+        self.assertNotIn(
             ".check-grid .check-card .check-guide{margin-top:auto}",
             build.CSS)
         for v, kwargs in (
@@ -23337,8 +23344,7 @@ class TestChecker(unittest.TestCase):
             for section in html.split(
                     "<section class='check-card")[1:]:
                 card = section.split("</section>", 1)[0].rstrip()
-                # The Guide paragraph is the card's last child, so
-                # margin-top:auto pins it to the stretched bottom.
+                # The Guide paragraph is still the card's last child.
                 self.assertTrue(card.endswith("</p>"), card[-120:])
                 last_p = card.rsplit("<p ", 1)[-1]
                 self.assertTrue(last_p.startswith("class='check-guide'"),
