@@ -23350,6 +23350,41 @@ class TestChecker(unittest.TestCase):
                 self.assertTrue(last_p.startswith("class='check-guide'"),
                                 last_p[:60])
 
+    def test_verdict160_minimum_blurb_no_orphan_word(self):
+        # Visual verdict #160 (3) (2026-11-23, checker-improvement):
+        # the Minimum card intro wrapped to 3 lines at 1919px with
+        # "is stuck." alone on the last line. The blurb is shortened
+        # so it fits 2 lines (headless re-measurement: line 1 ends
+        # "below", line 2 carries the rest); at 360px it is 3 lines
+        # with a full last line, no orphan. The same text must be
+        # in both copies — Python CHECK_META (static pages) and the
+        # JS CHECK_META string (Worker rendering) — or the two
+        # render paths drift apart. A third copy lives in the
+        # how-to guide's check list; it carries the same sentence.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        new = ("A 1 USDC deposit must mint at least one share — "
+               "below that, it mints zero shares and the money "
+               "is stuck.")
+        self.assertEqual(build.CHECK_META["minimum_viable_deposit"][1],
+                         new)
+        src = (Path.home() / "workspace/taskmarket/site/build.py"
+               ).read_text()
+        self.assertEqual(src.count(new), 2)
+        # The how-to guide's check list carries the same sentence
+        # mid-sentence (lowercase "a" after its em-dash separator).
+        self.assertIn(
+            "— a 1 USDC deposit must mint at least one share — "
+            "below that, it mints zero shares and the money "
+            "is stuck.", src)
+        self.assertNotIn(
+            "below the threshold a deposit mints zero shares", src)
+        # 104 chars measured to fit 2 lines at 1919px; the budget
+        # guards the fit against a future re-lengthening.
+        self.assertLessEqual(len(new), 110)
+
     def test_check_grid_never_orphans_a_card(self):
         # Visual verdict #154 (2026-11-22, checker-improvement):
         # the orphan was not a one-page accident. The failing-first
