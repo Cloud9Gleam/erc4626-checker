@@ -2102,6 +2102,110 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(-(-1_000_000 * 1_000_000 // 1_000_000),
                          1_000_000)
 
+    def test_rounding_errors_guide_numbers(self):
+        # Rounding-errors guide (/guides/erc4626-rounding-errors/): two
+        # worked examples in a 10 USDC / 3 shares vault, re-derived here
+        # with plain Fractions, independent of the model file.
+        # NOTE on scope: the guide's toy uses plain conversions
+        # (shares = assets x supply / assets), the textbook formula --
+        # NOT the checker's OZ conversions, which add 1 virtual share
+        # and 1 virtual asset at offset 0. At this toy scale the +1
+        # moves the counterfactual's figures (see below); at any real
+        # vault size it is negligible. The guide never claims the toy
+        # is a checker run -- it is a "suppose" scenario the model has
+        # no backwards-rounding mode for -- and its arithmetic is exact
+        # under its stated plain ratios. What the model DOES verify
+        # directly is example 1's operative conclusion (0 shares, and
+        # the deposit must revert), plus the guide's claim that the
+        # checker tests exactly the four directions.
+        # Example 1: a deposit that rounds to zero. Price 10/3 USDC
+        # per share; 1 USDC should mint 1 x 3 / 10 = 0.3 shares.
+        A, S = Fraction(10), Fraction(3)
+        self.assertEqual(A / S, Fraction(10, 3))
+        self.assertAlmostEqual(float(A / S), 3.33, places=2)
+        exact = Fraction(1) * S / A
+        self.assertEqual(exact, Fraction(3, 10))
+        self.assertEqual(exact.numerator // exact.denominator, 0)
+        # Model cross-check: the same toy vault in the checker mints
+        # 0 shares for 1 USDC and the deposit reverts (zero shares
+        # minted) -- the guide's "must fail, not silently keep the
+        # assets". (The model's exact ratio is 4/10.000001, still 0.)
+        toy = Vault(total_assets=10_000_000, total_supply=3,
+                    decimals_offset=0)
+        self.assertEqual(toy.preview_deposit(1_000_000), 0)
+        with self.assertRaises(ValueError):
+            toy.deposit(1_000_000)
+        # Example 2: one direction backwards. Deposit rounds UP, so
+        # the 1 USDC deposit mints ceil(0.3) = 1 share; redeem rounds
+        # DOWN, so it pays floor(11/4) = 2 USDC -- 1 USDC profit per
+        # round trip. Simulate the loop in whole USDC.
+        a, s = 10, 3
+        profits = []
+        for _ in range(7):
+            mint = -(-1 * s // a)       # ceil(1 x s / a)
+            a += 1
+            s += mint
+            out = 1 * a // s            # floor(1 x a / s)
+            a -= out
+            s -= 1
+            profits.append(out - 1)
+        self.assertEqual(profits, [1, 1, 1, 1, 0, 0, 0])
+        self.assertEqual(sum(profits[:4]), 4)
+        self.assertEqual((a, s), (6, 3))  # after 4 rounds, price 2.00
+        self.assertEqual(Fraction(a, s), 2)
+        # The guide's "the checker tests exactly this": the rounding
+        # check covers all four directions and passes on every preset
+        # (the directions are right; only the donation check fails at
+        # offset 0, by design).
+        for kw in (dict(decimals_offset=0, min_deposit=0),
+                   dict(decimals_offset=6, min_deposit=1_000_000,
+                        perf_fee_bps=1000),
+                   dict(decimals_offset=18, min_deposit=1_000_000,
+                        perf_fee_bps=1000)):
+            results = {r["name"]: r for r in run_all(Vault(**kw))}
+            self.assertTrue(results["rounding"]["pass"], kw)
+            self.assertEqual(len(results), 6)
+        # OZ +1/+1 delta, pinned so a future round can decide whether
+        # the guide needs a clarifying note: with the model's virtual
+        # share/asset, the same counterfactual redeems 2.2 USDC first
+        # (not 2), profits 1.2 USDC first (not 1), then decays
+        # (0.96, 0.768, ...) and the vault loses ~6 USDC, not 4.
+        w = Vault(total_assets=10_000_000, total_supply=3,
+                  decimals_offset=0)
+        self.assertEqual(w.convert_to_shares(1_000_000, round_up=True), 1)
+        w2 = Vault(total_assets=11_000_000, total_supply=4,
+                   decimals_offset=0)
+        self.assertEqual(w2.convert_to_assets(1), 2_200_000)
+
+    def test_rounding_errors_guide_page(self):
+        # Pins the guide page: the add() must exist with the claims
+        # the numbers test re-derives, and a link from the /guides/
+        # index.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-rounding-errors/"', build)
+        start = build.index('add("/guides/erc4626-rounding-errors/"')
+        end = build.index('add("/guides/erc4626-virtual-shares/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for claim in ("Deposit mints shares rounded",
+                      "rounded <strong>down</strong>",
+                      "rounded\n<strong>up</strong>",
+                      "0.3 shares",
+                      "<strong>0 shares</strong>",
+                      "ceil(0.3) = 1 share",
+                      "3.33 USDC",
+                      "2 USDC",
+                      "1 USDC of profit per round trip",
+                      "loses 4 USDC",
+                      "corrects to 2.00",
+                      "Zero-share mints revert",
+                      "Preview matches execution"):
+            self.assertIn(claim, block)
+        self.assertIn(
+            '<a href="/guides/erc4626-rounding-errors/">', build)
+
     def test_fee_basis_guide_numbers(self):
         # Fee-basis guide (site/fee-basis-model.py): a 2% management fee
         # collected by minting 2% of the supply transfers only f/(1+f) of
