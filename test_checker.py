@@ -2146,7 +2146,8 @@ class TestChecker(unittest.TestCase):
             "margin-top:.75em;padding-top:1.25em}}",
             build.CSS)
         self.assertIn(
-            ".cards{display:grid;grid-template-columns:repeat(3,1fr);"
+            ".cards{display:grid;align-items:start;"
+            "grid-template-columns:repeat(3,1fr);"
             "gap:1em;margin:.75em 0 0}",
             build.CSS)
         self.assertIn(
@@ -6496,7 +6497,8 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            ".cards{display:grid;grid-template-columns:repeat(3,1fr);"
+            ".cards{display:grid;align-items:start;"
+            "grid-template-columns:repeat(3,1fr);"
             "gap:1em;margin:.75em 0 0}", build.CSS)
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertTrue(home.rstrip().endswith("</div>"),
@@ -20790,7 +20792,7 @@ class TestChecker(unittest.TestCase):
             'add("/audit/", "Vault micro-audit — 50 USDC, '
             '72-hour report"', build_text)
 
-    def test_home_cards_bottom_links(self):
+    def test_verdict161_home_cards_size_to_content(self):
         # Visual verdict #112 item 2, reopened by #113 (2026-11-19,
         # real browser): the bottom link still sat ~33-34px below the
         # body text. The 06:37 fix (removing margin-top:auto) only
@@ -20815,6 +20817,26 @@ class TestChecker(unittest.TestCase):
         # line — and the tallest card's body->link gap stays ~9px
         # element because the #113 cuts above still hold; auto only
         # fills the shorter cards' slack (89px / 28px at 1919px).
+        # Visual verdict #161 (2026-11-23, checker-improvement)
+        # retires the #147 pin, for the same reason #160 retired it
+        # on the check grid: the pin never removed the short-card
+        # blank, it moved it above the link. Re-measured
+        # (hidden_files/measure-home-gap.py, 1919px): Free tool
+        # 97.7px of dead space above its link, Research 36.5px,
+        # Paid service 8.5px — the verdict's ~75px estimate was
+        # directionally right, and the 16:37 round's 18.0px measured
+        # below the link (card bottom padding), not the gap above
+        # it. align-items:start on .cards lets each card size to its
+        # content; the pin is gone. Row bottoms are ragged now — the
+        # trade #160 accepted, and the mobile single-column layout
+        # already sizes every card to its content.
+        # Follow-up in the same round: deleting the auto pin
+        # unmasked the link paragraph's own top margin (the global
+        # p{margin:.65em 0}, 10.4px), so the body->link gap came back
+        # as 19.5px at 1919px instead of the ~8px the #113 spacing
+        # intended. margin-top:0 returns — the #147 objection to it
+        # (links at three heights) is moot now that the cards size
+        # to their content and there is no shared bottom to pin to.
         import re
         from pathlib import Path
         build_text = (Path.home() / "workspace/taskmarket/site"
@@ -20822,21 +20844,22 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(build_text.count('class="card-link"'), 3)
         self.assertIn('"display:flex;flex-direction:column}"',
                       build_text)
-        # Precondition for equal-height cards: .cards is a 3-column
-        # grid, so the row stretches all three cards to one height
-        # and the auto margin has slack to distribute.
-        self.assertIn('.cards{display:grid;grid-template-columns:'
-                      'repeat(3,1fr)', build_text)
+        # Each card sizes to its content: .cards is a 3-column grid
+        # with align-items:start, so the row no longer stretches the
+        # shorter cards and the auto margin has no slack to fill.
+        self.assertIn('.cards{display:grid;align-items:start;'
+                      'grid-template-columns:repeat(3,1fr)',
+                      build_text)
         self.assertIn('.card p:not(.card-link){margin-bottom:.3em}',
                       build_text)
-        self.assertIn('.card .card-link{margin-top:auto;'
+        self.assertIn('.card .card-link{margin-top:0;'
                       'padding-top:0;line-height:1.35;'
                       'margin-bottom:0;font-weight:700}',
                       build_text)
         rule = re.search(r'\.card \.card-link\{[^}]*\}',
                          build_text).group(0)
-        self.assertIn('margin-top:auto', rule)
-        self.assertNotIn('margin-top:0', rule)
+        self.assertNotIn('margin-top:auto', rule)
+        self.assertIn('margin-top:0', rule)
         self.assertIn(
             '<p class="card-link"><a href="/checker/">'
             'Run the checker &rarr;</a></p>', build_text)
@@ -23296,8 +23319,9 @@ class TestChecker(unittest.TestCase):
         # it). The equal-height tiling is retired for the check
         # grid: align-items:start lets each card size to its
         # content. The pinning rule is gone (asserted absent for
-        # the check grid specifically — the homepage card links
-        # still use margin-top:auto, that pattern is untouched).
+        # the check grid specifically — the homepage cards
+        # retired the same pattern in #161, see
+        # test_verdict161_home_cards_size_to_content).
         # Every card still ends with its Guide paragraph as the
         # last child.
         import sys
