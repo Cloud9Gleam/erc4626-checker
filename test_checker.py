@@ -1255,7 +1255,14 @@ class TestChecker(unittest.TestCase):
         js = build.checker_results_html_js()
         fn = js[js.index("function resultsHTML"):]
         self.assertIn('let notice="";', fn)
-        self.assertIn('h+="</div>";\n  if(notice){h+=notice;}', fn)
+        # Visual verdict #177 item 5: the shares legend line sits
+        # between the grid close and the notice append.
+        self.assertIn('h+="</div>";\n  // Visual verdict #177 item 5: same shares '
+                      'legend as the Python renderer.\n  h+="<p class=\'shares-note\'>'
+                      'Share counts are shortened: B = billion (10^9), T = trillion '
+                      '(10^12), Q = quadrillion (10^15); exact powers of ten above '
+                      'that use the 1×10²⁴ form. The API returns exact integers.'
+                      '</p>";\n  if(notice){h+=notice;}', fn)
         self.assertNotIn('if(notice){h+=notice;notice="";}', fn)
         self.assertNotIn(".check-grid .notice", build.CSS)
 
@@ -9023,6 +9030,53 @@ class TestChecker(unittest.TestCase):
         self.assertIn("compactShares(esc(line))", js)
         self.assertNotIn("price per 1,000,000", js)
         self.assertNotIn("price / 1M shares", js)
+
+    def test_verdict177_shares_abbreviations_explained(self):
+        # Visual verdict #177 item 5 (2026-11-24, checker-improvement):
+        # #174 compacted share counts ("1T shares", "10Q shares",
+        # "1×10²⁴ shares") but the page never said what B/T/Q mean —
+        # a first-time reader cannot decode them, and no legend
+        # ("trillion", "quadrillion", "10^12") exists anywhere on
+        # the page. One muted line under the results grid defines
+        # all three suffixes plus the superscript form, and notes
+        # the API keeps exact integers. Render-time only: the model
+        # strings and the API JSON are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        legend = ("Share counts are shortened: B = billion (10^9), "
+                  "T = trillion (10^12), Q = quadrillion (10^15); "
+                  "exact powers of ten above that use the 1×10²⁴ form. "
+                  "The API returns exact integers.")
+        # CSS: the muted note style exists.
+        self.assertIn(
+            ".shares-note{font-size:.85em;color:#6b7280;"
+            "margin:.7em 0 0}", build.CSS)
+        # Python renderer: one legend per run, after the grid closes
+        # and before the notice, on passing and failing runs alike.
+        for off, mn, fee in ((0, 0, 0), (6, 1_000_000, 1000),
+                             (18, 1_000_000, 1000)):
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee)
+            html = build.results_html(
+                run_all(v), off=off, mn=mn, fee=fee)
+            self.assertEqual(html.count("class='shares-note'"), 1)
+            self.assertIn(legend, html)
+            last_close = html.rindex("</section>")
+            grid_close = html.index("</div>", last_close)
+            self.assertLess(grid_close, html.index(legend))
+            self.assertLess(html.index(legend),
+                            html.index("What to do next"))
+        # Worker JS renderer: the same line, between the grid close
+        # and the notice append.
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        self.assertIn("class='shares-note'", fn)
+        self.assertIn(legend, fn)
+        self.assertLess(fn.rindex('h+="</div>";'), fn.index(legend))
+        self.assertLess(fn.index(legend),
+                        fn.index("if(notice){h+=notice;}"))
 
     def test_verdict159_minimum_preview_orphans_fixed(self):
         # Visual verdict #159 item (a) (2026-11-23, checker-
