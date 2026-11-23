@@ -589,6 +589,130 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/guides/erc4626-minshares-wrapper/">',
                       build)
 
+    def test_native_eth_deposit_guide_numbers(self):
+        # Pins /guides/erc4626-native-eth-deposit/ to the model:
+        # independent integer recomputation (OZ conversion rule,
+        # offset 0: virtual shares 1, virtual assets 1), then the
+        # Vault class cross-check. ETH = 10**18 wei; shares are
+        # 18-decimal raw units like the assets. Gas at 10 gwei.
+        ETH = 10 ** 18
+
+        def to_shares(assets, supply, total):
+            return assets * (supply + 1) // (total + 1)
+
+        def to_assets(shares, supply, total):
+            return shares * (total + 1) // (supply + 1)
+
+        # Setup: vault 1,000,000 ETH / 1,000,000 shares at 1.00.
+        A0, S0 = 1_000_000 * ETH, 1_000_000 * ETH
+        self.assertEqual(to_assets(ETH, S0, A0), ETH)
+
+        # A. Bob deposits exactly 100,000 ETH for 100,000 of assets:
+        # 100,000 shares. Carol sends 105,000 for the same 100,000 of
+        # assets: same 100,000 shares, 5,000 ETH stuck in the wrapper.
+        self.assertEqual(to_shares(100_000 * ETH, S0, A0), 100_000 * ETH)
+        self.assertEqual(105_000 - 100_000, 5_000)
+        # Gas schedule (10 gwei): wrap 30,000 + deposit 100,000 gas =
+        # 0.0013 ETH; Dave's pre-wrap revert costs only the 21,000-gas
+        # intrinsic cost = 0.00021 ETH; Eve's post-wrap revert 90,000
+        # gas = 0.0009 ETH. These are the guide's stated modelled
+        # costs; the checkable arithmetic is the sums.
+        self.assertEqual((30_000 + 100_000) * 10 * 10 ** 9, 13 * 10 ** 14)
+        self.assertEqual(21_000 * 10 * 10 ** 9, 21 * 10 ** 13)
+        self.assertEqual(90_000 * 10 * 10 ** 9, 9 * 10 ** 14)
+
+        # B. Chart widths: 100,000 strands at 100.0%, Carol's 5,000
+        # at 5.0%, Frank's 0 at 0.
+        self.assertEqual(Fraction(5_000, 100_000) * 100, 5)
+
+        # C. Auto-wrap: the attacker's 1 wei of shares is worth
+        # 500,000 ETH and the victim's 100,000 ETH deposit previews
+        # 0 shares — but ONLY in an empty vault, where the attacker
+        # is the first depositor. The +1 virtual share halves the
+        # single real share's redemption: (10^24 + 2) / 2.
+        self.assertEqual(to_shares(1, 0, 0), 1)
+        self.assertEqual(to_assets(1, 1, 1 + 10 ** 24),
+                         500_000 * ETH + 1)
+        self.assertEqual(to_shares(100_000 * ETH, 1, 1 + 10 ** 24), 0)
+        # CONTRAST — under the guide's stated setup (1,000,000 ETH /
+        # 1,000,000 shares) the same seed + donation gives an
+        # attacker share worth 1 wei and a victim preview of exactly
+        # 50,000 shares. The guide's 500,000 ETH / 0 shares do not
+        # follow from the stated setup; scenario C restarts from an
+        # empty vault, which the page now says in so many words.
+        self.assertEqual(to_assets(1, S0 + 1, A0 + 1 + 10 ** 24), 1)
+        self.assertEqual(
+            to_shares(100_000 * ETH, S0 + 1, A0 + 1 + 10 ** 24),
+            50_000 * ETH)
+        # NOTE: the attacker does not profit here — they put in 1 wei
+        # + a 1,000,000 ETH donation and hold a share worth 500,000
+        # ETH; the other half is locked behind the virtual share.
+        # The guide claims the share's value, not a profit, and the
+        # victim is still blocked (0 shares) and stranded (the wrap
+        # already happened). No contradiction.
+        self.assertLess(to_assets(1, 1, 1 + 10 ** 24), 10 ** 24 + 1)
+
+        # C. No receive(): the 1,000,000 ETH gift sits as raw ETH,
+        # totalAssets counts WETH only, price stays 1.00, Grace
+        # deposits 100,000 ETH for a clean 100,000 shares.
+        self.assertEqual(to_shares(100_000 * ETH, S0, A0), 100_000 * ETH)
+        ta3, ts3 = A0 + 100_000 * ETH, S0 + 100_000 * ETH
+        self.assertEqual(to_assets(ETH, ts3, ta3), ETH)
+        # Somebody wraps the raw 1,000,000 ETH: price jumps to
+        # 21/11 = 1.909091 (6dp), a later 100,000 ETH deposit mints
+        # 100,000 * 11/21 = 52,380.952381 shares (6dp). Exact
+        # integers first (the +1 virtual terms shift both by < 1
+        # wei from the clean fractions), then the 6dp rounding.
+        ta3 += 1_000_000 * ETH
+        self.assertEqual(to_assets(ETH, ts3, ta3),
+                         1_909_090_909_090_909_090)
+        self.assertEqual(round(
+            float(Fraction(to_assets(ETH, ts3, ta3), ETH)), 6), 1.909091)
+        later = to_shares(100_000 * ETH, ts3, ta3)
+        self.assertEqual(later, 52_380_952_380_952_380_952_380)
+        self.assertEqual(round(float(Fraction(later, ETH)), 6),
+                         52380.952381)
+
+        # The model agrees: empty vault, 1 wei seed, 1,000,000 ETH
+        # donation, victim previews 0 and deposit raises.
+        v = Vault(decimals_offset=0, min_deposit=0)
+        self.assertEqual(v.deposit(1), 1)
+        v.donate(10 ** 24)
+        self.assertEqual(v.preview_deposit(100_000 * ETH), 0)
+        with self.assertRaises(ValueError) as ctx:
+            v.deposit(100_000 * ETH)
+        self.assertEqual(str(ctx.exception), "zero shares minted")
+        # And the no-receive half through the model: 1,000,000 ETH /
+        # 1,000,000 shares, Grace deposits 100,000, price 1.00.
+        w = Vault(decimals_offset=0, min_deposit=0)
+        w.deposit(1_000_000 * ETH)
+        self.assertEqual(w.deposit(100_000 * ETH), 100_000 * ETH)
+        self.assertEqual(w.convert_to_assets(ETH), ETH)
+
+    def test_native_eth_deposit_guide_page(self):
+        # Pins the guide page: the add() must exist with the
+        # headline numbers and the empty-vault clarification, and a
+        # link from the /guides/ index. The numbers are re-derived
+        # in test_native_eth_deposit_guide_numbers; this pins the
+        # page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-native-eth-deposit/"', build)
+        start = build.index('add("/guides/erc4626-native-eth-deposit/"')
+        end = build.index('add("/guides/erc4626-donation-liquidity/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for num in ("105,000", "100,000", "5,000", "0.0013", "0.00021",
+                    "0.0009", "500,000", "1.909091", "52,380.952381",
+                    "100.0%", "5.0%", "zero shares minted"):
+            self.assertIn(num, block)
+        # The scenario-C clarification: the 500,000 ETH / 0-share
+        # figures hold only for an empty vault, first depositor.
+        self.assertIn("in an empty vault, as the first depositor", block)
+        self.assertIn('<a href="/guides/erc4626-native-eth-deposit/">',
+                      build)
+
     def test_perf_fee_guide_numbers(self):
         # Pins /guides/erc4626-performance-fee/ to its model: a performance
         # fee is 20% of yield above the high-water mark, paid in shares
