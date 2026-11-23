@@ -7875,7 +7875,7 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=0, fee=0, vassets=A50, vshares=A50)
         self.assertNotIn("loss-chart", html)
         self.assertEqual(html.count("loss-fill"), 0)
-        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound — the worst victim loss is 0.000013 USDC, 1.3% of the 0.001 USDC pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound, so there is no chart to draw — the worst victim loss is 0.000013 USDC, 1.3% of the 0.001 USDC pass bound.</li></ul>", html)
         # Offset 18: every loss is 0 — no row can draw a bar, so there
         # is no chart at all, just the one legend item (verdict #94:
         # four placeholder rows were the worst case of the broken-chart
@@ -7889,7 +7889,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("width:0.0%"), 0)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("<ul class='loss-head'><li><strong>No loss:</strong> No donation loses anything: every victim loss is 0.000000 USDC.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>No loss:</strong> No donation loses anything, so there is no chart to draw — every victim loss is 0.000000 USDC.</li></ul>", html)
         self.assertNotIn("<p class='loss-note'>", html)
         # Mixed table: one tiny row, one drawable row, one error row —
         # a single drawable bar IS a chart now (visual verdict #123,
@@ -8100,7 +8100,7 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
         self.assertNotIn("loss-chart", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound — the worst victim loss is 0.000900 USDC, 90% of the 0.001 USDC pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound, so there is no chart to draw — the worst victim loss is 0.000900 USDC, 90% of the 0.001 USDC pass bound.</li></ul>", html)
         # The bar-label rule itself still lives on breaching charts: a
         # passing drawable row next to a breaching one carries its
         # share of the bound ("90% of the bound"), not a bare number.
@@ -8487,7 +8487,7 @@ class TestChecker(unittest.TestCase):
             vic=1_000_000, off=0, mn=0, fee=0)
         self.assertNotIn("loss-chart", html)
         self.assertNotIn("loss-axis", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound — the worst victim loss is 0.000001 USDC, against a 0.001 USDC pass bound.</li><li><strong>No figure:</strong> Rows with no loss figure are listed in the table above.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound, so there is no chart to draw — the worst victim loss is 0.000001 USDC, against a 0.001 USDC pass bound.</li><li><strong>No figure:</strong> Rows with no loss figure are listed in the table above.</li></ul>", html)
         # No chart, no axis, no title: offset 18 loses nothing.
         html = build.results_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
@@ -8556,7 +8556,7 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)))
         self.assertNotIn("loss-chart", html)
         self.assertEqual(html.count("loss-row"), 0)
-        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound — the worst victim loss is 0.000900 USDC, 90% of the 0.001 USDC pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound, so there is no chart to draw — the worst victim loss is 0.000900 USDC, 90% of the 0.001 USDC pass bound.</li></ul>", html)
         # Bound scale with more than one would-be drawable row: losses
         # 400 / 900 base units against a 1000-unit bound — nothing
         # breaches, so no chart is drawn (visual verdict #137,
@@ -8575,7 +8575,7 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("width:40.0%", html)
         self.assertNotIn("width:90.0%", html)
         self.assertNotIn("Bars are scaled to the pass bound", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound — the worst victim loss is 0.000900 USDC, 90% of the 0.001 USDC pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound, so there is no chart to draw — the worst victim loss is 0.000900 USDC, 90% of the 0.001 USDC pass bound.</li></ul>", html)
         self.assertNotIn("Red bars breach the pass bound", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("too little to draw", html)
@@ -8589,7 +8589,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-track--tiny"), 0)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("<ul class='loss-head'><li><strong>No loss:</strong> No donation loses anything: every victim loss is 0.000000 USDC.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>No loss:</strong> No donation loses anything, so there is no chart to draw — every victim loss is 0.000000 USDC.</li></ul>", html)
         self.assertNotIn("<p class='loss-note'>", html)
         # The Worker-side template renders the same omission note and
         # single-bar chart, and no placeholder chip. The Peak/Others
@@ -8600,11 +8600,14 @@ class TestChecker(unittest.TestCase):
                       "\"the pass bound\":\"the worst row\")+\" (", js)
         # Visual verdict #137 (2026-11-21): the Worker template
         # carries the same sentence for the passing case.
+        # Verdict #176 (2026-11-24): the sentence now also says
+        # why there is no chart to draw.
         self.assertIn("Within the bound:", js)
+        self.assertIn("No donation breaches the pass bound, so there is no chart to draw — the worst victim loss is ", js)
         self.assertNotIn("Victim loss peaks at", js)
         self.assertNotIn("too little to draw", js)
         self.assertIn("<strong>No loss:</strong> No donation loses anything", js)
-        self.assertIn("No donation loses anything: every victim loss is ", js)
+        self.assertIn("No donation loses anything, so there is no chart to draw — every victim loss is ", js)
         self.assertNotIn("loss-track--tiny", js)
         self.assertNotIn("loss-too-small", js)
         self.assertNotIn("too small to draw", js)
@@ -20688,7 +20691,7 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(run_all(v), off=6, mn=1_000_000, fee=1000)
         self.assertNotIn(
             "Bars are scaled to the pass bound (0.001 USDC)", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound — the worst victim loss is 0.000900 USDC, 90% of the 0.001 USDC pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Within the bound:</strong> No donation breaches the pass bound, so there is no chart to draw — the worst victim loss is 0.000900 USDC, 90% of the 0.001 USDC pass bound.</li></ul>", html)
         self.assertNotIn("<p class='loss-note'>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("<div class='loss-chart loss-chart--bare'>", html)
