@@ -8039,14 +8039,15 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertIn("@media (max-width:640px){.check-table tr{display:block}",
                       build.CSS)
-        # Row counts per preset: rounding 1 sentence row; MVD 4 rows
+        # Row counts per preset: rounding renders as a plain sentence
+        # paragraph, not a table row (visual verdict #158); MVD 4 rows
         # on the default preset (floor-binds line) vs 3 on noprot;
         # preview 3; fee 1 line becomes 3 rows; share price 1.
         for v, kwargs, n_rows in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
-                       perf_fee_bps=1000), {}, 12),
+                       perf_fee_bps=1000), {}, 11),
                 (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
-                 {"off": 0, "mn": 0, "fee": 0}, 11)):
+                 {"off": 0, "mn": 0, "fee": 0}, 10)):
             results = run_all(v)
             html = build.results_html(results, **kwargs)
             self.assertEqual(html.count("<p class='check-detail'>"), 0)
@@ -8056,10 +8057,16 @@ class TestChecker(unittest.TestCase):
                                   if r["name"] != "donation_inflation"]))
             self.assertEqual(html.count("<table class='check-table'>"),
                              len([r for r in results
-                                  if r["name"] != "donation_inflation"]))
+                                  if r["name"] not in
+                                  ("donation_inflation", "rounding")]))
             self.assertEqual(
                 html.count("<td class='check-label'>")
                 + html.count("<td class='check-sentence'"), n_rows)
+            # Visual verdict #158: the rounding card's single
+            # sentence is a paragraph, not a one-cell table row.
+            self.assertIn("<p class='check-sentence'>floor/ceil "
+                          "directions hold</p>", html)
+            self.assertNotIn("<td class='check-sentence'", html)
             # No bare <p> wraps a detail line any more: every string
             # detail line sits inside its block's table.
             self.assertNotIn("<p>yield ", html)
@@ -8116,15 +8123,54 @@ class TestChecker(unittest.TestCase):
             "padding:.1em .5em}.check-table td.check-value"
             "{text-align:right}.check-table tr+tr{border-top:1px "
             "solid #f3f4f6}}", build.CSS)
-        # Rendered markup is unchanged: five small tables, one per
-        # non-donation card, both presets.
+        # Rendered markup: four small tables, one per non-donation,
+        # non-rounding card, both presets (rounding's single sentence
+        # is a paragraph now — visual verdict #158).
         for v in (Vault(decimals_offset=6, min_deposit=1_000_000,
                         perf_fee_bps=1000),
                   Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)):
             html = build.results_html(run_all(v))
-            self.assertEqual(html.count("<table class='check-table'>"), 5)
+            self.assertEqual(html.count("<table class='check-table'>"), 4)
         self.assertIn("<table class='check-table'>",
                       build.checker_results_html_js())
+
+    def test_rounding_sentence_renders_without_table(self):
+        # Visual verdict #158 (2026-11-23, checker-improvement):
+        # the rounding card's single sentence ("floor/ceil directions
+        # hold") rendered as a full-width bordered table — a ~950px
+        # box holding a ~200px sentence, the ugliest thing on the
+        # site. It now renders as a plain paragraph inside the
+        # slate-accent details block; the other four non-donation
+        # cards keep their tables. Render-only: the model string,
+        # the splitter and the API JSON are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        for v, kwargs in (
+                (Vault(decimals_offset=6, min_deposit=1_000_000,
+                       perf_fee_bps=1000), {}),
+                (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                 {"off": 0, "mn": 0, "fee": 0})):
+            html = build.results_html(run_all(v), **kwargs)
+            self.assertIn("<p class='check-sentence'>floor/ceil "
+                          "directions hold</p>", html)
+            self.assertNotIn("<td class='check-sentence'", html)
+            self.assertEqual(html.count("<table class='check-table'>"), 4)
+            # The rounding card keeps its title, blurb, pass rule
+            # and guide link — only the table box is gone.
+            self.assertIn("Rounding directions", html)
+            self.assertIn("/guides/erc4626-rounding-errors/", html)
+            self.assertIn("<strong>Pass rule:</strong> Every preview "
+                          "within 1 base unit", html)
+            # Numbers untouched by a render-only change.
+            self.assertIn("0.909091" if v.decimals_offset == 0
+                          else "0.000900", html)
+        # Worker-side template: same paragraph branch.
+        js = build.checker_results_html_js()
+        self.assertIn("<p class='check-sentence'>", js)
+        self.assertIn("r.detail.every(function(line){return "
+                      "!splitDetailLine(line);})", js)
 
     def test_split_detail_line(self):
         # The render-time splitter behind the check-table: every model
@@ -8341,6 +8387,10 @@ class TestChecker(unittest.TestCase):
                 self.assertNotIn("<strong>", inner)
             sentences = re.findall(
                 r"<td class='check-sentence'[^>]*>(.*?)</td>", html)
+            # Visual verdict #158: the rounding sentence now renders
+            # as a paragraph, not a table cell — same bolding rule.
+            sentences += re.findall(
+                r"<p class='check-sentence'>(.*?)</p>", html)
             for inner in sentences:
                 plain = re.sub(r"<[^>]+>", "", inner)
                 nums = re.findall(r"-?\d[\d,]*(?:\.\d+)?", plain)
@@ -8367,8 +8417,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn("function splitDetailLine(s)", js)
         self.assertIn("boldNumbers(nbspUnits(esc(row[1])))", js)
         self.assertIn("nbspUnits(esc(shortLabel(row[0])))", js)
-        # The same call survives only for the sentence-row fallback
-        # (rounding's "floor/ceil directions hold"); the old per-line
+        # The same call survives for the sentence fallback — rounding's
+        # "floor/ceil directions hold" now renders as a
+        # <p class='check-sentence'>, with the <td> form kept for
+        # sentence rows inside mixed tables; the old per-line
         # <p class='check-detail'> loop is gone (pinned in the
         # block-structure test above).
         self.assertIn("boldNumbers(nbspUnits(esc(line)))", js)
