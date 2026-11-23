@@ -24907,6 +24907,147 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/guides/erc4626-inflation-attack/">',
                       build)
 
+    def test_inflation_defense_measured_guide_numbers(self):
+        # Inflation-defense-measured guide: the same donation
+        # attack (attacker seeds 1 USDC, donates 1,000,000 USDC,
+        # victim deposits V, both redeem, attacker first) run
+        # against offsets 0, 6 and 18 at five victim sizes.
+        # Re-derived here with plain integer arithmetic,
+        # independent of any model file. Conversions use the
+        # OpenZeppelin rule the guide states -- virtual shares
+        # 10**offset, virtual assets 1, floor division both ways.
+        U = 10**6
+
+        def run(offset, victim_usdc):
+            vs = 10**offset
+            va = 1
+
+            def to_shares(a, S, A):
+                return (a * (S + vs)) // (A + va)
+
+            def to_assets(s, S, A):
+                return (s * (A + va)) // (S + vs)
+
+            S, A = 0, 0
+            atk_shares = to_shares(1 * U, S, A)
+            S += atk_shares
+            A += 1 * U
+            A += 1_000_000 * U  # the donation
+            vic_shares = to_shares(victim_usdc * U, S, A)
+            S += vic_shares
+            A += victim_usdc * U
+            atk_out = to_assets(atk_shares, S, A)
+            S -= atk_shares
+            A -= atk_out
+            vic_out = to_assets(vic_shares, S, A)
+            S -= vic_shares
+            A -= vic_out
+            return (vic_shares, victim_usdc * U - vic_out,
+                    atk_out - (1 * U + 1_000_000 * U), A)
+
+        # Table 1 (offset 0): victim shares, victim loss and
+        # attacker net in base units.
+        for v_usdc, shares, vic_loss, atk_net in (
+                (1_000, 999, 999_001, -999),
+                (10_000, 9_999, 990_100, -9_900),
+                (100_000, 99_999, 909_091, -90_909),
+                (1_000_000, 999_999, 500_000, -500_000),
+                (10_000_000, 9_999_999, 90_909, -909_091)):
+            got_shares, got_loss, got_net, stranded = run(0, v_usdc)
+            self.assertEqual(got_shares, shares)
+            self.assertEqual(got_loss, vic_loss)
+            self.assertEqual(got_net, atk_net)
+            # The guide's prose: victim loss plus attacker loss
+            # is exactly 1 USDC -- the attacker's 1 USDC seed,
+            # left in the vault with zero shares outstanding.
+            self.assertEqual(got_loss - got_net, 1 * U)
+            self.assertEqual(stranded, 1 * U)
+            # The loss is bounded by about one share at the
+            # inflated price -- just over 1 USDC at offset 0.
+            self.assertLess(got_loss, 1_000_001)
+        # Table 2 (offsets 6 and 18): victim loss and attacker
+        # net in base units; the loss is one base unit or zero.
+        for v_usdc, loss6, net6, loss18, net18 in (
+                (1_000, 1, -999_999, 0, -1_000_000),
+                (10_000, 1, -999_999, 0, -1_000_000),
+                (100_000, 1, -999_999, 0, -1_000_000),
+                (1_000_000, 0, -1_000_000, 0, -1_000_000),
+                (10_000_000, 0, -1_000_000, 0, -1_000_000)):
+            _, got_loss6, got_net6, _ = run(6, v_usdc)
+            _, got_loss18, got_net18, _ = run(18, v_usdc)
+            self.assertEqual(got_loss6, loss6)
+            self.assertEqual(got_net6, net6)
+            self.assertEqual(got_loss18, loss18)
+            self.assertEqual(got_net18, net18)
+            self.assertEqual(got_loss6 - got_net6, 1 * U)
+            self.assertEqual(got_loss18 - got_net18, 1 * U)
+        # Prose ratios: the 10,000x bigger victim loses about
+        # 11x less in absolute terms (0.090909 vs 0.999001),
+        # 0.0999% of a 1,000 USDC deposit vs 0.0000009% of a
+        # 10,000,000 USDC deposit.
+        _, small_loss, _, _ = run(0, 1_000)
+        _, big_loss, _, _ = run(0, 10_000_000)
+        self.assertEqual(Fraction(small_loss, big_loss),
+                         Fraction(999_001, 90_909))
+        self.assertAlmostEqual(float(Fraction(small_loss, big_loss)),
+                               10.989, places=2)
+        self.assertEqual(Fraction(small_loss, 1_000 * U),
+                         Fraction(999_001, 1_000_000_000))
+        self.assertEqual(Fraction(big_loss, 10_000_000 * U),
+                         Fraction(90_909, 10_000_000_000_000))
+        # Chart widths are the loss relative to the largest
+        # loss (0.999001), to one decimal.
+        for v_usdc, width in ((1_000, "100.0"), (10_000, "99.1"),
+                              (100_000, "91.0"), (1_000_000, "50.0"),
+                              (10_000_000, "9.1")):
+            _, vl, _, _ = run(0, v_usdc)
+            self.assertEqual(f"{float(Fraction(vl, small_loss) * 100):.1f}",
+                             width)
+        # The model agrees, row by row, at the 1M donation,
+        # and the verdict is offset 0 fails at every size while
+        # offsets 6 and 18 pass at every size.
+        for v_usdc in (1_000, 10_000, 100_000, 1_000_000, 10_000_000):
+            for off, want_loss, want_net, want_pass in (
+                    (0, run(0, v_usdc)[1], run(0, v_usdc)[2], False),
+                    (6, run(6, v_usdc)[1], run(6, v_usdc)[2], True),
+                    (18, run(18, v_usdc)[1], run(18, v_usdc)[2], True)):
+                v = Vault(decimals_offset=off, min_deposit=0,
+                          perf_fee_bps=0)
+                d = check_donation(v, victim_deposit=v_usdc * U)
+                row = [r for r in d["detail"]
+                       if r["donation"] == 1_000_000_000_000][0]
+                self.assertEqual(row["victim_loss"], want_loss)
+                self.assertEqual(row["attacker_net"], want_net)
+                results = {r["name"]: r
+                           for r in run_all(v, victim_deposit=v_usdc * U)}
+                self.assertEqual(
+                    results["donation_inflation"]["pass"], want_pass)
+
+    def test_inflation_defense_measured_guide_page(self):
+        # Pins the guide page: the add() must exist with the
+        # headline numbers, and a link from the /guides/ index.
+        # The numbers are re-derived in
+        # test_inflation_defense_measured_guide_numbers; this
+        # pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-inflation-defense-measured/"',
+                      build)
+        start = build.index(
+            'add("/guides/erc4626-inflation-defense-measured/"')
+        end = build.index('add("/guides/how-to-use-the-erc4626-checker/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for num in ("0.999001", "0.990100", "0.909091", "0.500000",
+                    "0.090909", "0.000001", "-0.999999", "-1.000000",
+                    "1.000000 USDC", "100.0%", "99.1%", "91.0%",
+                    "50.0%", "9.1%", "9,999", "9,999,999"):
+            self.assertIn(num, block)
+        self.assertIn(
+            '<a href="/guides/erc4626-inflation-defense-measured/">',
+            build)
+
     def test_first_depositor_attack_guide_numbers(self):
         # First-depositor-attack guide: the same attack with a
         # 1 base-unit seed (0.000001 USDC) instead of 1 USDC.
