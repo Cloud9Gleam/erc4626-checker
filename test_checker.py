@@ -8016,7 +8016,7 @@ class TestChecker(unittest.TestCase):
                          build.CSS)
         self.assertIn(
             ".loss-chart--bare .loss-track::after{content:\"\";"
-            "position:absolute;inset:-.2em 0;pointer-events:none;"
+            "position:absolute;inset:-.325em 0;pointer-events:none;"
             "background-image:linear-gradient(to right,transparent "
             "calc(25% - 1px),rgba(17,24,39,.8) calc(25% - 1px),"
             "rgba(17,24,39,.8) calc(25% + 1px),transparent "
@@ -8052,13 +8052,13 @@ class TestChecker(unittest.TestCase):
         # browser read it as cracks; #160 still read cracks, so
         # a third alpha cut is not the lever — no seam over a bar
         # at any alpha. The gridlines live only under the fills,
-        # and the ::after now extends past mid-gap (.2em each
-        # side of the .25em row-gap) so the lines run down the
-        # chart wherever no bar covers them. The bare track drops
-        # overflow:hidden for the extension to paint, and the
-        # fill carries the 3px corner radius itself. Mobile pulls
-        # the extension back to .075em (half the .15em gap) so it
-        # cannot poke into the stacked label/value rows.
+        # and the ::after now extends past mid-gap (.325em each
+        # side of the .5em row-gap, #165 widening) so the lines run
+        # down the chart wherever no bar covers them. The bare
+        # track drops overflow:hidden for the extension to paint,
+        # and the fill carries the 3px corner radius itself.
+        # Mobile pulls the extension back to .15em (half the .3em
+        # gap) so it cannot poke into the stacked label/value rows.
         self.assertNotIn(".loss-chart--bare .loss-track::before",
                          build.CSS)
         self.assertNotIn(".loss-chart .loss-track::before", build.CSS)
@@ -8067,7 +8067,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-fill{border-radius:3px}",
                       build.CSS)
         self.assertIn(
-            ".loss-chart--bare .loss-track::after{inset:-.075em 0}",
+            ".loss-chart--bare .loss-track::after{inset:-.15em 0}",
             build.CSS)
         # Visual verdict #163 item 1 (2026-11-24,
         # checker-improvement): the ::after extends .2em above every
@@ -8096,6 +8096,44 @@ class TestChecker(unittest.TestCase):
         self.assertIn("c+=\"<p class='loss-title'>", js)
         self.assertIn("c+=\"<div class='loss-row'>", js)
 
+    def test_loss_chart_row_gap_wide(self):
+        # Visual verdict #163 item 3 (2026-11-24,
+        # checker-improvement): the rows were too tight — bars
+        # 26.6px tall with only a 4.2px gap between them
+        # (pixel-measured, hidden_files/measure-verdict165.py),
+        # so the two red bars read as one block. The bare-chart
+        # row-gap doubles .25em -> .5em desktop (~8px, about 30%
+        # of the bar height) and .15em -> .3em below 640px.
+        # The gridline ::after extension grows with the gap so
+        # the 25/50/75% lines stay continuous: desktop -.325em
+        # keeps #160's .15em overlap margin (2 x .325 - .5 =
+        # .15); mobile -.15em is exactly half the .3em gap, so
+        # it still cannot poke into the stacked label/value
+        # rows. The #164 first-row cap (top:0) is unchanged and
+        # still beats both inset rules. Guide charts (plain
+        # .loss-chart) keep their .25em flex-row margins.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".loss-chart--bare{display:grid;"
+                      "grid-template-columns:10em auto 1fr;"
+                      "column-gap:.7em;row-gap:.5em;align-items:center}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare{grid-template-columns:1fr;"
+                      "row-gap:.3em}",
+                      build.CSS)
+        self.assertIn("inset:-.325em 0", build.CSS)
+        self.assertIn(
+            ".loss-chart--bare .loss-track::after{inset:-.15em 0}",
+            build.CSS)
+        self.assertIn(".loss-row{display:flex;align-items:center;"
+                      "gap:.7em;margin:.25em 0;font-size:.92em}",
+                      build.CSS)
+        # Bar height untouched: the gap grows, the bars do not.
+        self.assertIn(".loss-track{flex:1;height:1.7em;",
+                      build.CSS)
+
     def test_loss_chart_label_column(self):
         # Visual verdict #124 new finding 1 (2026-11-20): the
         # donation-chart label column was 22em (~344px) while the
@@ -8123,7 +8161,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-label{flex:0 0 22em;text-align:right;color:#374151}",
                       build.CSS)
         self.assertIn(".loss-chart--bare{grid-template-columns:1fr;"
-                      "row-gap:.15em}",
+                      "row-gap:.3em}",
                       build.CSS)
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
@@ -8175,7 +8213,7 @@ class TestChecker(unittest.TestCase):
         # chart title rule; no trace of the retired unit label.
         self.assertIn(".loss-chart--bare{display:grid;"
                       "grid-template-columns:10em auto 1fr;"
-                      "column-gap:.7em;row-gap:.25em;align-items:center}",
+                      "column-gap:.7em;row-gap:.5em;align-items:center}",
                       build.CSS)
         self.assertIn(".loss-chart--bare .loss-row{display:contents}",
                       build.CSS)
@@ -8790,19 +8828,22 @@ class TestChecker(unittest.TestCase):
             r"\.loss-chart--bare \.loss-track::after\{[^}]*\}",
             build.CSS)
         self.assertIsNotNone(after)
-        self.assertIn("inset:-.2em 0", after.group(0))
+        self.assertIn("inset:-.325em 0", after.group(0))
         self.assertIn("rgba(17,24,39,.8)", after.group(0))
-        # The extension must reach past half the .25em row-gap, or
+        # The extension must reach past half the .5em row-gap, or
         # subpixel rounding leaves a 1px white slit at mid-gap
         # (measured with .125em: exactly one white pixel row).
-        # .2em covers a gap up to .4em.
-        self.assertIn("row-gap:.25em", build.CSS)
-        # Mobile: half the .15em gap, so the extension cannot poke
+        # .325em covers a gap up to .65em and keeps #160's .15em
+        # overlap margin (2 x .325 - .5 = .15).
+        self.assertIn("row-gap:.5em", build.CSS)
+        # Mobile: half the .3em gap, so the extension cannot poke
         # into the stacked label/value rows.
         self.assertIn(
-            ".loss-chart--bare .loss-track::after{inset:-.075em 0}",
+            ".loss-chart--bare .loss-track::after{inset:-.15em 0}",
             build.CSS)
-        self.assertIn("row-gap:.15em", build.CSS)
+        self.assertIn(".loss-chart--bare{grid-template-columns:1fr;"
+                      "row-gap:.3em}",
+                      build.CSS)
 
     def test_floor_binds_value_is_figure_only(self):
         # 2026-11-20, checker-improvement: on a 360px phone the
