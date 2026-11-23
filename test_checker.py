@@ -25048,6 +25048,165 @@ class TestChecker(unittest.TestCase):
             '<a href="/guides/erc4626-inflation-defense-measured/">',
             build)
 
+    def test_minimum_deposit_guide_numbers(self):
+        # Minimum-deposit guide: the donation attack (attacker
+        # seeds with the smallest deposit allowed, donates
+        # 1,000,000 USDC, victim deposits V, both redeem,
+        # attacker first) at four floors and two victim sizes,
+        # plus the no-floor coin flip and the offset-6 stack.
+        # Re-derived here with plain integer arithmetic,
+        # independent of any model file. Conversions use the
+        # OpenZeppelin rule the guide states -- virtual shares
+        # 10**offset, virtual assets 1, floor division both ways.
+        U = 10**6
+
+        def run(seed, donation, victim_usdc, offset=0, floor=0):
+            vs = 10**offset
+            va = 1
+
+            def to_shares(a, S, A):
+                return (a * (S + vs)) // (A + va)
+
+            def to_assets(s, S, A):
+                return (s * (A + va)) // (S + vs)
+
+            S, A = 0, 0
+            atk_shares = to_shares(seed, S, A)
+            if atk_shares == 0:
+                return ("revert", "attacker mints zero shares")
+            S += atk_shares
+            A += seed
+            A += donation
+            if victim_usdc * U < floor:
+                return ("revert", "below minimum deposit")
+            vic_shares = to_shares(victim_usdc * U, S, A)
+            if vic_shares == 0:
+                return ("revert", "victim mints zero shares")
+            S += vic_shares
+            A += victim_usdc * U
+            atk_out = to_assets(atk_shares, S, A)
+            S -= atk_shares
+            A -= atk_out
+            vic_out = to_assets(vic_shares, S, A)
+            return (victim_usdc * U - vic_out,
+                    atk_out - (seed + donation))
+
+        D = 1_000_000 * U
+        # The table (donation 1,000,000 USDC, offset 0):
+        # victim loss and attacker net in base units.
+        for floor_usdc, loss1k, net1k, loss100k, net100k in (
+                (1, 999_001, -999, 909_091, -90_909),
+                (100, 19, -9_981, 1_818, -8_182),
+                (1_000, 1_000, 0, 909, -91),
+                (10_000, None, None, 91, -9)):
+            seed = floor_usdc * U
+            if loss1k is None:
+                # A 1,000 USDC victim is refused by a 10,000
+                # USDC floor -- the deposit never enters.
+                got1k = run(seed, D, 1_000, floor=seed)
+                self.assertEqual(got1k, ("revert", "below minimum deposit"))
+            else:
+                got_loss1k, got_net1k = run(seed, D, 1_000)
+                self.assertEqual(got_loss1k, loss1k)
+                self.assertEqual(got_net1k, net1k)
+            got_loss100k, got_net100k = run(seed, D, 100_000)
+            self.assertEqual(got_loss100k, loss100k)
+            self.assertEqual(got_net100k, net100k)
+        # The guide's prose: a 100 USDC floor cuts the
+        # 100,000 USDC victim's loss about 500x.
+        self.assertEqual(Fraction(909_091, 1_818),
+                         Fraction(909091, 1818))
+        self.assertAlmostEqual(float(Fraction(909_091, 1_818)),
+                               500.05, places=1)
+        # The 1,000 USDC floor is not smooth: the small victim
+        # loses more there (1,000 base units) than at the 100
+        # USDC floor (19 base units) -- rounding, not a curve.
+        self.assertGreater(run(1_000 * U, D, 1_000)[0],
+                           run(100 * U, D, 1_000)[0])
+        # The attacker's net is never positive at any floor --
+        # and exactly zero in one cell, a 1,000 USDC floor
+        # against a 1,000 USDC victim, which is why the guide
+        # says "never profits" rather than "always loses".
+        for floor_usdc in (1, 100, 1_000, 10_000):
+            for v_usdc in (1_000, 100_000):
+                got = run(floor_usdc * U, D, v_usdc,
+                          floor=floor_usdc * U)
+                if got[0] != "revert":
+                    self.assertLessEqual(got[1], 0)
+        self.assertEqual(run(1_000 * U, D, 1_000,
+                             floor=1_000 * U)[1], 0)
+        # No floor at all: the attacker seeds with 1 base unit.
+        # Against the 1,000,000 USDC donation the victim's
+        # deposit mints zero shares and reverts; against a
+        # 1,000 USDC donation the same vault takes a third of
+        # the deposit, while a 1 USDC floor cuts that case to
+        # 499 base units.
+        self.assertEqual(run(1, D, 1_000)[0], "revert")
+        loss, net = run(1, 1_000 * U, 1_000)
+        self.assertEqual(loss, 333_333_333)
+        self.assertEqual(net, -333_333_334)
+        loss, net = run(1 * U, 1_000 * U, 1_000)
+        self.assertEqual(loss, 499)
+        self.assertEqual(net, -501)
+        # Stacked with the offset: offset 6 and a 1 USDC floor
+        # cost both victims exactly 1 base unit.
+        for v_usdc in (1_000, 100_000):
+            loss, net = run(1 * U, D, v_usdc, offset=6)
+            self.assertEqual(loss, 1)
+            self.assertEqual(net, -999_999)
+        # The model agrees, cell by cell, at the 1M donation
+        # (its seed is max(min_deposit, 1 USDC), identical
+        # here because every floor is at least 1 USDC).
+        for floor_usdc, v_usdc, want_loss, want_net in (
+                (1, 1_000, 999_001, -999),
+                (1, 100_000, 909_091, -90_909),
+                (100, 1_000, 19, -9_981),
+                (100, 100_000, 1_818, -8_182),
+                (1_000, 1_000, 1_000, 0),
+                (1_000, 100_000, 909, -91),
+                (10_000, 100_000, 91, -9)):
+            v = Vault(min_deposit=floor_usdc * U)
+            d = check_donation(v, victim_deposit=v_usdc * U,
+                               donations=(D,))
+            row = d["detail"][0]
+            self.assertEqual(row["victim_loss"], want_loss)
+            self.assertEqual(row["attacker_net"], want_net)
+        v = Vault(min_deposit=10_000 * U)
+        d = check_donation(v, victim_deposit=1_000 * U,
+                           donations=(D,))
+        self.assertIsNone(d["detail"][0]["victim_loss"])
+        self.assertEqual(d["detail"][0]["error"],
+                         "below minimum deposit")
+        for v_usdc in (1_000, 100_000):
+            v = Vault(decimals_offset=6, min_deposit=1 * U)
+            d = check_donation(v, victim_deposit=v_usdc * U,
+                               donations=(D,))
+            self.assertEqual(d["detail"][0]["victim_loss"], 1)
+
+    def test_minimum_deposit_guide_page(self):
+        # Pins the guide page: the add() must exist with the
+        # headline numbers, and a link from the /guides/ index.
+        # The numbers are re-derived in
+        # test_minimum_deposit_guide_numbers; this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/erc4626-minimum-deposit/"', build)
+        start = build.index(
+            'add("/guides/erc4626-minimum-deposit/"')
+        end = build.index('add("/guides/erc4626-maxwithdraw/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for num in ("0.999001", "0.909091", "0.000019", "0.001818",
+                    "0.001000", "0.000909", "0.000091", "333.333333",
+                    "0.000499", "0.000001", "−0.090909", "−0.008182",
+                    "Refused — below the floor", "500 times smaller",
+                    "never profits", "exactly zero in one cell"):
+            self.assertIn(num, block)
+        self.assertIn(
+            '<a href="/guides/erc4626-minimum-deposit/">',
+            build)
+
     def test_first_depositor_attack_guide_numbers(self):
         # First-depositor-attack guide: the same attack with a
         # 1 base-unit seed (0.000001 USDC) instead of 1 USDC.
