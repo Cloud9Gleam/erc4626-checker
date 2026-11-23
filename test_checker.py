@@ -25913,5 +25913,220 @@ class TestChecker(unittest.TestCase):
             '<a href="/guides/how-to-use-the-erc4626-checker/">', build)
 
 
+    def test_donation_deposit_hook_reentrancy_offset6_guide_numbers(self):
+        # Pins /guides/erc4626-donation-deposit-hook-reentrancy-offset6/
+        # to the model: independent integer recomputation (OZ
+        # conversion rule, virtual shares 10**offset, virtual assets
+        # 1), no model import. Setup: offset-6 vault seeded with 1
+        # base unit of assets against 1 share-base-unit at $1.00;
+        # Mallory holds the seed share and has 100,000 USDC to
+        # deposit plus 1,000,000 USDC to donate; Alice has 100,000
+        # USDC. USDC = 10**6 base units; share counts are raw base
+        # units, displayed at 6 decimals.
+        U = 10 ** 6
+        V6, V0 = 10 ** 6, 1
+        DON, DEP = 1_000_000 * U, 100_000 * U
+
+        def mint(assets, supply, total, virt):
+            return assets * (supply + virt) // (total + 1)
+
+        def redeem(shares, supply, total, virt):
+            return shares * (total + 1) // (supply + virt)
+
+        class Sim:
+            def __init__(self, virt):
+                self.a, self.s = 1, 1
+                self.bal = {"mallory": 1, "alice": 0}
+                self.virt = virt
+
+            def donate(self, amount):
+                self.a += amount
+
+            def deposit(self, who, amount, hook):
+                m = mint(amount, self.s, self.a, self.virt)
+                if m == 0:
+                    raise ValueError("zero shares minted")
+                if hook == "auto-credit":
+                    self.s += m
+                    self.bal[who] += m
+                self.a += amount
+                self.s += m
+                self.bal[who] += m
+                return m
+
+            def redeem(self, who, shares):
+                out = redeem(shares, self.s, self.a, self.virt)
+                self.s -= shares
+                self.a -= out
+                self.bal[who] -= shares
+                return out
+
+            def value(self, who):
+                return redeem(self.bal[who], self.s, self.a, self.virt)
+
+        # 0. Setup: a 100,000 USDC deposit at 1/1 previews
+        # 50,000,050,000.000000 shares at offset 6 (100,000 at
+        # offset 0).
+        self.assertEqual(mint(DEP, 1, 1, V6), 50_000_050_000_000_000)
+        self.assertEqual(mint(DEP, 1, 1, V0), 100_000 * U)
+
+        # 1. Control: Alice mints 0.100000 shares, Mallory redeems
+        # the seed for 0.999999 USDC -- a loss of 999,999.000002 --
+        # and 1,099,999.000002 stays stranded.
+        v = Sim(V6)
+        v.donate(DON)
+        self.assertEqual(v.deposit("alice", DEP, None), 100_000)
+        out = v.redeem("mallory", 1)
+        self.assertEqual(out, 999_999)
+        profit1 = out - DON - 1
+        self.assertEqual(profit1, -999_999_000_002)
+        self.assertEqual(v.a, 1_099_999_000_002)
+
+        # 2. Donation first: hook and deposit mint 0.100000 each,
+        # Alice mints 0.109090 twice (0.218180 total); Mallory
+        # redeems 169,231.713018, a loss of 930,768.286983 -- the
+        # hook recovers 69,230.713019 of the donation. Alice's
+        # shares are worth 184,613.952662 (+84,613.952662) and
+        # 846,154.334321 stays stranded; the ledger closes.
+        v = Sim(V6)
+        v.donate(DON)
+        self.assertEqual(v.deposit("mallory", DEP, "auto-credit"),
+                         100_000)
+        self.assertEqual(v.deposit("alice", DEP, "auto-credit"),
+                         109_090)
+        self.assertEqual(v.bal["alice"], 2 * 109_090)
+        self.assertEqual(v.s + V6, 1_418_181)  # effective supply
+        out = v.redeem("mallory", v.bal["mallory"])
+        self.assertEqual(out, 169_231_713_018)
+        profit2 = out - 1_100_000 * U - 1
+        self.assertEqual(profit2, -930_768_286_983)
+        alice_val = v.value("alice")
+        self.assertEqual(alice_val, 184_613_952_662)
+        self.assertEqual(alice_val - DEP, 84_613_952_662)
+        stranded = v.a - alice_val
+        self.assertEqual(stranded, 846_154_334_321)
+        self.assertEqual(out + alice_val + stranded,
+                         1_200_000 * U + 1)
+        self.assertEqual(profit2 - profit1, 69_230_713_019)
+
+        # 3. Hook first: Mallory holds 100,000,100,000.000001
+        # shares before the donation; Alice double-mints
+        # 18,181,836,363.785124 in total. Mallory redeems
+        # 1,015,384.615376, a loss of 84,615.384625 -- thirteen
+        # base units from the offset-0 loss. Alice's shares are
+        # worth 184,615.384615; ten base units of dust stay.
+        v = Sim(V6)
+        self.assertEqual(v.deposit("mallory", DEP, "auto-credit"),
+                         50_000_050_000_000_000)
+        self.assertEqual(v.bal["mallory"], 100_000_100_000_000_001)
+        v.donate(DON)
+        v.deposit("alice", DEP, "auto-credit")
+        self.assertEqual(v.bal["alice"], 18_181_836_363_785_124)
+        out = v.redeem("mallory", v.bal["mallory"])
+        self.assertEqual(out, 1_015_384_615_376)
+        profit3 = out - 1_100_000 * U - 1
+        self.assertEqual(profit3, -84_615_384_625)
+        alice_val = v.value("alice")
+        self.assertEqual(alice_val, 184_615_384_615)
+        self.assertEqual(out + alice_val, 1_199_999_999_991)
+        # Float64 rounds both 17-digit share counts; the guide
+        # uses the integers.
+        self.assertEqual(f"{18_181_836_363_785_124 / 1e6:.6f}",
+                         "18181836363.785126")
+        self.assertEqual(f"{100_000_100_000_000_001 / 1e6:.6f}",
+                         "100000100000.000000")
+
+        # 4. Victim-side hook: Alice's hook and deposit mint
+        # 0.100000 each, doubling the supply from 100,001 to
+        # 200,001; Mallory redeems the seed for 0.916665 USDC
+        # (0.999999 in the control).
+        v = Sim(V6)
+        v.donate(DON)
+        self.assertEqual(v.deposit("alice", DEP, "auto-credit"),
+                         100_000)
+        self.assertEqual(v.s, 200_001)
+        out = v.redeem("mallory", 1)
+        self.assertEqual(out, 916_665)
+        self.assertEqual(out - DON - 1, -999_999_083_336)
+
+        # 5. Defense (no-op hook): Mallory and Alice each mint
+        # 0.100000 once. Mallory redeems 100,000.916666, a loss of
+        # 999,999.083335; Alice's shares are worth 99,999.916666
+        # (a loss of 0.083334); the two redemptions total
+        # 200,000.833332 and 999,999.166669 stays stranded.
+        v = Sim(V6)
+        v.donate(DON)
+        self.assertEqual(v.deposit("mallory", DEP, "noop"), 100_000)
+        self.assertEqual(v.deposit("alice", DEP, "noop"), 100_000)
+        self.assertEqual(v.bal["mallory"], 100_001)
+        out = v.redeem("mallory", v.bal["mallory"])
+        self.assertEqual(out, 100_000_916_666)
+        profit5 = out - 1_100_000 * U - 1
+        self.assertEqual(profit5, -999_999_083_335)
+        alice_val = v.value("alice")
+        self.assertEqual(alice_val, 99_999_916_666)
+        self.assertEqual(DEP - alice_val, 83_334)
+        self.assertEqual(out + alice_val, 200_000_833_332)
+        stranded = v.a - alice_val
+        self.assertEqual(stranded, 999_999_166_669)
+        self.assertEqual(out + alice_val + stranded,
+                         1_200_000 * U + 1)
+
+        # Offset-0 cross-references (guide intro + checklist):
+        # control loss 500,000.000000, hook-first loss
+        # 84,615.384612 -- thirteen base units apart.
+        v = Sim(V0)
+        v.donate(DON)
+        with self.assertRaises(ValueError):
+            v.deposit("alice", DEP, None)
+        out = v.redeem("mallory", 1)
+        self.assertEqual(out, 500_000_000_001)
+        self.assertEqual(out - DON - 1, -500_000_000_000)
+        v = Sim(V0)
+        v.deposit("mallory", DEP, "auto-credit")
+        v.donate(DON)
+        v.deposit("alice", DEP, "auto-credit")
+        out = v.redeem("mallory", v.bal["mallory"])
+        self.assertEqual(out - 1_100_000 * U - 1, -84_615_384_612)
+        self.assertEqual(-84_615_384_625 - (-84_615_384_612), -13)
+
+    def test_donation_deposit_hook_reentrancy_offset6_guide_page(self):
+        # Pins the guide page: the add() must exist with the
+        # headline numbers, the float-rounding warning, and a link
+        # from the /guides/ index. The numbers are re-derived in
+        # test_donation_deposit_hook_reentrancy_offset6_guide_numbers;
+        # this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn(
+            '"/guides/erc4626-donation-deposit-hook-reentrancy-offset6/"',
+            build)
+        start = build.index(
+            'add("/guides/erc4626-donation-deposit-hook-reentrancy-offset6/"')
+        end = build.index(
+            'add("/guides/erc4626-stale-total-assets-cache/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for num in ("999,999.000002", "69,230.713019",
+                    "169,231.713018", "930,768.286983",
+                    "184,613.952662", "846,154.334321",
+                    "100,000,100,000.000001",
+                    "18,181,836,363.785124",
+                    "1,015,384.615376", "84,615.384625",
+                    "84,615.384612", "thirteen base units",
+                    "184,615.384615", "0.916665",
+                    "100,000.916666", "999,999.083335",
+                    "99,999.916666", "0.083334",
+                    "999,999.166669", "50,000,050,000.000000",
+                    "0.100000", "0.109090", "0.218180",
+                    "500,000.000000"):
+            self.assertIn(num, block)
+        self.assertIn("Float64 rounds 17-digit share counts", block)
+        self.assertIn(
+            '<a href="/guides/erc4626-donation-deposit-hook-reentrancy-offset6/">',
+            build)
+
+
 if __name__ == "__main__":
     unittest.main()
