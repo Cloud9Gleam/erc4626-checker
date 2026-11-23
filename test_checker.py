@@ -2272,7 +2272,7 @@ class TestChecker(unittest.TestCase):
         USDC = 1_000_000
         body = build.checker_body()
         self.assertIn(
-            '<pre><code id="api-curl">curl "https://check.n1netw3n.live/api/check?preset=alphaprimer&amp;offset=6&amp;min_usdc=1&amp;fee_bps=1000&amp;victim_usdc=100000&amp;vault_assets_usdc=0&amp;vault_shares=0"</code></pre>',
+            '<pre class="api-example"><code id="api-curl">curl "https://check.n1netw3n.live/api/check?preset=alphaprimer&amp;offset=6&amp;min_usdc=1&amp;fee_bps=1000&amp;victim_usdc=100000&amp;vault_assets_usdc=0&amp;vault_shares=0"</code></pre>',
             body)
         self.assertIn("Copy curl example", body)
         self.assertEqual(body.count("function copyCodeBlock"), 1)
@@ -2304,7 +2304,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Copy email parameters", para)
         self.assertIn('id="email-params-status"', para)
         self.assertNotIn("<code>offset=", para)
-        m = re.search(r'<pre><code id="email-params">(.*?)</code></pre>',
+        m = re.search(r'<pre class="api-example"><code id="email-params">(.*?)</code></pre>',
                       para, re.DOTALL)
         self.assertIsNotNone(m)
         shown = m.group(1).strip().split("\n")
@@ -2353,7 +2353,7 @@ class TestChecker(unittest.TestCase):
                                 1_000_000 * USDC, 1_000_000)
         self.assertEqual(para.count(note), 1)
         # The note is outside the copyable block and the mailto body.
-        m = re.search(r'<pre><code id="email-params">(.*?)</code></pre>',
+        m = re.search(r'<pre class="api-example"><code id="email-params">(.*?)</code></pre>',
                       para, re.DOTALL)
         self.assertIsNotNone(m)
         self.assertNotIn("counted at 6 decimals", m.group(1))
@@ -9220,7 +9220,7 @@ class TestChecker(unittest.TestCase):
         # one CSS rule covers the static page and the Worker re-render.
         html = build.checker_body()
         self.assertIn('<div class="email-para">', html)
-        self.assertIn('<pre><code id="email-params">', html)
+        self.assertIn('<pre class="api-example"><code id="email-params">', html)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn("email-para", worker)
@@ -9239,7 +9239,52 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(".email-para pre{width:max-content", worker)
         # The curl example is a plain <pre> outside .email-para and
         # keeps the dark full-width code style.
-        self.assertIn('<pre><code id="api-curl">', html)
+        self.assertIn('<pre class="api-example"><code id="api-curl">', html)
+
+    def test_api_example_blocks_wrap_instead_of_scrolling(self):
+        # Visual verdict #169 (2026-11-24): the curl one-liner is
+        # ~150 chars and overflowed its container by ~465px at desktop
+        # width and ~1000px at 360px (pre scrollW 1411 vs clientW 946;
+        # 1327 vs 310), so a visitor had to scroll sideways to see the
+        # tail of the example they are meant to copy. The two
+        # API-example pres wrap instead of scrolling; the Solidity
+        # snippets in guides/research keep the global overflow-x:auto.
+        # The live geometry is pinned by
+        # hidden_files/verdict169-curl-wrap-harness.mjs.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "pre.api-example{white-space:pre-wrap;overflow-wrap:anywhere;"
+            "overflow-x:visible}",
+            build.CSS)
+        self.assertEqual(build.CSS.count("pre.api-example"), 1)
+        # The global dark pre style still scrolls for code snippets.
+        self.assertIn("pre{background:#111827;color:#e5e7eb;"
+                      "padding:1em;border-radius:8px;overflow-x:auto}",
+                      build.CSS)
+        html = build.checker_body()
+        self.assertIn('<pre class="api-example"><code id="api-curl">', html)
+        self.assertIn('<pre class="api-example"><code id="email-params">',
+                      html)
+        # Exactly two api-example pres on the checker page.
+        self.assertEqual(html.count('class="api-example"'), 2)
+        # The curl text itself is unchanged — wrapping is visual only.
+        self.assertIn('curl "https://check.n1netw3n.live/api/check?'
+                      'preset=alphaprimer', html)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("pre.api-example{white-space:pre-wrap;"
+                      "overflow-wrap:anywhere;overflow-x:visible}", worker)
+        # CSS (1) + static page curl/email pres (2) + CHECKER_TEMPLATE
+        # curl pre (1) + emailParaHTML JS string (1).
+        self.assertEqual(worker.count("api-example"), 5)
+        # Research pages keep plain scrolling pres — no api-example class.
+        research = dict((p, b) for p, t, d, k, b in build.PAGES)[
+            "/research/thunder-loan/"]
+        self.assertIn("<pre>", research)
+        self.assertNotIn("api-example", research)
 
     def test_api_curl_follows_the_run_in_the_worker(self):
         # Visual verdict #167 item 1 (2026-11-24): the Worker serves
