@@ -8313,7 +8313,7 @@ class TestChecker(unittest.TestCase):
             # orphaned "execution" at 320-700px; the displayed label
             # is shortened at render time (the model string, the
             # splitter and the API JSON keep the full wording).
-            self.assertIn("<td class='check-label'>deposit preview</td>",
+            self.assertIn("<td class='check-label'>deposit</td>",
                           html)
             self.assertNotIn("deposit preview matches execution</td>",
                              html)
@@ -8487,9 +8487,9 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         short = {
-            "deposit preview matches execution": "deposit preview",
-            "mint preview matches execution": "mint preview",
-            "redeem preview matches execution": "redeem preview",
+            "deposit preview matches execution": "deposit",
+            "mint preview matches execution": "mint",
+            "redeem preview matches execution": "redeem",
             "smallest deposit minting 1 share": "1-share threshold",
             # 2026-11-23, checker-improvement (visual verdict #156
             # minor item): the share-price label wrapped at 1919px
@@ -8499,7 +8499,19 @@ class TestChecker(unittest.TestCase):
             # model's real U+00A0; the Pass-rule sentence below the
             # table keeps the full "1,000,000 shares".
             "price per 1,000,000\u00a0shares": "price / 1M shares",
+            # Visual verdict #159 item (a): the Minimum label
+            # "min-deposit floor binds" orphaned "binds" and the
+            # "no zero-share deposit" label wrapped too, both at
+            # 1919px on the default preset. The preview labels
+            # shorten one step further — the card title, blurb and
+            # Pass rule all say "preview" already.
+            "no zero-share deposit": "no zero-share",
         }
+        # "min-deposit floor binds" only exists on the default preset
+        # (noprot's min_deposit is 0, so the floor never binds) —
+        # check it on the default HTML only; the JS map carries it
+        # regardless, so the template assertion below covers both.
+        short_default_only = {"min-deposit floor binds": "floor binds"}
         for v, kwargs in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
                        perf_fee_bps=1000), {}),
@@ -8510,14 +8522,83 @@ class TestChecker(unittest.TestCase):
                 self.assertIn(
                     f"<td class='check-label'>{short_label}</td>", html)
                 self.assertNotIn(f"{long_label}</td>", html)
+            if v.decimals_offset == 6:
+                for long_label, short_label in short_default_only.items():
+                    self.assertIn(
+                        f"<td class='check-label'>{short_label}</td>", html)
+                    self.assertNotIn(f"{long_label}</td>", html)
         # The Worker-side template carries the same map and applies
         # it to the label cell, not the value cell.
         js = build.checker_results_html_js()
         self.assertIn("function shortLabel(s)", js)
-        for long_label, short_label in short.items():
+        for long_label, short_label in {**short, **short_default_only}.items():
             self.assertIn(f'"{long_label}":"{short_label}"', js)
         self.assertIn("nbspUnits(esc(shortLabel(row[0])))", js)
         self.assertNotIn("shortLabel(row[1])", js)
+
+    def test_verdict159_minimum_preview_orphans_fixed(self):
+        # Visual verdict #159 item (a) (2026-11-23, checker-
+        # improvement, real browser + headless-measured): on the
+        # default preset at 1919px the Minimum card had two 66.6px
+        # rows — the "no zero-share deposit" value wrapped leaving
+        # "share" alone and the "min-deposit floor binds" label
+        # wrapped leaving "binds" alone — and the Preview labels
+        # "deposit preview" / "redeem preview" wrapped at a 138px
+        # label column. Render-time only: the labels shorten
+        # (LABEL_SHORT), the redundant value shortens (VALUE_SHORT),
+        # the model strings, the splitter and the API JSON keep the
+        # full wording. After the fix every check-table row on both
+        # presets is one line (38.5px at 1919px, 29.6px at 360px,
+        # hidden_files/measure-verdict159a.py).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        NB = "\u00a0"
+        # Model strings untouched.
+        v = Vault(decimals_offset=6, min_deposit=1_000_000,
+                  perf_fee_bps=1000)
+        detail = check_minimum_viable_deposit(v)["detail"]
+        self.assertIn("no zero-share deposit: 1 base unit mints 1 share",
+                      detail)
+        self.assertIn(
+            f"min-deposit floor binds: effective minimum 1.000000{NB}USDC",
+            detail)
+        for v, kwargs in (
+                (Vault(decimals_offset=6, min_deposit=1_000_000,
+                       perf_fee_bps=1000), {}),
+                (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
+                 {"off": 0, "mn": 0, "fee": 0})):
+            html = build.results_html(run_all(v), **kwargs)
+            self.assertIn("<td class='check-label'>no zero-share</td>",
+                          html)
+            self.assertIn(
+                "<td class='check-value'><strong>1</strong> base unit</td>",
+                html)
+            self.assertIn("<td class='check-label'>deposit</td>", html)
+            self.assertIn("<td class='check-label'>mint</td>", html)
+            self.assertIn("<td class='check-label'>redeem</td>", html)
+            self.assertNotIn("no zero-share deposit</td>", html)
+            self.assertNotIn("1 base unit mints 1 share", html)
+            self.assertNotIn("deposit preview</td>", html)
+            self.assertNotIn("mint preview</td>", html)
+            self.assertNotIn("redeem preview</td>", html)
+            # Numbers untouched by a render-only change.
+            self.assertIn("0.909091" if v.decimals_offset == 0
+                          else "0.000900", html)
+        # Default preset has the floor-binds row, shortened.
+        html = build.results_html(run_all(
+            Vault(decimals_offset=6, min_deposit=1_000_000,
+                  perf_fee_bps=1000)))
+        self.assertIn("<td class='check-label'>floor binds</td>", html)
+        self.assertNotIn("min-deposit floor binds</td>", html)
+        # Worker-side template: same map, same value shortening.
+        js = build.checker_results_html_js()
+        self.assertIn('"min-deposit floor binds":"floor binds"', js)
+        self.assertIn('"no zero-share deposit":"no zero-share"', js)
+        self.assertIn('"deposit preview matches execution":"deposit"', js)
+        self.assertIn("function shortValue(l,v)", js)
+        self.assertIn("shortValue(row[0],row[1])", js)
 
     def test_floor_binds_value_is_figure_only(self):
         # 2026-11-20, checker-improvement: on a 360px phone the
@@ -8546,10 +8627,11 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             f"min-deposit floor binds: effective minimum 1.000000{NB}USDC",
             detail)
-        # Rendered row: figure only, no "effective minimum".
+        # Rendered row: figure only, no "effective minimum"; the
+        # label is shortened at render time (visual verdict #159).
         html = build.results_html(run_all(v))
         self.assertIn(
-            "<tr><td class='check-label'>min-deposit floor binds</td>"
+            "<tr><td class='check-label'>floor binds</td>"
             "<td class='check-value'><span class='nowrap'>"
             "<strong>1.000000</strong> USDC</span></td></tr>", html)
         self.assertNotIn("effective minimum", html)
@@ -8648,7 +8730,12 @@ class TestChecker(unittest.TestCase):
             "/-?\\d[\\d,]*(?:\\.\\d+)?/g,\"<strong>$&</strong>\");}",
             js)
         self.assertIn("function splitDetailLine(s)", js)
-        self.assertIn("boldNumbers(nbspUnits(esc(row[1])))", js)
+        # Visual verdict #159: the value cell now passes through
+        # shortValue first (the "1 base unit mints 1 share" value
+        # shortens to "1 base unit") and still through boldNumbers —
+        # every numeric token in a value cell stays bold.
+        self.assertIn(
+            "boldNumbers(nbspUnits(esc(shortValue(row[0],row[1]))))", js)
         self.assertIn("nbspUnits(esc(shortLabel(row[0])))", js)
         # The same call survives for the sentence fallback — rounding's
         # "floor/ceil directions hold" now renders as a
