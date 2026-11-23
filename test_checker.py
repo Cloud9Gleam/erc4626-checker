@@ -23675,7 +23675,7 @@ class TestChecker(unittest.TestCase):
             self.assertNotIn(wrong, section)
         self.assertNotIn("price <strong>0.995</strong>", section)
 
-    def test_fee_on_transfer_guide_first_deposit(self):
+    def test_fee_on_transfer_guide_numbers(self):
         # 2026-11-23: the guide's first example had no numbers test
         # (only the ten-deposit example was pinned). Re-derive it
         # here with plain fractions.Fraction arithmetic, independent
@@ -24369,6 +24369,131 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/guides/erc4626-inflation-attack/">',
                       build)
 
+    def test_first_depositor_attack_guide_numbers(self):
+        # First-depositor-attack guide: the same attack with a
+        # 1 base-unit seed (0.000001 USDC) instead of 1 USDC.
+        # Re-derived here with plain fractions.Fraction
+        # arithmetic, independent of any model file. Conversions
+        # use the OpenZeppelin rule -- virtual shares 10**offset,
+        # virtual assets 1 -- and redemption is attacker first,
+        # as in the checker's donation check.
+        U = 10**6
+
+        def to_shares(a, S, A, vs, va=1):
+            return (a * (S + vs)) // (A + va)
+
+        def to_assets(s, S, A, vs, va=1):
+            return (s * (A + va)) // (S + vs)
+
+        # Scenario B: offset 0, 1 base-unit seed, 1,000,000 USDC
+        # donation, victim deposits 100,000 USDC.
+        vs = 1
+        S, A = 0, 0
+        seed_shares = to_shares(1, S, A, vs)
+        self.assertEqual(seed_shares, 1)
+        S += seed_shares
+        A += 1
+        A += 1_000_000 * U
+        # One share costs about 500,000 USDC: the price is
+        # (assets + 1) / (supply + 1) base units per share.
+        self.assertEqual(Fraction(A + 1, S + vs) / U,
+                         Fraction(500_000_000_001, U))
+        # The victim's deposit mints zero shares -- in a vault
+        # that reverts on zero shares her funds never enter and
+        # she loses nothing.
+        self.assertEqual(to_shares(100_000 * U, S, A, vs), 0)
+
+        # Scenario C: offset 6, same 1 base-unit seed.
+        vs = 10**6
+        S, A = 0, 0
+        seed_shares = to_shares(1, S, A, vs)
+        self.assertEqual(seed_shares, 1_000_000)
+        S += seed_shares
+        A += 1
+        A += 1_000_000 * U
+        # Price about 0.50 USDC per share.
+        self.assertEqual(Fraction(A + 1, S + vs) / U,
+                         Fraction(500_000_000_001, 10**6 * U))
+        vic_shares = to_shares(100_000 * U, S, A, vs)
+        self.assertEqual(vic_shares, 199_999)
+        S += vic_shares
+        A += 100_000 * U
+        # Both redeem, attacker first: the victim gets back
+        # 99,999.545454 USDC, losing 0.454546.
+        atk_out = to_assets(seed_shares, S, A, vs)
+        S -= seed_shares
+        A -= atk_out
+        vic_out = to_assets(vic_shares, S, A, vs)
+        self.assertEqual(vic_out, 99_999_545_454)
+        self.assertEqual(Fraction(vic_out, U),
+                         Fraction("99999.545454"))
+        self.assertEqual(100_000 * U - vic_out, 454_546)
+        self.assertEqual(Fraction(100_000 * U - vic_out, U),
+                         Fraction("0.454546"))
+
+        # The model agrees: same scenarios through the Vault
+        # class. Offset 0, 1 base-unit seed, victim deposit
+        # reverts on zero shares.
+        v = Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)
+        v.deposit(1)
+        v.donate(1_000_000 * U)
+        with self.assertRaises(ValueError):
+            v.deposit(100_000 * U)
+        # Offset 6, same seed: victim mints 199,999 shares and
+        # redeems 99,999.545454 after the attacker.
+        v = Vault(decimals_offset=6, min_deposit=0, perf_fee_bps=0)
+        atk = v.deposit(1)
+        self.assertEqual(atk, 1_000_000)
+        v.donate(1_000_000 * U)
+        vic = v.deposit(100_000 * U)
+        self.assertEqual(vic, 199_999)
+        v.redeem(atk)
+        self.assertEqual(v.redeem(vic), 99_999_545_454)
+        # The guide's section 1 numbers are the inflation-attack
+        # scenario (1 USDC seed): the model's 1M donation row
+        # agrees -- victim loss 0.909091, attacker net -0.090909.
+        v = Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)
+        rows = check_donation(v)["detail"]
+        row = [r for r in rows
+               if r["donation"] == 1_000_000_000_000][0]
+        self.assertEqual(row["victim_loss"], 909_091)
+        self.assertEqual(row["attacker_net"], -90_909)
+        # The mitigation the guide quotes: offset 6 bounds
+        # victim loss to 0.0009 USDC in the checker's
+        # measurements; offset 0 fails at 0.909091.
+        for off, mn, fee, worst, ok in (
+                (0, 0, 0, 909_091, False),
+                (6, 1_000_000, 1000, 900, True)):
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee)
+            results = {r["name"]: r for r in run_all(v)}
+            d = results["donation_inflation"]
+            self.assertEqual(d["pass"], ok)
+            self.assertEqual(
+                max(x["victim_loss"] for x in d["detail"]), worst)
+
+    def test_first_depositor_attack_guide_page(self):
+        # Pins the guide page: the add() must exist with the
+        # headline numbers, and a link from the /guides/ index.
+        # The numbers are re-derived in
+        # test_first_depositor_attack_guide_numbers; this pins
+        # the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/first-depositor-attack/"', build)
+        start = build.index('add("/guides/first-depositor-attack/"')
+        end = build.index(
+            'add("/guides/vault-share-price-manipulation/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for num in ("99,999", "100,000,000,000", "99,999.090909",
+                    "0.909091", "0.090909", "500,000", "199,999",
+                    "99,999.545454", "0.454546", "0.50", "0.0009",
+                    "1,000,000"):
+            self.assertIn(num, block)
+        self.assertIn('<a href="/guides/first-depositor-attack/">',
+                      build)
 
 
 if __name__ == "__main__":
