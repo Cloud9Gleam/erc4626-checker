@@ -4913,7 +4913,7 @@ class TestChecker(unittest.TestCase):
                       'fee-on-transfer Medium — never considered, 15/15 tests '
                       'passing.</span>', track)
         self.assertIn('<a href="/research/zaros/">Zaros Part 2</a>'
-                      '<span class="track-findings">66 findings · 15H 32M 19L</span>'
+                      '<span class="track-findings">66 re-verified · 15H 32M 19L</span>'
                       '<span class="track-lead">66 of 70 '
                       'awarded findings re-derived (16 High, 35 Medium, '
                       '19 Low; $70,000 pool), four presented as MISSes (1 High, '
@@ -4930,7 +4930,7 @@ class TestChecker(unittest.TestCase):
         self.assertRegex(
             track,
             r'<a href="/research/gamma/">Gamma Perpetual Vault</a>'
-            r'<span class="track-findings">25 findings · 5H 8M 12L</span>'
+            r'<span class="track-findings">25 re-verified · 5H 8M 12L</span>'
             r'<span class="track-lead">25 of 27 validated\s+contest findings re-verified '
             r'\(5 High, 9 Medium, 13 Low; \$50,000 pool\), two presented '
             r'as MISSes \(1 Medium, 1 Low\), four with\s+forge PoCs, one live on-chain\.</span></li>')
@@ -5003,7 +5003,7 @@ class TestChecker(unittest.TestCase):
         def splits(slug, miss_re, miss_map):
             m = re.search(
                 r'<a href="/research/%s/">.*?<span class="track-findings">'
-                r'(\d+) findings · (\d+)H (\d+)M (\d+)L</span>'
+                r'(\d+) (?:findings|re-verified) · (\d+)H (\d+)M (\d+)L</span>'
                 % re.escape(slug), audit, re.S)
             self.assertIsNotNone(m, slug)
             pill = tuple(int(x) for x in m.groups()[1:])
@@ -5142,9 +5142,9 @@ class TestChecker(unittest.TestCase):
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         track = audit[audit.index("<h2>Track record</h2>"):]
         expected = {
-            "gamma": "25 findings · 5H 8M 12L",
-            "battlechain-confidence-pools": "9 findings · 3M 6L",
-            "zaros": "66 findings · 15H 32M 19L",
+            "gamma": "25 re-verified · 5H 8M 12L",
+            "battlechain-confidence-pools": "9 re-verified · 3M 6L",
+            "zaros": "66 re-verified · 15H 32M 19L",
             "thunder-loan": "4 findings · 3H 1M",
             "puppy-raffle": "9 findings · 2H 2M 5L",
             "santa": "6 findings · 4H 1M 1L",
@@ -5253,7 +5253,7 @@ class TestChecker(unittest.TestCase):
                       "contest's own award.", intro)
         # The Gamma example is concrete, not abstract: both splits and
         # both MISS ids appear in the intro itself.
-        self.assertIn("Gamma's pill reads 25 findings (5 High, 8 Medium, "
+        self.assertIn("Gamma's pill reads 25 re-verified (5 High, 8 Medium, "
                       "12 Low) while its sentence says 25 of 27 validated "
                       "(5 High, 9 Medium, 13 Low): the contest awarded 27, "
                       "and the two missing ones, M-05 and L-12, are "
