@@ -1368,6 +1368,14 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
                       "victim loses 0.999001 USDC", custom)
         self.assertNotIn("1,000 USDC deposit loses", custom)
+        # Visual verdict #167 (2026-11-24): the FAIL sentence uses the
+        # same six-decimal form as the table — a worst loss of 99,890
+        # base units reads "0.099890" in the strip, not "0.09989".
+        synthetic = [{"name": "donation_inflation", "pass": False,
+                      "detail": [{"donation": 1_000_000_000_000,
+                                  "victim_loss": 99890}]}]
+        self.assertIn("victim loses 0.099890 USDC",
+                      build.verdict_strip_html(synthetic))
         # Visual verdict #124 (g) (2026-11-20): a bare "&darr;" at the
         # end read as expand / decoration / jump-to-the-failed-item.
         # The strip must say in words where it goes — the full results
@@ -1423,10 +1431,14 @@ class TestChecker(unittest.TestCase):
         # the sentence says "worst loss", the bound language the
         # donation card itself uses, never "victim loses". The donation
         # phrase rides in a nowrap span, same as the FAIL strip.
-        # usdc_trim strips the trailing zero: 900 base units reads
-        # "0.0009" here, "0.000900" in the table — same number.
+        # Visual verdict #167 (2026-11-24): the strip used to trim the
+        # trailing zero — 900 base units read "0.0009" here but
+        # "0.000900" in the donation card's table, two writings of one
+        # number on the same page. The strip now uses the table's
+        # six-decimal form, so the headline number matches the evidence
+        # exactly; the FAIL sentence does the same.
         self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
-                      "worst loss 0.0009 USDC", passed)
+                      "worst loss 0.000900 USDC", passed)
         self.assertNotIn("victim loses", passed)
         # A zero-loss run stays bare: offset 18 loses nothing on any
         # donation row, so there is no headline number to carry and
@@ -2148,11 +2160,13 @@ class TestChecker(unittest.TestCase):
             "border-radius:8px;padding:.75em 1em;margin:.6em 0}",
             worker)
         # 2026-11-23 (visual verdict #161 item 4): the Worker copy
-        # carries the same nowrap-span / &nbsp; structure as the
-        # static copy, so the sentence boundaries now run through
-        # span tags and &nbsp; entities.
+        # carries the same nowrap-span structure as the static copy,
+        # so the sentence boundaries now run through span tags.
+        # 2026-11-24 (#167): the donations list is abbreviated
+        # (1, 1K, 1M, 1B) in its own .pseg — the &nbsp; slashes
+        # are gone, the exact ladder lives in the donation table.
         self.assertIn("bps.</span> <span class='pseg'>Victim deposit", worker)
-        self.assertIn("1,000,000,000&nbsp;USDC. Vault state", worker)
+        self.assertIn("donations tested 1, 1K, 1M, 1B USDC.</span> Vault state", worker)
 
     def test_verdict_strip_full_width(self):
         # Visual verdict #120 checker item 1 (2026-11-19): the strip is a
@@ -9281,12 +9295,21 @@ class TestChecker(unittest.TestCase):
         # after a slash; the vault-state tail "(0 = a new vault)."
         # is its own nowrap span. Visible words and numbers are
         # unchanged — only the break opportunities moved.
+        # 2026-11-24 (visual verdict #167, closes #162 item 5): the
+        # list still split across lines — at 1919px it straddled the
+        # two lines, at 360px it chopped across four. Breaking "only
+        # after a slash" was not enough; a list that spans lines
+        # reads as broken. The list is now abbreviated (1, 1K, 1M,
+        # 1B — exact powers of ten) and wrapped in its own .pseg, so
+        # it stays on one line at desktop and at 360px; the exact
+        # ladder (1 / 1,000 / 1,000,000 / 1,000,000,000) still stands
+        # in the donation card's table one screen down.
         self.assertIn("fee 1000 bps.</span>\n"
                       "<span class='pseg'>Victim deposit 100,000 USDC</span>",
                       html)
-        self.assertIn("donations tested 1&nbsp;/ 1,000&nbsp;/ 1,000,000&nbsp;/ "
-                      "1,000,000,000&nbsp;USDC.", html)
-        self.assertIn("1,000,000,000&nbsp;USDC.\n"
+        self.assertIn("<span class='pseg'>donations tested 1, 1K, 1M, 1B USDC.</span>",
+                      html)
+        self.assertIn("1, 1K, 1M, 1B USDC.</span>\n"
                       "Vault state 0&nbsp;USDC", html)
         self.assertIn("<span class='pseg'>(0 = a new vault).</span>", html)
         self.assertIn(".params .pseg{white-space:nowrap}", build.CSS)
@@ -9295,7 +9318,7 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".params{background:#f9fafb;", worker)
         self.assertIn("bps.</span> <span class='pseg'>Victim deposit", worker)
-        self.assertIn("1,000,000,000&nbsp;USDC. Vault state", worker)
+        self.assertIn("donations tested 1, 1K, 1M, 1B USDC.</span> Vault state", worker)
         self.assertIn(".params .pseg{white-space:nowrap}", worker)
         self.assertNotIn("bps.<br>Victim deposit", worker)
         self.assertNotIn("USDC.<br>Vault state", worker)
