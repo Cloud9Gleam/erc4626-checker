@@ -2118,6 +2118,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #151 (2026-11-22): the banner is stacked
         # now, not a flex row — the margin pin drops the
         # display:flex tail, which the stacked layout overturns.
+        import re
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2127,7 +2128,14 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("<br>", params)
         self.assertIn("fee 1000 bps.", params)
         self.assertIn("Victim deposit 100,000 USDC", params)
-        self.assertIn("Vault state 0 USDC", params)
+        # 2026-11-23 (visual verdict #161 item 4): the bar's segments
+        # are nowrap spans and the donations/vault-state separators
+        # use &nbsp;, so the raw markup no longer reads "Vault state
+        # 0 USDC" contiguously — pin the fact on the visible text
+        # instead (tags stripped, &nbsp; back to a space), which is
+        # what a visitor actually sees.
+        visible = re.sub("<[^>]+>", "", params).replace("&nbsp;", " ")
+        self.assertIn("Vault state 0 USDC", visible)
         self.assertIn(
             ".result-banner{font-size:1.45em;font-weight:700;"
             "border-radius:8px;padding:.75em 1em;margin:.6em 0}",
@@ -2142,8 +2150,12 @@ class TestChecker(unittest.TestCase):
             ".result-banner{font-size:1.45em;font-weight:700;"
             "border-radius:8px;padding:.75em 1em;margin:.6em 0}",
             worker)
-        self.assertIn("bps. Victim deposit", worker)
-        self.assertIn("USDC. Vault state", worker)
+        # 2026-11-23 (visual verdict #161 item 4): the Worker copy
+        # carries the same nowrap-span / &nbsp; structure as the
+        # static copy, so the sentence boundaries now run through
+        # span tags and &nbsp; entities.
+        self.assertIn("bps.</span> <span class='pseg'>Victim deposit", worker)
+        self.assertIn("1,000,000,000&nbsp;USDC. Vault state", worker)
 
     def test_verdict_strip_full_width(self):
         # Visual verdict #120 checker item 1 (2026-11-19): the strip is a
@@ -4580,10 +4592,13 @@ class TestChecker(unittest.TestCase):
         # checks use it. Both render paths (Python form + Worker JS form)
         # and the API table must say so; the old wording must be gone.
         # 2026-11-21 (visual verdict #139): the form hint is one line
-        # now ("Assets already in the vault. 0 = a new vault."); the
+        # now ("Assets already in the vault. 0 = new."); the
         # both-checks fact moved to the how-to guide Step 1, which the
-        # checker notice already links. The API table note is unchanged
-        # and still carries the claim on the checker page itself.
+        # checker notice already links. 2026-11-23 (visual verdict #161
+        # item 3): the #139 wording ("Assets already in the vault. 0 =
+        # a new vault.", 45 chars) wrapped to 2 lines in the 285px
+        # desktop column; the compressed wording keeps the 0 = new
+        # vault fact in 37 chars, one line.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -9138,7 +9153,9 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         html = build.checker_body()
         self.assertIn("<p class='params'>Parameters:", html)
-        self.assertIn("offset 6 · min deposit 1 USDC · fee 1000 bps.", html)
+        self.assertIn("<span class='pseg'>offset 6</span> · "
+                      "<span class='pseg'>min deposit 1 USDC</span> · "
+                      "<span class='pseg'>fee 1000 bps.</span>", html)
         self.assertNotIn("base units (1 USDC)", html)
         self.assertNotIn("in the donation check", html)
         # Visual verdict #100 (2026-11-18): the bar read as one dense
@@ -9156,14 +9173,33 @@ class TestChecker(unittest.TestCase):
         # flowing text inside it reads fine. The three sentences
         # stay in the same order with the same words and numbers,
         # only the <br>s are gone.
-        self.assertIn("fee 1000 bps.\nVictim deposit", html)
-        self.assertIn("1,000,000,000 USDC.\nVault state", html)
+        # 2026-11-23 (visual verdict #161 item 4): flowing text
+        # wrapped anywhere — at 1919px the second line began with
+        # "1,000,000 / ...", at 360px one line began with "= a new
+        # vault)." and "1 USDC" split across two lines (headless-shell
+        # measurement). The fix is structural, not shorter copy: each
+        # short segment is a nowrap .pseg span, so a line can only
+        # break at a " · " separator; the donations list glues each
+        # number to its following "/" with &nbsp;, so it breaks only
+        # after a slash; the vault-state tail "(0 = a new vault)."
+        # is its own nowrap span. Visible words and numbers are
+        # unchanged — only the break opportunities moved.
+        self.assertIn("fee 1000 bps.</span>\n"
+                      "<span class='pseg'>Victim deposit 100,000 USDC</span>",
+                      html)
+        self.assertIn("donations tested 1&nbsp;/ 1,000&nbsp;/ 1,000,000&nbsp;/ "
+                      "1,000,000,000&nbsp;USDC.", html)
+        self.assertIn("1,000,000,000&nbsp;USDC.\n"
+                      "Vault state 0&nbsp;USDC", html)
+        self.assertIn("<span class='pseg'>(0 = a new vault).</span>", html)
+        self.assertIn(".params .pseg{white-space:nowrap}", build.CSS)
         self.assertNotIn("<br>", html.split("<p class='params'>")[1].split("</p>")[0])
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".params{background:#f9fafb;", worker)
-        self.assertIn("bps. Victim deposit", worker)
-        self.assertIn("USDC. Vault state", worker)
+        self.assertIn("bps.</span> <span class='pseg'>Victim deposit", worker)
+        self.assertIn("1,000,000,000&nbsp;USDC. Vault state", worker)
+        self.assertIn(".params .pseg{white-space:nowrap}", worker)
         self.assertNotIn("bps.<br>Victim deposit", worker)
         self.assertNotIn("USDC.<br>Vault state", worker)
         # JS twin of the Python template must carry the same short
@@ -9493,6 +9529,12 @@ class TestChecker(unittest.TestCase):
         # 2026-11-22: the shares hint now states the 6-decimal
         # convention ("counted at 6 decimals") — the API table already
         # said so, but the form where the number is typed did not.
+        # 2026-11-23 (visual verdict #161 item 3): the offset, assets
+        # and shares hints still wrapped to 2 lines in the 285px
+        # desktop columns, so their text bottoms sat ~22px below their
+        # row-mates'. All three are shortened to fit one line; the
+        # shares hint keeps "counted at 6 decimals" and drops its
+        # "(0 = a new vault)" tail (the assets hint still says 0 = new).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -9500,12 +9542,11 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(".hint-full", build.CSS)
         self.assertNotIn(".hint-short", build.CSS)
         self.assertNotIn("#checker-form .hint{min-height:4.95em}", build.CSS)
-        shorts = ("Virtual shares. 6 is the standard; "
-                  "0 means no protection.",
+        shorts = ("Virtual shares: 6 standard, 0 none.",
                   "The smallest deposit the vault accepts.",
                   "The deposit made after the donation.",
-                  "Assets already in the vault. 0 = a new vault.",
-                  "Shares already issued, counted at 6 decimals (0 = a new vault).",
+                  "Assets already in the vault. 0 = new.",
+                  "Issued shares, counted at 6 decimals.",
                   "The cut from the yield. 1000 bps = 10%.")
         html = build.checker_body()
         worker = build.worker_js(
@@ -9812,9 +9853,14 @@ class TestChecker(unittest.TestCase):
         # at offsets 0 / 1 / 2 / 6 -- exactly x10 per unit of offset.
         # The checker clamps offset to 0-30 (offset=31 runs as 30).
         # 2026-11-21 (visual verdict #139): the form hint is one line
-        # now ("Virtual shares. 6 is the standard; 0 means no
-        # protection."); the x10-per-unit fact moved to the how-to
-        # guide Step 1, which the checker notice already links.
+        # now ("Virtual shares: 6 standard, 0 none."); the x10-per-unit
+        # fact moved to the how-to guide Step 1, which the checker
+        # notice already links. 2026-11-23 (visual verdict #161 item
+        # 3): the #139 wording ("Virtual shares. 6 is the standard; 0
+        # means no protection.", 57 chars) wrapped to 2 lines in the
+        # 285px desktop column, so the row's hint bottoms were ~22px
+        # uneven; the compressed wording keeps both facts (6 is the
+        # standard, 0 means no protection) in 35 chars, one line.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -9823,7 +9869,7 @@ class TestChecker(unittest.TestCase):
         # Regression guard: the form HTML is duplicated in a
         # single-quoted JS string (worker-side renderer mirror), so an
         # apostrophe in any hint breaks worker.js at node --check.
-        hint = "Virtual shares. 6 is the standard; 0 means no protection."
+        hint = "Virtual shares: 6 standard, 0 none."
         self.assertNotIn("'", hint)
         # Both copies (Python template + JS mirror) must carry it.
         self.assertEqual(src.count(hint), 2)
@@ -9887,17 +9933,25 @@ class TestChecker(unittest.TestCase):
         # one-liner gained "counted at 6 decimals" — the model
         # multiplies displayed shares by 1e6, and the form never said
         # so while the API table did; still one sentence, per #139.
+        # 2026-11-23 (visual verdict #161 item 3): the offset, assets
+        # and shares one-liners wrapped to 2 lines in the 285px desktop
+        # columns (headless-shell measurement at 1919px: text bottoms
+        # 593 vs 571 in row 1, 736 vs 713 in row 2), so the row's hint
+        # bottoms were ~22px uneven. All three are shortened to fit
+        # one line at desktop; the shares hint keeps "counted at
+        # 6 decimals" and drops its "(0 = a new vault)" tail (the
+        # assets hint still says 0 = new).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         src = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
         hints = [
-            "Virtual shares. 6 is the standard; 0 means no protection.",
+            "Virtual shares: 6 standard, 0 none.",
             "The smallest deposit the vault accepts.",
             "The deposit made after the donation.",
-            "Assets already in the vault. 0 = a new vault.",
-            "Shares already issued, counted at 6 decimals (0 = a new vault).",
+            "Assets already in the vault. 0 = new.",
+            "Issued shares, counted at 6 decimals.",
             "The cut from the yield. 1000 bps = 10%.",
         ]
         for hint in hints:
