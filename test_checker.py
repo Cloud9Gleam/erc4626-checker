@@ -5251,15 +5251,19 @@ class TestChecker(unittest.TestCase):
         # most confusing paragraph on the page: it said the two numbers
         # "can differ" without saying which is which, never mentioned
         # that the severity splits differ too, and left MISS as
-        # unexplained jargon. The intro now names both counts, says the
-        # pill's split is the split of the re-verified findings, defines
-        # a MISS in plain words (claimed mechanism does not hold), and
-        # works Gamma as the concrete example — before the first (open)
-        # group, so it is visible without expanding anything. The two
-        # differing entries are the only ones whose lead quotes an
-        # "N of M" contest total — every other lead's count already
-        # matches its pill (verified this round by script over all 41
-        # entries).
+        # unexplained jargon. The intro then named both counts, said
+        # the pill's split is the split of the re-verified findings,
+        # defined a MISS in plain words, and worked Gamma as the
+        # concrete example — but visual verdict #162 item 2
+        # (2026-11-23) measured that as a 3-paragraph, ~250-word wall
+        # whose 5-line Gamma example duplicated the numbers on the
+        # Gamma card directly below it. The intro is now one ~57-word
+        # paragraph: forge reproduction, pill vs sentence, and the
+        # plain-words MISS definition. The Gamma numbers live only on
+        # the card, where they belong; the two differing entries are
+        # still the only ones whose lead quotes an "N of M" contest
+        # total — every other lead's count already matches its pill
+        # (verified by script over all 41 entries).
         import re
         import sys
         from pathlib import Path
@@ -5269,44 +5273,42 @@ class TestChecker(unittest.TestCase):
         track = audit[audit.index("<h2>Track record</h2>"):]
         intro = re.sub(r"\s+", " ",
                        track[:track.index("<details")])
-        self.assertIn("Two numbers can appear for one review, and they "
-                      "count different things: the pill after a title "
-                      "counts only the findings re-verified on the linked "
-                      "review page, and its severity split is the split of "
-                      "those findings; the sentence after it quotes the "
-                      "contest's own award.", intro)
-        # The Gamma example is concrete, not abstract: both splits and
-        # both MISS ids appear in the intro itself.
-        self.assertIn("Gamma's pill reads 25 re-verified (5 High, 8 Medium, "
-                      "12 Low) while its sentence says 25 of 27 validated "
-                      "(5 High, 9 Medium, 13 Low): the contest awarded 27, "
-                      "and the two missing ones, M-05 and L-12, are "
-                      "findings whose claimed mechanism does not hold on "
-                      "the code, so the review presents them as MISSes "
-                      "instead of counting them as verified.", intro)
-        # The old abstract wording is gone, not just extended.
+        self.assertIn("Every review below was reproduced from source in "
+                      "forge. The pill after a title counts only the "
+                      "findings re-verified on the linked review page, "
+                      "with their severity split; the sentence after it "
+                      "quotes the contest's own award. A finding whose "
+                      "claimed mechanism does not hold on the code is "
+                      "presented as a MISS, not counted as verified.",
+                      intro)
+        # The Gamma example is gone from the intro, not just shortened:
+        # its numbers now appear only on the Gamma card below.
+        self.assertNotIn("Gamma's pill reads", intro)
+        self.assertNotIn("M-05", intro)
+        self.assertNotIn("L-12", intro)
+        self.assertNotIn("Two numbers can appear", intro)
         self.assertNotIn("re-derived as misses", intro)
         self.assertNotIn("the two can differ", intro)
+        self.assertNotIn('class="track-example"', intro)
         # Only Gamma and Zaros quote an "N of M" contest total — scoped
-        # to the leads (after the first <details>): the intro's Gamma
-        # example repeats "25 of 27 validated" in prose, so it is
-        # excluded here by design.
+        # to the leads (after the first <details>).
         self.assertEqual(
             sorted(re.findall(r"(\d+) of (\d+) (?:validated|awarded)",
                               track[track.index("<details"):])),
             [("25", "27"), ("66", "70")])
 
-    def test_track_record_intro_split_into_rule_and_example(self):
-        # Visual verdict #159 (d) (2026-11-23, checker-improvement):
-        # the Track record intro was one 7-line, 109-word paragraph
-        # (measured in a real render: 196.3px at 1919px) — rule sentence
-        # + Gamma example fused into a wall. It is now two blocks: the
-        # rule sentence in its own paragraph, the Gamma example in a
-        # separate paragraph with the site's detail-block treatment
-        # (green left border, .track-example). Wording is untouched, so
-        # the pinned strings in test_audit_track_record_pill_meaning_
-        # is_annotated still match verbatim; this test pins the split
-        # itself so a future edit cannot silently re-fuse them.
+    def test_track_record_intro_is_one_condensed_paragraph(self):
+        # Visual verdict #162 item 2 (2026-11-23, checker-improvement):
+        # the Track record intro was three paragraphs, ~250 words — a
+        # method paragraph, a rule paragraph, and a 5-line Gamma example
+        # whose numbers duplicated the Gamma card directly below it
+        # (~350-400px of preamble before the proof). It is now exactly
+        # one paragraph before the first group, carrying all three facts
+        # (forge reproduction, pill vs sentence, plain-words MISS) in
+        # ~57 words, with no Gamma numbers and no .track-example block.
+        # The retired #159 (d) split test pinned the three-paragraph
+        # shape; this test pins the condensed shape so a future edit
+        # cannot silently re-inflate it.
         import re
         import sys
         from pathlib import Path
@@ -5315,21 +5317,24 @@ class TestChecker(unittest.TestCase):
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         track = audit[audit.index("<h2>Track record</h2>"):]
         intro = track[:track.index("<details")]
-        # Three paragraphs before the first group: method, rule, example.
+        # Exactly one paragraph before the first group.
         paras = re.findall(r"<p[^>]*>(.*?)</p>", intro, re.S)
-        self.assertEqual(len(paras), 3)
-        rule = re.sub(r"\s+", " ", paras[1])
-        self.assertTrue(rule.startswith("Two numbers can appear"))
-        self.assertTrue(rule.endswith("quotes the contest's own award."))
-        self.assertNotIn("Gamma", rule)
-        self.assertIn('<p class="track-example">', intro)
-        example = re.sub(r"\s+", " ", paras[2])
-        self.assertTrue(example.startswith("For example, Gamma's pill"))
-        self.assertIn("MISSes instead of counting them as verified.",
-                      example)
-        # The CSS class exists exactly once, in the shared stylesheet.
-        self.assertEqual(build.CSS.count(".track-example{"), 1)
-        self.assertEqual(audit.count('class="track-example"'), 1)
+        self.assertEqual(len(paras), 1)
+        para = re.sub(r"\s+", " ", paras[0])
+        self.assertTrue(para.startswith(
+            "Every review below was reproduced from source in forge."))
+        self.assertTrue(para.endswith(
+            "not counted as verified."))
+        self.assertIn("counts only the findings re-verified on the "
+                      "linked review page", para)
+        self.assertIn("quotes the contest's own award", para)
+        self.assertNotIn("Gamma", para)
+        # Under 70 words: a buyer reads it in one glance.
+        self.assertLess(len(para.split()), 70)
+        # The .track-example class and CSS rule are deleted with the
+        # example — no dead rule left in the stylesheet.
+        self.assertEqual(build.CSS.count(".track-example{"), 0)
+        self.assertEqual(audit.count('class="track-example"'), 0)
 
     def test_track_summary_toggle(self):
         # Visual verdict #115 (c) residual, measured 2026-11-19: the
