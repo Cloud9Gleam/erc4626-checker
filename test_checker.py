@@ -26128,5 +26128,144 @@ class TestChecker(unittest.TestCase):
             build)
 
 
+    def test_airdrop_snapshot_capture_guide_numbers(self):
+        # Pins /guides/erc4626-airdrop-snapshot-capture/ to exact
+        # integer arithmetic: independent recomputation with
+        # Fraction, no model import. Setup: vault 1,000,000 USDC /
+        # 1,000,000 shares at $1.00, 10 holders x 100,000 shares,
+        # pool 10,000,000 AIR at $0.10; flash loan 99,000,000 USDC
+        # at 0.05% (5 bps), gas $4.00 (200,000 gas x 10 gwei x
+        # $2,000/ETH). Allocation is pro-rata floor division on
+        # shares; a time-weighted average is floor(POOL * avg /
+        # total_avg) on the exact rational average -- the average
+        # itself is never floored first.
+        from fractions import Fraction as F
+        POOL, AIR_PX = 10_000_000, F(1, 10)
+        LOAN = 99_000_000
+        FEE = LOAN * F(5, 10000)          # 49,500
+        GAS = F(4)
+        self.assertEqual(FEE, 49_500)
+        self.assertEqual(200_000 * 10 * 10 ** -9 * 2000, 4.0)
+
+        def alloc(att_shares, tot_shares):
+            return (POOL * att_shares) // tot_shares
+
+        def net(air):
+            return air * AIR_PX - FEE - GAS
+
+        # A. Headline: 99,000,000 shares of 100,000,000 = 99%.
+        self.assertEqual(alloc(LOAN, 1_000_000 + LOAN), 9_900_000)
+        self.assertEqual(net(9_900_000), 940_496)
+        self.assertEqual(alloc(100_000, 100_000_000), 10_000)
+        # Each holder loses 990,000 AIR ($99,000); ten holders
+        # lose $990,000 in total -- the guide used to print
+        # $980,000 here (capture minus retained value, a slip).
+        self.assertEqual((1_000_000 - 10_000) * AIR_PX * 10, 990_000)
+
+        # B. One block of real borrowing at 5% APR (12s blocks).
+        carry = F(LOAN) * F(5, 100) / (365 * 24 * 3600 // 12)
+        self.assertEqual(carry, F(275, 146))
+        self.assertEqual(f"{float(carry):.2f}", "1.88")
+        self.assertEqual(f"{float(GAS + carry):.2f}", "5.88")
+
+        # C. Fee table and pool edges (capture = fee at the
+        # breakeven points, so the net there is -$4.00 of gas).
+        for bps, fee, netted in ((5, 49_500, 940_496),
+                                 (50, 495_000, 494_996),
+                                 (100, 990_000, -4),
+                                 (150, 1_485_000, -495_004)):
+            self.assertEqual(LOAN * F(bps, 10000), fee)
+            self.assertEqual(net(9_900_000) + (FEE - fee), netted)
+        self.assertEqual(F(990_000) - GAS, 989_996)  # net-zero fee
+        self.assertLess(F(989_996, LOAN), F(1, 100))
+        self.assertEqual(net(99_000), -39_604)       # 100k pool
+        self.assertEqual(net(495_000), -4)           # 500k pool
+        pool_star = (FEE + GAS) / F(99, 1000)        # net-zero pool
+        self.assertTrue(500_000 < pool_star < 500_041)
+        self.assertEqual(FEE / (F(99_000) * AIR_PX), 5)  # 5x capture
+
+        # D. Time-weighted average: floor once, at the allocation.
+        def twa(window):
+            avg = F(LOAN, window)
+            tot = F(1_000_000) + avg
+            rat = F(POOL) * avg / tot
+            return avg, rat, int(rat)
+
+        _, _, a100 = twa(100)
+        self.assertEqual(a100, 4_974_874)
+        self.assertEqual(net(a100), F(2239917, 5))   # +$447,983.40
+        _, _, a1900 = twa(1900)
+        self.assertEqual(a1900, 495_247)
+        self.assertEqual(net(a1900), F(207, 10))     # +$20.70: pays
+        # W=1901: the rational allocation is EXACTLY 495,000 --
+        # 99,000,000/1,901 over 2,000,000,000/1,901 is exactly
+        # 0.0495 -- so the net is exactly -$4.00 of gas and
+        # flooring moves nothing. The guide used to print
+        # 494,999 / $49,499.90 / -$4.10: that was a float64
+        # artifact -- in float the allocation computes as
+        # 494,999.99999999994 and floors to 494,999.
+        import math
+        avg, rat, a1901 = twa(1901)
+        self.assertEqual(rat, 495_000)
+        self.assertEqual(a1901, 495_000)
+        self.assertEqual(net(a1901), -4)
+        self.assertEqual(f"{float(avg):.2f}", "52077.85")
+        self.assertEqual(math.floor(10_000_000 * (99_000_000 / 1901) /
+                                    (1_000_000 + 99_000_000 / 1901)),
+                         494_999)  # the float64 trap value
+        self.assertEqual((10_000_000 * 52_077) // 1_052_077,
+                         494_992)  # flooring the average first: also wrong
+        # Rational net-zero window sits between 1900 and 1901.
+        w_star = F(LOAN) / (F(495_040 * 1_000_000, POOL - 495_040))
+        self.assertTrue(1900 < w_star < 1901)
+        self.assertEqual(f"{float(w_star):.2f}", "1900.84")
+        _, _, a2000 = twa(2000)
+        self.assertEqual(a2000, 471_653)
+        self.assertEqual(net(a2000), F(-23387, 10))  # -$2,338.70
+
+        # E. Flash mint: 1,000,000 assets over 100,000,000 shares.
+        self.assertEqual(F(1_000_000, 100_000_000), F(1, 100))
+        self.assertEqual(alloc(99_000_000, 100_000_000), 9_900_000)
+
+    def test_airdrop_snapshot_capture_guide_page(self):
+        # Pins the guide page: the add() must exist with the
+        # corrected headline numbers, the double-flooring warning,
+        # and a link from the /guides/ index. The numbers are
+        # re-derived in test_airdrop_snapshot_capture_guide_numbers;
+        # this pins the page.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn(
+            '"/guides/erc4626-airdrop-snapshot-capture/"', build)
+        start = build.index(
+            'add("/guides/erc4626-airdrop-snapshot-capture/"')
+        end = build.index(
+            'add("/guides/erc4626-multi-token-par-swap/"')
+        self.assertLess(start, end)
+        block = build[start:end]
+        for num in ("9,900,000 AIR", "$990,000", "$940,496",
+                    "$49,500", "10,000 AIR", "990,000",
+                    "4,974,874 AIR ($497,487.40)", "+$447,983.40",
+                    "495,000 AIR ($49,500.00)", "52,077.85",
+                    "1,900.84", "471,653 AIR ($47,165.30)",
+                    "−$2,338.70", "0.01 USDC", "float64 artifact",
+                    "494,999.99999999994", "494,999", "$1.88", "$5.88", "−$39,604",
+                    "500,000 AIR", "$49,504"):
+            self.assertIn(num, block)
+        # The three corrected errors must not survive anywhere.
+        self.assertNotIn("494,999 AIR ($49,499.90)", block)
+        self.assertNotIn("−$4.10", block)
+        self.assertNotIn("$980,000 the other holders lose", block)
+        self.assertNotIn(
+            "only a pre-transaction supply snapshot kills it", build)
+        self.assertIn(
+            "a window longer than 1,901 blocks — or a "
+            "pre-transaction supply snapshot — kills it", build)
+        self.assertIn(
+            '<a href="/guides/erc4626-airdrop-snapshot-capture/">',
+            build)
+
+
 if __name__ == "__main__":
     unittest.main()
