@@ -8069,6 +8069,32 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".loss-chart--bare .loss-track::after{inset:-.075em 0}",
             build.CSS)
+        # Visual verdict #163 item 1 (2026-11-24,
+        # checker-improvement): the ::after extends .2em above every
+        # track, so the first row's gridlines poked ~3px above the top
+        # bar — three 2px stubs floating between the peak line and the
+        # first bar (pixel-measured 1543-1545 against bar top 1546).
+        # The first row's ::after is capped at top:0; the bottom
+        # extension stays, so the lines still run down to the axis
+        # and the inter-row seams keep bridging.
+        self.assertIn(
+            ".loss-chart--bare .loss-row:first-of-type "
+            ".loss-track::after{top:0}",
+            build.CSS)
+        # The selector's premise: the title and the peak line are
+        # <p>, so the first <div> child of the chart is the first
+        # row — :first-of-type can only match a row. Only the
+        # chart's own opening <div> precedes the first row.
+        chart = html[html.index("<div class='loss-chart "
+                                 "loss-chart--bare'>"):]
+        seg = chart[:chart.index("<div class='loss-row'>")]
+        self.assertEqual(seg.count("<div"), 1)
+        self.assertIn("<p class='loss-title'>", html)
+        # Same premise in the Worker-side template: title and peak
+        # are <p>, rows are <div>.
+        js = build.checker_results_html_js()
+        self.assertIn("c+=\"<p class='loss-title'>", js)
+        self.assertIn("c+=\"<div class='loss-row'>", js)
 
     def test_loss_chart_label_column(self):
         # Visual verdict #124 new finding 1 (2026-11-20): the
