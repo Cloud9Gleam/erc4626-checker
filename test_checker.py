@@ -7931,7 +7931,7 @@ class TestChecker(unittest.TestCase):
                          build.CSS)
         self.assertIn(
             ".loss-chart--bare .loss-track::after{content:\"\";"
-            "position:absolute;inset:0;pointer-events:none;"
+            "position:absolute;inset:-.2em 0;pointer-events:none;"
             "background-image:linear-gradient(to right,transparent "
             "calc(25% - 1px),rgba(17,24,39,.8) calc(25% - 1px),"
             "rgba(17,24,39,.8) calc(25% + 1px),transparent "
@@ -7960,36 +7960,30 @@ class TestChecker(unittest.TestCase):
         # Guide charts (plain .loss-chart) get no gridlines: the rule
         # is scoped to --bare only.
         self.assertNotIn(".loss-chart .loss-track::after", build.CSS)
-        # Visual verdict #157 (2026-11-23): #140's behind-the-fill
-        # lines read as stubs — headless pixel sampling on noprot
-        # found 0 dark pixels on the 90.9% bar's centre line at
-        # 25/50/75% and only 6 (three 2px lines in white space) on
-        # the 10% bar's. The same three lines are now ALSO drawn
-        # above the fill, so each gridline is one continuous line:
-        # a seam on red, near-black on the white track where it
-        # layers over the .8 ::after. Visual verdict #159 follow-up
-        # (same day): the .35 seam still read as cracks on the live
-        # page — (149,33,38) vs fill (220,38,38), contrast 1.72:1 —
-        # so the seam is now .12: blended (196,36,38), contrast
-        # 1.20:1, a whisper the eye can trace, not a split. The
-        # ::before must sit above the z-index:1 fill (z-index:2)
-        # and carry the same three gradients at .12 — no z-index
-        # would leave it under the fill, repeating #157.
-        self.assertIn(
-            ".loss-chart--bare .loss-track::before{content:\"\";"
-            "position:absolute;inset:0;z-index:2;pointer-events:none;"
-            "background-image:linear-gradient(to right,transparent "
-            "calc(25% - 1px),rgba(17,24,39,.12) calc(25% - 1px),"
-            "rgba(17,24,39,.12) calc(25% + 1px),transparent "
-            "calc(25% + 1px)),linear-gradient(to right,transparent "
-            "calc(50% - 1px),rgba(17,24,39,.12) calc(50% - 1px),"
-            "rgba(17,24,39,.12) calc(50% + 1px),transparent "
-            "calc(50% + 1px)),linear-gradient(to right,transparent "
-            "calc(75% - 1px),rgba(17,24,39,.12) calc(75% - 1px),"
-            "rgba(17,24,39,.12) calc(75% + 1px),transparent "
-            "calc(75% + 1px))}",
-            build.CSS)
+        # Visual verdict #160 item (4) (2026-11-23,
+        # checker-improvement): the over-fill ::before seam is
+        # GONE. #157 added it so the gridlines read as one
+        # continuous line; #159 cut it .35 -> .12 when the live
+        # browser read it as cracks; #160 still read cracks, so
+        # a third alpha cut is not the lever — no seam over a bar
+        # at any alpha. The gridlines live only under the fills,
+        # and the ::after now extends past mid-gap (.2em each
+        # side of the .25em row-gap) so the lines run down the
+        # chart wherever no bar covers them. The bare track drops
+        # overflow:hidden for the extension to paint, and the
+        # fill carries the 3px corner radius itself. Mobile pulls
+        # the extension back to .075em (half the .15em gap) so it
+        # cannot poke into the stacked label/value rows.
+        self.assertNotIn(".loss-chart--bare .loss-track::before",
+                         build.CSS)
         self.assertNotIn(".loss-chart .loss-track::before", build.CSS)
+        self.assertIn(".loss-chart--bare .loss-track{overflow:visible}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-fill{border-radius:3px}",
+                      build.CSS)
+        self.assertIn(
+            ".loss-chart--bare .loss-track::after{inset:-.075em 0}",
+            build.CSS)
 
     def test_loss_chart_label_column(self):
         # Visual verdict #124 new finding 1 (2026-11-20): the
@@ -8659,59 +8653,45 @@ class TestChecker(unittest.TestCase):
         self.assertIn("function shortValue(l,v)", js)
         self.assertIn("shortValue(row[0],row[1])", js)
 
-    def test_verdict159_gridline_seam_faint_on_red_bar(self):
-        # Visual verdict #159 item (f) follow-up (2026-11-23,
+    def test_verdict160_gridline_seam_removed(self):
+        # Visual verdict #160 item (4) (2026-11-23,
         # checker-improvement): the live browser still read the
-        # #157 .35-alpha seam as cracks — the 90.9% red bar looked
-        # sliced into four segments. Headless pixel sampling agreed:
-        # seam (149,33,38) vs fill (220,38,38), contrast 1.72:1.
-        # The over-fill seam is now .12 alpha: blended (196,36,38),
-        # contrast 1.20:1 — a whisper the eye can trace, not a
-        # split. The white-track lines stay near-black because the
-        # .8 ::after underneath does that work (layered ~(59,64,77)).
-        # Render-time only: the model, the numbers and the API JSON
-        # are untouched.
+        # #157/#159 over-fill seam as cracks on the 90.9% red bar,
+        # so the seam is deleted outright — no ::before rule at
+        # all — instead of a third alpha cut. Headless pixel
+        # sampling (hidden_files/measure-verdict160d.py) confirms
+        # the result: the long bar's centre line is pure red
+        # (220,38,38) at 25/50/75%, the row gap carries dark
+        # gridline pixels at 25/50/75% (the ::after now extends
+        # past mid-gap), the short bar's white-space lines stay
+        # dark, and the bar's top-left corner stays rounded (not
+        # pure red). Render-time only: the model, the numbers and
+        # the API JSON are untouched.
         import re
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        before = re.search(
-            r"\.loss-chart--bare \.loss-track::before\{[^}]*\}",
-            build.CSS)
-        self.assertIsNotNone(before)
-        rule = before.group(0)
-        self.assertEqual(rule.count("rgba(17,24,39,.12)"), 6)
-        self.assertNotIn(".35", rule)
+        self.assertNotIn(".loss-chart--bare .loss-track::before",
+                         build.CSS)
+        self.assertNotIn("rgba(17,24,39,.12)", build.CSS)
         after = re.search(
             r"\.loss-chart--bare \.loss-track::after\{[^}]*\}",
             build.CSS)
         self.assertIsNotNone(after)
+        self.assertIn("inset:-.2em 0", after.group(0))
         self.assertIn("rgba(17,24,39,.8)", after.group(0))
-
-        def lum(rgb):
-            def lin(c):
-                c = c / 255
-                return (c / 12.92 if c <= 0.04045
-                        else ((c + 0.055) / 1.055) ** 2.4)
-            r, g, b = (lin(c) for c in rgb)
-            return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-        def blend(fg, bg, a):
-            return tuple(round(f * a + b * (1 - a))
-                         for f, b in zip(fg, bg))
-
-        def contrast(l1, l2):
-            hi, lo = max(l1, l2), min(l1, l2)
-            return (hi + 0.05) / (lo + 0.05)
-
-        seam = blend((17, 24, 39), (220, 38, 38), 0.12)
-        self.assertEqual(seam, (196, 36, 38))
-        self.assertLess(contrast(lum(seam), lum((220, 38, 38))), 1.25)
-        # White-track line: the .12 layer over the .8 ::after line
-        # ((65,70,82) per the #123 comment) stays near-black.
-        track = blend((17, 24, 39), (65, 70, 82), 0.12)
-        self.assertTrue(all(c < 90 for c in track))
+        # The extension must reach past half the .25em row-gap, or
+        # subpixel rounding leaves a 1px white slit at mid-gap
+        # (measured with .125em: exactly one white pixel row).
+        # .2em covers a gap up to .4em.
+        self.assertIn("row-gap:.25em", build.CSS)
+        # Mobile: half the .15em gap, so the extension cannot poke
+        # into the stacked label/value rows.
+        self.assertIn(
+            ".loss-chart--bare .loss-track::after{inset:-.075em 0}",
+            build.CSS)
+        self.assertIn("row-gap:.15em", build.CSS)
 
     def test_floor_binds_value_is_figure_only(self):
         # 2026-11-20, checker-improvement: on a 360px phone the
