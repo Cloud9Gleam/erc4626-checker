@@ -25515,6 +25515,169 @@ class TestChecker(unittest.TestCase):
             self.assertIn(claim, block)
         self.assertIn(
             '<a href="/guides/vault-share-price-manipulation/">', build)
+    def test_how_to_use_the_erc4626_checker_guide_numbers(self):
+        # How-to guide (/guides/how-to-use-the-erc4626-checker/):
+        # the headline numbers were previously pinned only to the
+        # model itself (test_how_to_guide_numbers,
+        # test_minfeeonly_preset_numbers). Re-derive them here with
+        # plain integer arithmetic, independent of any model file,
+        # then cross-check the model against the re-derivation.
+        # Conversions use the OpenZeppelin rule the guide states --
+        # virtual shares 10**offset, virtual assets 1, floor
+        # division both ways; redemption is attacker first.
+        U = 10**6
+
+        def run(offset, min_deposit, donation, victim=100_000 * U):
+            vs = 10**offset
+            va = 1
+
+            def to_shares(a, S, A):
+                return (a * (S + vs)) // (A + va)
+
+            def to_assets(s, S, A):
+                return (s * (A + va)) // (S + vs)
+
+            S, A = 0, 0
+            seed = max(min_deposit, 1 * U)  # at least 1 USDC
+            atk_shares = to_shares(seed, S, A)
+            S += atk_shares
+            A += seed
+            A += donation
+            vic_shares = to_shares(victim, S, A)
+            S += vic_shares
+            A += victim
+            atk_out = to_assets(atk_shares, S, A)
+            S -= atk_shares
+            A -= atk_out
+            vic_out = to_assets(vic_shares, S, A)
+            return (victim - vic_out, atk_out - (seed + donation))
+
+        donations = [1 * U, 1_000 * U, 1_000_000 * U, 1_000_000_000 * U]
+        # All four presets, all four donations: (victim loss,
+        # attacker net) in base units. The fee never enters the
+        # donation check -- it only touches yield -- so the
+        # minimum+fee preset must match no-protection row for row.
+        want = {
+            "alphaprimer": [(0, -1), (0, -1000),
+                            (1, -999_999), (900, -999_998_101)],
+            "noprot": [(0, -1), (6, -994),
+                       (909_091, -90_909), (99_890, -999_899_111)],
+            "minfeeonly": [(0, -1), (6, -994),
+                           (909_091, -90_909),
+                           (99_890, -999_899_111)],
+            "offset18": [(0, -1), (0, -1000),
+                         (0, -1_000_000), (0, -999_999_001)],
+        }
+        presets = {"alphaprimer": (6, 1 * U, 1000),
+                   "noprot": (0, 0, 0),
+                   "minfeeonly": (0, 1 * U, 1000),
+                   "offset18": (18, 1 * U, 1000)}
+        for name, (off, mn, _fee) in presets.items():
+            got = [run(off, mn, d) for d in donations]
+            self.assertEqual(got, want[name], name)
+        # The guide's headline numbers: unprotected loses the full
+        # 0.909091 USDC to a 1,000,000 USDC donation, minimum+fee
+        # loses exactly the same, offset 6 loses at most 0.0009,
+        # offset 18 loses nothing.
+        self.assertEqual(max(l for l, _ in want["noprot"]), 909_091)
+        self.assertEqual(max(l for l, _ in want["minfeeonly"]), 909_091)
+        self.assertEqual(want["minfeeonly"], want["noprot"])
+        self.assertEqual(max(l for l, _ in want["alphaprimer"]), 900)
+        self.assertEqual(max(l for l, _ in want["offset18"]), 0)
+        # The pass bound as the guide states it (loss at most
+        # 0.001 USDC and at most 0.1% of the victim deposit,
+        # attacker never profits): offset 6 and 18 pass every row,
+        # offset 0 fails at the 1,000,000 and 1,000,000,000
+        # donations.
+        for name in ("alphaprimer", "offset18"):
+            for loss, net in want[name]:
+                self.assertLessEqual(loss, 1000)
+                self.assertLessEqual(loss, 100_000 * U // 1000)
+                self.assertLessEqual(net, 0)
+        for name in ("noprot", "minfeeonly"):
+            self.assertTrue(any(l > 1000 for l, _ in want[name]))
+        # Each unit of offset divides the price of one share by 10:
+        # a first 1 USDC deposit into an empty vault mints
+        # 1,000,000 * 10**offset shares, so the price per share is
+        # 10**-offset USDC -- 1, 0.1, ... down to 0.000001 at
+        # offset 6.
+        for off in range(0, 7):
+            shares = (1 * U * (0 + 10**off)) // (0 + 1)
+            self.assertEqual(shares, 1_000_000 * 10**off)
+            self.assertEqual(Fraction(1 * U, shares),
+                             Fraction(1, 10**off))
+        # The fee is taken on the gain itself, with no high-water
+        # mark or hurdle: 1000 bps of a 10,000 USDC yield is 1,000
+        # USDC, and 0 bps means no fee.
+        self.assertEqual(10_000 * U * 1000 // 10_000, 1_000 * U)
+        self.assertEqual(10_000 * U * 0 // 10_000, 0)
+        # Model cross-check: run_all returns six checks, and its
+        # donation rows match the independent re-derivation exactly
+        # at every preset.
+        for name, (off, mn, fee) in presets.items():
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee)
+            results = run_all(v, victim_deposit=100_000 * U)
+            self.assertEqual(len(results), 6)
+            self.assertEqual(
+                [r["name"] for r in results],
+                ["rounding", "donation_inflation",
+                 "minimum_viable_deposit", "preview_consistency",
+                 "fee_conservation", "share_price_sanity"])
+            don = [r for r in results
+                   if r["name"] == "donation_inflation"][0]
+            self.assertEqual(
+                [(row["victim_loss"], row["attacker_net"])
+                 for row in don["detail"]],
+                want[name])
+
+    def test_how_to_use_the_erc4626_checker_guide_page(self):
+        # Pins the guide page: the add() must exist with the
+        # headline claims, the four preset names, and the six
+        # check links; the preset definitions in build.py must
+        # match the guide; and a link from the /guides/ index.
+        from pathlib import Path
+        build = (Path.home() / "workspace/taskmarket/site/build.py"
+                 ).read_text()
+        self.assertIn('"/guides/how-to-use-the-erc4626-checker/"', build)
+        start = build.index(
+            'add("/guides/how-to-use-the-erc4626-checker/"')
+        end = build.index('add("/guides/erc4626-slippage-bounds/"')
+        self.assertLess(start, end)
+        block = " ".join(build[start:end].split())
+        for claim in ("four presets",
+                      "AlphaPrimer",
+                      "No protection",
+                      "Minimum + fee, no offset",
+                      "Offset 18",
+                      "still loses the full 0.909091 USDC",
+                      "0.0009",
+                      "six exact-integer checks",
+                      "0.001 USDC",
+                      "0.1% of the victim deposit",
+                      "attacker must",
+                      "never profit",
+                      "vault micro-audit",
+                      "up to 15 files",
+                      "50 USDC prepaid",
+                      "written report in 72 hours",
+                      '<a href="/guides/erc4626-rounding-errors/">',
+                      '<a href="/guides/erc4626-donation-attack/">',
+                      '<a href="/guides/erc4626-preview-consistency/">',
+                      '<a href="/guides/erc4626-fee-conservation/">',
+                      '<a href="/guides/vault-share-price-manipulation/">',
+                      '<a href="/guides/erc4626-minimum-deposit/">'):
+            self.assertIn(claim, block)
+        # The four presets as the checker defines them (JS PRESETS
+        # in build.py, base units): the guide's Step 1 names must
+        # match these values.
+        for preset in ("alphaprimer: [6, 1000000, 1000]",
+                       "noprot: [0, 0, 0]",
+                       "minfeeonly: [0, 1000000, 1000]",
+                       "offset18: [18, 1000000, 1000]"):
+            self.assertIn(preset, build)
+        self.assertIn(
+            '<a href="/guides/how-to-use-the-erc4626-checker/">', build)
 
 
 if __name__ == "__main__":
