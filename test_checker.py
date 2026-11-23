@@ -4755,7 +4755,7 @@ class TestChecker(unittest.TestCase):
                       '<span class="track-toggle"><span class="when-closed">Show 33 reviews</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
                       '<span class="track-preview">Thunder Loan (flash-loan drain) · Puppy Raffle '
-                      '(9 findings) · Vanguard (router-bucket bypass)</span></summary>',
+                      '(9 findings) · Vanguard (router-bucket bypass) · and 30 more</span></summary>',
                       track)
         # The two one-item groups preview their single item, not a count —
         # and both are open by default (2026-11-20, verdict #131 item 3).
@@ -4992,8 +4992,8 @@ class TestChecker(unittest.TestCase):
             r'fee-on-transfer Medium — never considered, 15/15 tests '
             r'passing\.</span>')
         self.assertIn(".track-detail{display:block;font-size:.92em;"
-                      "color:#4b5563;margin-top:.25em}", build.CSS)
-        self.assertIn(".track-lead{display:block;margin-top:.25em}",
+                      "color:#4b5563;margin-top:.6em}", build.CSS)
+        self.assertIn(".track-lead{display:block;margin-top:.45em}",
                       build.CSS)
 
     def test_track_record_miss_severities_are_stated(self):
@@ -5556,17 +5556,22 @@ class TestChecker(unittest.TestCase):
         # entry scans as its own card. Copy and structure untouched;
         # .track-detail's .25em top margin stays (#136's deliberate
         # lead/detail split). Last-child keeps margin-bottom:0.
+        # Visual verdict #170 (2026-11-24, real browser): the 2026-11-22
+        # air was not enough — 41 cards ~140px tall with 17px gaps,
+        # lead/detail ~4px apart, still a wall. Gaps 1em -> 1.5em,
+        # lead .25em -> .45em, detail .25em -> .6em; the split itself
+        # is unchanged, only the spacing.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(".track-list--long li{background:#fff;border:1px solid #e5e7eb;"
                       "border-left:3px solid #0a7d2c;"
-                      "border-radius:8px;padding:.9em 1em;margin-bottom:1em}",
+                      "border-radius:8px;padding:.9em 1em;margin-bottom:1.5em}",
                       build.CSS)
         self.assertIn(".track-list--cards li{background:#fff;border:1px solid #e5e7eb;"
                       "border-left:3px solid #0a7d2c;"
-                      "border-radius:8px;padding:.9em 1em;margin-bottom:1em}",
+                      "border-radius:8px;padding:.9em 1em;margin-bottom:1.5em}",
                       build.CSS)
         self.assertIn(".track-group .track-list--long li:last-child{border:1px solid #e5e7eb;"
                       "border-left:3px solid #0a7d2c;"
@@ -5576,7 +5581,9 @@ class TestChecker(unittest.TestCase):
                       "padding:.9em 1em;margin-bottom:0}", build.CSS)
         self.assertNotIn("padding:.6em .8em;margin-bottom:.6em}", build.CSS)
         self.assertIn(".track-detail{display:block;font-size:.92em;"
-                      "color:#4b5563;margin-top:.25em}", build.CSS)
+                      "color:#4b5563;margin-top:.6em}", build.CSS)
+        self.assertIn(".track-lead{display:block;margin-top:.45em}",
+                      build.CSS)
 
     def test_audit_what_you_get_is_a_list(self):
         # /audit/ "What you get" was one dense paragraph — the section
