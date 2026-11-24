@@ -2180,6 +2180,49 @@ class TestChecker(unittest.TestCase):
             "@media (max-width:640px){.result-banner{flex-wrap:wrap}",
             build.CSS)
 
+    def test_verdict191_fail_banner_copy_button_is_red(self):
+        # Checker-improvement #191 (2026-11-24): the copy button is
+        # a button[type=button], so it inherits the white/green
+        # secondary style — correct on the light-green PASS banner,
+        # but green text and a green border inside the red FAIL
+        # banner (#b91c1c) read as a colour clash (visual verdict
+        # #189 item 6; measured baseline: button rgb(10,125,44) on
+        # banner rgb(185,28,28)). The FAIL banner's button takes
+        # the banner's own red; the hover tint #fdecea is the light
+        # red already used by .audit-result.fail. The PASS banner
+        # keeps the green button: no .pass-scoped override exists.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".result-banner.fail .copy-link-btn{background:#fff;"
+            "color:#b91c1c;border:1px solid #b91c1c}",
+            build.CSS)
+        self.assertIn(
+            ".result-banner.fail .copy-link-btn:hover"
+            "{background:#fdecea}",
+            build.CSS)
+        self.assertNotIn(
+            ".result-banner.pass .copy-link-btn",
+            build.CSS)
+        # The generic secondary style the PASS banner relies on is
+        # still there, untouched.
+        self.assertIn(
+            "button[type=button]{background:#fff;color:#0a7d2c;"
+            "border:1px solid #0a7d2c}",
+            build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(
+            ".result-banner.fail .copy-link-btn{background:#fff;"
+            "color:#b91c1c;border:1px solid #b91c1c}",
+            worker)
+        self.assertIn(
+            ".result-banner.fail .copy-link-btn:hover"
+            "{background:#fdecea}",
+            worker)
+
     def test_form_to_banner_stack_is_tight(self):
         # Checker-improvement (2026-11-22): the form -> banner stack
         # measured 141px at desktop width and 234px at 360px
@@ -24197,8 +24240,10 @@ class TestChecker(unittest.TestCase):
         src = (Path.home() / "workspace/taskmarket/site/build.py"
                ).read_text()
         self.assertEqual(src.count('Copy link to these results'), 2)
-        # 'copy-link-btn' appears 3x: CSS rule + Python
-        # markup + JS mirror. The mobile rule used to name it too
+        # 'copy-link-btn' appears 5x: CSS rule + Python
+        # markup + JS mirror + the two #191 FAIL-banner rules
+        # (base + :hover, which recolour the button red inside the
+        # red FAIL banner). The mobile rule used to name it too
         # (4x); visual verdict #148 moved the full-width mobile
         # rule to the .banner-actions group, so it no longer does.
         # Visual verdict #151 (2026-11-22): the banner is stacked,
@@ -24207,7 +24252,7 @@ class TestChecker(unittest.TestCase):
         # Checker-improvement (2026-11-22): the button now fills
         # its own row (display:block, width:100%) — it was 224.6px
         # in an 894.2px row at 1280px, ~670px of empty banner.
-        self.assertEqual(src.count('copy-link-btn'), 3)
+        self.assertEqual(src.count('copy-link-btn'), 5)
         self.assertIn('.result-banner .copy-link-btn{display:block;'
                       'width:100%;box-sizing:border-box;'
                       'text-align:center;font-size:.62em;',
