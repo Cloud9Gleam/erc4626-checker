@@ -10451,7 +10451,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("class='worst-row'", js)
         self.assertIn("isWorst", js)
 
-    def test_email_params_block_is_light_full_width_box(self):
+    def test_email_params_block_is_light_content_width_box(self):
         # Visual verdict #98 (2026-11-18) supersedes #76/#96: the
         # content-width fix made the block a ~270px narrow dark slab
         # (21% of the card) under a full-width dark curl example — it
@@ -10468,14 +10468,27 @@ class TestChecker(unittest.TestCase):
         # plain text with no code-box background. The fill is now
         # the site's established detail gray #f3f4f6 (same as
         # .check-detail) with the deeper #d1d5db border — still
-        # light, still full-width, but visibly a box.
+        # light, but visibly a box.
+        # Visual verdict #215 (2026-11-25, checker-improvement)
+        # reverses the WIDTH half of #98 only: the full-width light
+        # box measured 945px wide holding 239px of text (6 short
+        # key=value lines, longest 26 chars) — ~75% empty gray to
+        # the right, ranked #2 on the checker page. The box now hugs
+        # its content (width:fit-content, capped at 100% so a long
+        # custom value still cannot overflow at 360px). #98's
+        # narrow-slab objection does not carry over: that slab was
+        # dark, under a dark curl; this box is light, under a dark
+        # curl, so it reads as a snippet, not a half-finished block.
+        # The COLOR half of #98/#100 (light fill, visible border)
+        # is unchanged. Geometry is pinned by
+        # hidden_files/verdict215-email-pre-harness.mjs.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
             ".email-para pre{background:#f3f4f6;color:#111827;"
-            "border:1px solid #d1d5db}",
+            "border:1px solid #d1d5db;width:fit-content;max-width:100%}",
             build.CSS)
         self.assertNotIn(".email-para pre{background:#f9fafb", build.CSS)
         self.assertNotIn(".email-para pre{width:max-content", build.CSS)
@@ -10490,7 +10503,7 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn("email-para", worker)
         self.assertIn(".email-para pre{background:#f3f4f6;color:#111827;"
-                      "border:1px solid #d1d5db}",
+                      "border:1px solid #d1d5db;width:fit-content;max-width:100%}",
                       worker)
         self.assertNotIn(".email-para pre{background:#f9fafb", worker)
         # The blanket "width:max-content" guard used to live here, but
@@ -10499,8 +10512,9 @@ class TestChecker(unittest.TestCase):
         # button with max-width:max-content; verdict #116 replaced
         # that with a full-width wrapper span, so no such rule remains
         # on the toggle.) The guard is scoped to the rule it protects
-        # instead — the .email-para pre must never be content-width
-        # (verdict #98: that made it a ~270px narrow slab).
+        # instead — the .email-para pre uses fit-content (capped at
+        # 100%), never bare max-content, which could overflow at
+        # 360px on a long custom value.
         self.assertNotIn(".email-para pre{width:max-content", worker)
         # The curl example is a plain <pre> outside .email-para and
         # keeps the dark full-width code style.
@@ -10556,6 +10570,42 @@ class TestChecker(unittest.TestCase):
             "/research/thunder-loan/"]
         self.assertIn("<pre>", research)
         self.assertNotIn("api-example", research)
+
+    def test_verdict215_email_params_block_hugs_content(self):
+        # Visual verdict #215 (2026-11-25, checker-improvement): the
+        # email-params pre rendered a 945px-wide light box holding
+        # 239px of text (6 short key=value lines, longest 26 chars) —
+        # ~75% empty gray to the right, ranked #2 on the checker
+        # page. The block hugs its content now; the curl pre (one
+        # ~150-char line that fills its box) stays full-width.
+        # Geometry is pinned by
+        # hidden_files/verdict215-email-pre-harness.mjs.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".email-para pre{background:#f3f4f6;color:#111827;"
+            "border:1px solid #d1d5db;width:fit-content;max-width:100%}",
+            build.CSS)
+        # The rule is scoped to .email-para, so it cannot touch the
+        # curl pre; the shared wrap rule is untouched (still exactly
+        # one "pre.api-example" rule in the CSS list).
+        self.assertEqual(build.CSS.count("pre.api-example"), 1)
+        html = build.checker_body()
+        self.assertIn(
+            '<pre class="api-example"><code id="email-params">', html)
+        self.assertIn('<pre class="api-example"><code id="api-curl">', html)
+        # The email pre is the only pre inside .email-para, and the
+        # curl pre is outside it — the new rule reaches exactly one.
+        para = html[html.index("<div class=\"email-para\""):
+                    html.index("</div>", html.index("<div class=\"email-para\""))]
+        self.assertEqual(para.count("<pre"), 1)
+        self.assertNotIn("api-curl", para)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("width:fit-content;max-width:100%", worker)
+        self.assertEqual(worker.count("api-example"), 5)
 
     def test_api_curl_follows_the_run_in_the_worker(self):
         # Visual verdict #167 item 1 (2026-11-24): the Worker serves
