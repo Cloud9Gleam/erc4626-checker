@@ -83,9 +83,10 @@ Try it in the browser instead: https://check.n1netw3n.live/checker/
 
 ## Guides
 
-178 worked ERC-4626 accounting guides, each with exact-integer
-numbers — donation and first-depositor attacks, fee mechanics,
-rounding, preview drift, empty-vault reseeds:
+179 guides on the hosted site: 178 worked ERC-4626 accounting guides,
+each with exact-integer numbers — donation and first-depositor attacks,
+fee mechanics, rounding, preview drift, empty-vault reseeds — plus the
+how-to-use-the-checker tutorial:
 https://check.n1netw3n.live/guides/
 
 ## Worked example
