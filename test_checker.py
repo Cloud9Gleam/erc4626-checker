@@ -9574,15 +9574,15 @@ class TestChecker(unittest.TestCase):
         # keeps its full digits; USDC amounts are never touched.
         self.assertEqual(
             build.compact_shares(f"1,000,000,000,000{NB}shares"),
-            "<span class='nowrap'>1T shares</span>")
+            "<span class='nowrap' title='1,000,000,000,000 shares'>1T shares</span>")
         self.assertEqual(
             build.compact_shares(
                 f"10,000,000,000,000,000{NB}shares"),
-            "<span class='nowrap'>10Q shares</span>")
+            "<span class='nowrap' title='10,000,000,000,000,000 shares'>10Q shares</span>")
         self.assertEqual(
             build.compact_shares(
                 f"1,000,000,000,000,000,000,000,000{NB}shares"),
-            "<span class='nowrap'>1×10²⁴ shares</span>")
+            "<span class='nowrap' title='1,000,000,000,000,000,000,000,000 shares'>1×10²⁴ shares</span>")
         self.assertEqual(
             build.compact_shares(f"1,000,000{NB}shares"),
             f"1,000,000{NB}shares")
@@ -9590,7 +9590,7 @@ class TestChecker(unittest.TestCase):
             build.compact_shares(
                 f"deposit 10,000,000,000{NB}shares == "
                 f"10,000,000,001{NB}shares"),
-            "deposit <span class='nowrap'>10B shares</span> == "
+            "deposit <span class='nowrap' title='10,000,000,000 shares'>10B shares</span> == "
             f"10,000,000,001{NB}shares")
         self.assertEqual(
             build.compact_shares(f"999,999,999,999{NB}shares"),
@@ -9665,6 +9665,7 @@ class TestChecker(unittest.TestCase):
         legend = ("Share counts are shortened: B = billion (10^9), "
                   "T = trillion (10^12), Q = quadrillion (10^15); "
                   "exact powers of ten above that use the 1×10²⁴ form. "
+                  "Hover a shortened count to see its exact value. "
                   "The API returns exact integers.")
         # CSS: the muted note style exists.
         self.assertIn(
@@ -9699,6 +9700,81 @@ class TestChecker(unittest.TestCase):
                         fn.index('h+="<div class=\'check-grid\'>";'))
         self.assertLess(fn.index(legend),
                         fn.index("if(notice){h+=notice;}"))
+
+    def test_verdict207_compact_shares_carry_exact_title(self):
+        # Visual verdict #207 (2026-11-24, checker-improvement):
+        # the #177 legend defines B/T/Q, but it sits below the grid
+        # while the first compact count ("1T shares") appears in the
+        # first card — a first-time reader has to scroll to decode
+        # it, and #189/#191/#205 each re-raised the same complaint.
+        # The shortened span now carries the exact integer in a
+        # title attribute, so the value is explained in place on
+        # hover; the legend teaches the hover. Render-time only:
+        # the model strings and the API JSON keep exact integers,
+        # and the visible compact form is unchanged. The trap: the
+        # title holds digits, so bold_numbers must skip tags — a
+        # plain number regex would bold inside the attribute and
+        # break it.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        NB = "\u00a0"
+        # Formatter: every compact branch carries the exact count.
+        self.assertEqual(
+            build.compact_shares(f"1,000,000,000,000{NB}shares"),
+            "<span class='nowrap' title='1,000,000,000,000 shares'>"
+            "1T shares</span>")
+        self.assertEqual(
+            build.compact_shares(f"1,500,000,000,000{NB}shares"),
+            "<span class='nowrap' title='1,500,000,000,000 shares'>"
+            "1,500B shares</span>")
+        self.assertEqual(
+            build.compact_shares(
+                f"1,000,000,000,000,000,000,000,000{NB}shares"),
+            "<span class='nowrap' "
+            "title='1,000,000,000,000,000,000,000,000 shares'>"
+            "1×10²⁴ shares</span>")
+        # Uncompacted values carry no title at all.
+        self.assertEqual(
+            build.compact_shares(f"1,000,000{NB}shares"),
+            f"1,000,000{NB}shares")
+        self.assertNotIn("title=", build.compact_shares(
+            f"999,999,999,999{NB}shares"))
+        # The pipeline must not bold inside the title attribute.
+        piped = build.bold_numbers(build.nbsp_units(
+            build.compact_shares(f"1,000,000,000,000{NB}shares")))
+        self.assertEqual(
+            piped,
+            "<span class='nowrap' title='1,000,000,000,000 shares'>"
+            "<strong>1</strong>T shares</span>")
+        self.assertNotIn("<strong>1,000,000,000,000</strong>", piped)
+        # Rendered pages: titles on every compact span, none broken.
+        for off, mn, fee in ((0, 0, 0), (6, 1_000_000, 1000),
+                             (18, 1_000_000, 1000)):
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee)
+            html = build.results_html(
+                run_all(v), off=off, mn=mn, fee=fee)
+            titles = re.findall(r"title='([\d,]+) shares'", html)
+            self.assertTrue(titles, "no compact titles on preset")
+            for t in titles:
+                self.assertEqual(t, f"{int(t.replace(',', '')):,}")
+            self.assertNotIn("title='<strong>", html)
+            self.assertNotIn("</strong> shares'", html)
+            plain = re.sub(r"<[^>]+>", "", html)
+            self.assertIn("Hover a shortened count to see its "
+                          "exact value.", plain)
+        # Worker JS mirror: same title branches, same tag-skip.
+        js = build.checker_results_html_js()
+        self.assertIn("title='\"+n.toString()", js)
+        self.assertIn("title='\"+d.replace(", js)
+        self.assertIn(
+            "function boldNumbers(s){return s.replace("
+            "/<[^>]*>|(-?", js)
+        self.assertIn("Hover a shortened count to see its exact "
+                      "value.", js)
 
     def test_verdict195_pass_bound_legend_sits_under_table(self):
         # Visual verdict #195 (2026-11-24, checker-improvement):
@@ -9990,7 +10066,8 @@ class TestChecker(unittest.TestCase):
         js = build.checker_results_html_js()
         self.assertIn(
             "function boldNumbers(s){return s.replace("
-            "/-?\\d[\\d,]*(?:\\.\\d+)?/g,\"<strong>$&</strong>\");}",
+            "/<[^>]*>|(-?\\d[\\d,]*(?:\\.\\d+)?)/g,"
+            "function(m,num){return num?\"<strong>\"+num+\"</strong>\":m;});}",
             js)
         self.assertIn("function splitDetailLine(s)", js)
         # Visual verdict #159: the value cell now passes through
