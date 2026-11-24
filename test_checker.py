@@ -5462,7 +5462,7 @@ class TestChecker(unittest.TestCase):
                       '<span class="track-findings">66 re-verified · 15H 32M 19L</span>'
                       '<span class="track-lead">66 of 70 '
                       'awarded findings re-derived (16 High, 35 Medium, '
-                      '19 Low; $70,000 pool), four presented as MISSes (1 High, '
+                      '19 Low of the 70; $70,000 pool), four presented as MISSes (1 High, '
                       '3 Medium). </span>'
                       '<span class="track-detail">forge PoCs for M-NEGCAP 2/2, '
                       'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
@@ -5478,8 +5478,8 @@ class TestChecker(unittest.TestCase):
             r'<a href="/research/gamma/">Gamma Perpetual Vault</a>'
             r'<span class="track-findings">25 re-verified · 5H 8M 12L</span>'
             r'<span class="track-lead">25 of 27 validated\s+contest findings re-verified '
-            r'\(5 High, 9 Medium, 13 Low; \$50,000 pool\), two presented '
-            r'as MISSes \(1 Medium, 1 Low\), four with\s+forge PoCs, one live on-chain\.</span></li>')
+            r'\(5 High, 9 Medium, 13 Low of the 27; \$50,000 pool\), two presented '
+            r'as MISSes \(1 Medium, 1 Low\), four with\s+forge PoCs, one live&nbsp;on-chain\.</span></li>')
         # 2026-11-21 22:37, full audit of all 41 Track record entries:
         # the 21:37 round's "Gamma was the only one" was incomplete —
         # Thunder Loan's "6 of 7" also left the seventh's fate
@@ -5510,6 +5510,51 @@ class TestChecker(unittest.TestCase):
                       "color:#4b5563;margin-top:.6em}", build.CSS)
         self.assertIn(".track-lead{display:block;margin-top:.45em}",
                       build.CSS)
+
+
+    def test_verdict221_track_leads_label_the_total_split(self):
+        # Visual verdict #221 item 3 (2026-11-25): a first-time reader
+        # adds the pill split (Gamma 5H 8M 12L = 25) and the lead split
+        # (5 High, 9 Medium, 13 Low = 27) and reads a contradiction —
+        # the lead parenthetical is the contest's own award (the total),
+        # the pill is only the re-verified subset. The track-record
+        # intro already says so, but the verdict shows readers do not
+        # carry it down to the cards. Each of the two dual-number cards
+        # now labels its parenthetical as the total's split, so the
+        # arithmetic closes on the card: total minus the MISSes equals
+        # the pill (Gamma 27 - 1M - 1L = 25; Zaros 70 - 1H - 3M = 66).
+        # Only these two cards have two number sets — every other
+        # entry's pill and lead already agree (checked in the audit
+        # loop of 2026-11-24 #221 triage).
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
+        self.assertIn("(5 High, 9 Medium, 13 Low of the 27; $50,000 pool)",
+                      track)
+        self.assertIn("(16 High, 35 Medium, 19 Low of the 70; $70,000 pool)",
+                      track)
+        self.assertNotIn("(5 High, 9 Medium, 13 Low; $50,000 pool)", track)
+        self.assertNotIn("(16 High, 35 Medium, 19 Low; $70,000 pool)", track)
+        # Pills still carry the re-verified split; sums match the counts.
+        self.assertIn("25 re-verified · 5H 8M 12L", track)
+        self.assertIn("66 re-verified · 15H 32M 19L", track)
+        self.assertEqual(5 + 8 + 12, 25)
+        self.assertEqual(15 + 32 + 19, 66)
+        # Research pages quote the same totals in sequence, not side by
+        # side with a pill — no annotation needed there, and the old
+        # parenthetical forms still stand there.
+        gamma_desc = [d for p, t, d, k, b in build.PAGES
+                      if p == "/research/gamma/"][0]
+        self.assertIn("27 validated findings (5 High, 9 Medium, 13 Low, "
+                      "$50,000 pool)", gamma_desc)
+        zaros_desc = [d for p, t, d, k, b in build.PAGES
+                      if p == "/research/zaros/"][0]
+        self.assertIn("70 validated findings (16 High, 35 Medium, 19 Low, "
+                      "$70,000 pool)", zaros_desc)
 
     def test_verdict192_audit_text_has_no_orphans(self):
         # Visual verdict #192 (2026-11-24): /audit/ orphan batch fix.
