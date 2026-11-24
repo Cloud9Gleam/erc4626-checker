@@ -4984,7 +4984,8 @@ class TestChecker(unittest.TestCase):
             + build.PAY_ADDR + '" target="_blank" rel="noopener">'
             'View on BaseScan</a>', audit)
         self.assertIn(".pay-row a.basescan-link{flex-shrink:0;"
-                      "white-space:nowrap;font-size:.9em}", build.CSS)
+                      "white-space:nowrap;font-size:.9em;margin-right:1em}",
+                      build.CSS)
         # Inside the pay-row, after the copy button, before the note.
         row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
         self.assertIsNotNone(row, "pay-row not found")
@@ -4998,6 +4999,47 @@ class TestChecker(unittest.TestCase):
         self.assertIn("https://basescan.org/address/" + build.PAY_ADDR,
                       worker)
         self.assertIn("View on BaseScan", worker)
+
+    def test_verdict217_pay_row_links_are_separated(self):
+        # Checker-improvement #217 (2026-11-25, visual verdict #217):
+        # the two text links in the /audit/ pay-row sat one .6em flex
+        # gap apart (~10px at the row's 17px font) and read as one
+        # continuous sentence. The BaseScan link now carries a 1em
+        # right margin, so the gap to the toggle is ~25px while the
+        # Copy-to-BaseScan gap is untouched (the empty
+        # pay-copy-status span doubles the flex gap there, so a
+        # row-level gap change would overshoot it to ~51px). The
+        # margin sits on the link, not the toggle: on narrow screens
+        # the toggle wraps to its own line, where a left margin would
+        # indent it, while a right margin on the link is only trailing
+        # space on its line. #103/#124 stand: BaseScan stays a plain
+        # link, the toggle stays a display preference.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        rule = (".pay-row a.basescan-link{flex-shrink:0;"
+                "white-space:nowrap;font-size:.9em;margin-right:1em}")
+        self.assertIn(rule, build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(rule, worker)
+        # The row itself is untouched: same flex gap, same wrap, same
+        # control order (copy, BaseScan, toggle, note).
+        self.assertIn(".pay-row{display:flex;align-items:center;"
+                      "gap:.6em;flex-wrap:wrap", build.CSS)
+        self.assertIn(".pay-row .addr-toggle-wrap{flex-shrink:0}",
+                      build.CSS)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        row = audit[audit.index('<div class="pay-row">'):]
+        row = row[:row.index("</div>")]
+        self.assertLess(row.index("Copy address"),
+                        row.index("View on BaseScan"))
+        # The button label form, not the bare string: the togglePayAddr
+        # script (which restores the same label) sits inside the row
+        # before the BaseScan link.
+        self.assertLess(row.index("View on BaseScan"),
+                        row.index(">Show shortened address</button>"))
 
     def test_toggle_pay_addr_clears_copy_status(self):
         # Verdict #56: after copying, "Payment address copied." stayed
