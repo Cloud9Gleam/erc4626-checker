@@ -7359,50 +7359,62 @@ class TestChecker(unittest.TestCase):
         self.assertLess(stats_idx, hero.index('<div class="flow"'))
         self.assertLess(hero.index("Run the free checker"),
                         stats_idx)
-        # Rule (p): the hero model count drifts with every new model,
-        # so derive it fresh from the site's *-model.py files instead
-        # of hardcoding it (the old literal 152 went stale when the
-        # epoch pro-rata model made it 155).
+        # Rule (p) — visual verdict #223 (2026-11-25): the hero used
+        # to cite the model count (164 *-model.py files), a number no
+        # visitor could check that conflicted with the "179 guides"
+        # the linked page shows. The hero now cites the guide count
+        # itself, derived fresh from the site's guide directories.
         # Visual verdict #202 (2026-11-24): the stats are links — the
-        # model count to /guides/ (the worked examples in readable
-        # form), the other two to /checker/. Pin the hrefs, not just
-        # the numbers, so a future edit that drops a link fails here.
+        # guide count to /guides/, the other two to /checker/. Pin the
+        # hrefs, not just the numbers, so a future edit that drops a
+        # link fails here.
         from pathlib import Path
-        model_count = len(list((Path.home() / "workspace/taskmarket/site")
-                               .glob("*-model.py")))
-        for fact in (f'<a href="/guides/"><strong>{model_count}</strong> exact-integer worked examples</a>',
+        guide_count = len([d for d in (Path.home() / "workspace/taskmarket/site" / "guides").iterdir() if d.is_dir()])
+        for fact in (f'<a href="/guides/"><strong>{guide_count}</strong> guides</a>',
                      '<a href="/checker/"><strong>6</strong> checks per run</a>',
                      '<a href="/checker/"><strong>$0</strong> to run the checker</a>'):
             self.assertIn(fact, hero)
 
-    def test_hero_model_count_is_derived_at_build_time(self):
-        # Rule (p): build.MODEL_COUNT must equal the live *-model.py
-        # glob — the hero number is computed by the build, not typed
-        # in by hand. If someone re-hardcodes the literal in build.py,
-        # the hero goes stale the moment a model file is added and
-        # this test fails on the next run.
+    def test_hero_guide_count_is_derived_at_build_time(self):
+        # Rule (p) — visual verdict #223 (2026-11-25): the hero used
+        # to cite build.MODEL_COUNT (164 *-model.py files), a number
+        # no visitor could check that conflicted with the "179 guides"
+        # the linked page shows. The hero now cites the guide count,
+        # derived at build time from the guide directories, and the
+        # /guides/ counter uses the same number — the two can never
+        # disagree again. Pin all three to the same live count: guide
+        # dirs, PAGES guide entries, and both rendered numbers.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         site = Path.home() / "workspace/taskmarket/site"
-        self.assertEqual(build.MODEL_COUNT,
-                         len(list(site.glob("*-model.py"))))
-        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        guide_dirs = [d for d in (site / "guides").iterdir() if d.is_dir()]
+        self.assertEqual(build.GUIDE_COUNT, len(guide_dirs))
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        guide_pages = [p for p in pages
+                       if p.startswith("/guides/") and p != "/guides/"]
+        self.assertEqual(build.GUIDE_COUNT, len(guide_pages))
+        home = pages["/"]
         self.assertIn(
-            f'<a href="/guides/"><strong>{build.MODEL_COUNT}</strong> exact-integer worked examples</a>',
+            f'<a href="/guides/"><strong>{build.GUIDE_COUNT}</strong> guides</a>',
             home)
+        self.assertNotIn("exact-integer worked examples</a>", home)
+        index = pages["/guides/"]
+        self.assertIn(">%d guides<" % build.GUIDE_COUNT, index)
 
     def test_verdict202_hero_stats_are_links(self):
         # Visual verdict #202 (2026-11-24, checker-improvement):
-        # the hero stats were plain text — the 164 worked examples,
+        # the hero stats were plain text — the 179 guides,
         # the 6 checks and the $0 price each describe something the
         # visitor cannot reach from the strip itself. Each stat is now
-        # a link to what it describes: the model count to /guides/
-        # (the worked examples in readable form), the other two to
-        # /checker/. Exactly three links, in stat order, and no bare
-        # stat text outside an anchor — a future edit that drops a
-        # link fails here, not silently in the browser.
+        # a link to what it describes: the guide count to /guides/,
+        # the other two to /checker/. Exactly three links, in stat
+        # order, and no bare stat text outside an anchor — a future
+        # edit that drops a link fails here, not silently in the
+        # browser. Visual verdict #223 (2026-11-25): the first stat
+        # used to cite the model count (164 *-model.py files) — now
+        # the guide count, the number the linked page itself shows.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -7417,7 +7429,7 @@ class TestChecker(unittest.TestCase):
         free = strip.index('<a href="/checker/"><strong>$0</strong>')
         self.assertLess(guides, checks)
         self.assertLess(checks, free)
-        self.assertIn(f'<strong>{build.MODEL_COUNT}</strong> exact-integer worked examples</a>',
+        self.assertIn(f'<strong>{build.GUIDE_COUNT}</strong> guides</a>',
                       strip)
         # The CTA above the strip keeps its own button rule — the
         # new underline rule is scoped to .hero-stats a only.
@@ -26695,21 +26707,21 @@ class TestChecker(unittest.TestCase):
         build = (Path.home() / "workspace/taskmarket/site/build.py"
                  ).read_text()
         self.assertIn('"/guides/erc4626-epoch-prorata-redemption/"', build)
-        # Rule (p): the hero model count is derived at build time from
-        # the *-model.py glob (build.MODEL_COUNT), not hardcoded — so
-        # the literal never appears in build.py source; check the
-        # rendered homepage instead (pinned in full by
-        # test_hero_stats_strip_fills_left_column and
-        # test_hero_model_count_is_derived_at_build_time).
+        # Rule (p) — visual verdict #223 (2026-11-25): the hero guide
+        # count is derived at build time from the guide directories
+        # (build.GUIDE_COUNT), not hardcoded — so the literal never
+        # appears in build.py source; check the rendered homepage
+        # instead (pinned in full by
+        # test_hero_stats_strip_spans_full_hero_width and
+        # test_hero_guide_count_is_derived_at_build_time).
         import sys
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build as site_build
-        model_count = len(list((Path.home() / "workspace/taskmarket/site"
-                                ).glob("*-model.py")))
-        self.assertEqual(site_build.MODEL_COUNT, model_count)
+        guide_count = len([d for d in (Path.home() / "workspace/taskmarket/site" / "guides").iterdir() if d.is_dir()])
+        self.assertEqual(site_build.GUIDE_COUNT, guide_count)
         home = dict((p, b) for p, t, d, k, b in site_build.PAGES)["/"]
-        # Visual verdict #202: the model-count stat links to /guides/.
-        self.assertIn(f'<a href="/guides/"><strong>{model_count}</strong> exact-integer worked examples</a>',
+        # Visual verdict #202: the guide-count stat links to /guides/.
+        self.assertIn(f'<a href="/guides/"><strong>{guide_count}</strong> guides</a>',
                       home)
         for num in ("5,000.000000", "40,000.000000", "3,333,333,333",
                     "2,500.000000", "9,999,999,999", "10,000 USDC"):
