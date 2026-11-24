@@ -6103,8 +6103,11 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        # (2026-11-24 update: visual verdict #208 moves "What you do
+        # not get" between this list and the report examples, so the
+        # slice now ends at the limits h2 instead of report-examples.)
         section = audit[audit.index('<h2 id="what-you-get">What you get</h2>'):
-                        audit.index('<h2 id="report-examples">What a report looks like</h2>')]
+                        audit.index('<h2 id="limits">What you do not get</h2>')]
         self.assertEqual(section.count("<li>"), 4)
         self.assertNotIn("<p>", section)
         self.assertIn("<li>A written report within <strong>72 hours</strong> "
@@ -10821,8 +10824,13 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(audit.count('aria-label="On this page"'), 1)
         toc = audit[audit.index('<nav class="audit-toc"'):
                     audit.index('</nav>')]
-        targets = ["#scope", "#price", "#what-you-get", "#report-examples",
-                   "#start", "#track-record", "#limits"]
+        # (2026-11-24 update: visual verdict #208 moves "What you do not
+        # get" up beside "What you get" — the exclusion clauses sat below
+        # the 41-review track record, ~4600px down at 1919px, so a buyer
+        # deciding whether to pay had to scroll past all the proof to
+        # reach the terms. The TOC order follows the section order.)
+        targets = ["#scope", "#price", "#what-you-get", "#limits",
+                   "#report-examples", "#start", "#track-record"]
         hrefs = [t.split('href="')[1].split('"')[0]
                  for t in toc.split("<a ")[1:]]
         self.assertEqual(hrefs, targets)
@@ -10830,11 +10838,11 @@ class TestChecker(unittest.TestCase):
         self.assertLess(audit.index('<nav class="audit-toc"'),
                         audit.index('<h2 id="scope">'))
         for anchor, label in zip(
-                ["scope", "price", "what-you-get", "report-examples",
-                 "start", "track-record", "limits"],
+                ["scope", "price", "what-you-get", "limits",
+                 "report-examples", "start", "track-record"],
                 ["Scope", "Price and payment", "What you get",
-                 "What a report looks like", "Start", "Track record",
-                 "What you do not get"]):
+                 "What you do not get", "What a report looks like",
+                 "Start", "Track record"]):
             self.assertEqual(audit.count(f'<h2 id="{anchor}">{label}</h2>'), 1)
         self.assertEqual(audit.count("<h2 "), 7)
         for group in ("(3)", "(33)", "(3)", "(1)", "(1)"):
@@ -10857,6 +10865,44 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".back-to-top{margin:1.2em 0 0;text-align:right;font-size:.9em}",
             build.CSS)
+
+    def test_verdict208_limits_sit_with_purchase_terms(self):
+        # Visual verdict #208 (2026-11-24): "What you do not get"
+        # sat below the 41-review track record — h2 at y=4609 of a
+        # 4915px page at 1919px (6781 of 7276px at 360px), so the
+        # exclusion clauses were the last thing a buyer deciding
+        # whether to pay ever saw. The section now sits directly
+        # after "What you get", so scope, price, what you get, and
+        # what you do not get read as one purchase-terms block before
+        # the report examples, the order form, and the proof. Pure
+        # reorder: both bullets verbatim, track record untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        order = ["<h2 id=\"scope\">", "<h2 id=\"price\">",
+                 "<h2 id=\"what-you-get\">", "<h2 id=\"limits\">",
+                 "<h2 id=\"report-examples\">", "<h2 id=\"start\">",
+                 "<h2 id=\"track-record\">"]
+        idx = [audit.index(h) for h in order]
+        self.assertEqual(idx, sorted(idx))
+        self.assertEqual(audit.count('<h2 id="limits">What you do not get</h2>'), 1)
+        self.assertIn("No full audit of the whole codebase, no legal advice",
+                      audit)
+        self.assertIn("No KYC from either side. No custody: we never hold "
+                      "your funds and never ask\nfor keys.", audit)
+        # The limits block is inside the purchase-terms block, not
+        # after the track record: it precedes the report-examples h2
+        # and the track record's closing paragraph still ends the page.
+        self.assertLess(audit.index('<h2 id="limits">'),
+                        audit.index('<h2 id="report-examples">'))
+        self.assertLess(audit.index('<h2 id="limits">'),
+                        audit.index('<h2 id="track-record">'))
+        self.assertIn("These are re-verifications of contest findings",
+                      audit[audit.index('<h2 id="track-record">'):])
+        self.assertGreater(audit.index('class="back-to-top"'),
+                           audit.index('<h2 id="track-record">'))
 
     def test_verdict198_audit_toc_is_two_column_on_desktop(self):
         # Visual verdict #198 (2026-11-24): the /audit/ table of
