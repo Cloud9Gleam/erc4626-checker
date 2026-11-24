@@ -25992,12 +25992,17 @@ class TestChecker(unittest.TestCase):
         self.assertIn('"Preview must equal execution exactly — tested on a '
                       '10,000 USDC deposit and a 1,000,000-share mint and redeem."', js)
         self.assertIn('.replace("mint and redeem.", "mint and&nbsp;redeem.")', js)
-        # /audit/ intro: the link text is one unbreakable unit; the
-        # plain form is gone from the audit page. (The homepage intro
-        # link is paragraph-initial and was not flagged — untouched.)
+        # /audit/ intro: the link text is one unbreakable unit — the
+        # nbsp binds "4626" to "checker", and the non-breaking hyphen
+        # (U+2011, #200 precedent) binds "ERC" to "4626": the real
+        # browser split the nbsp-only form at the hyphen ("ERC- /
+        # 4626 checker"). The plain form and the half-fix form are
+        # both gone from the audit page. (The homepage intro link is
+        # paragraph-initial and was not flagged — untouched.)
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        self.assertEqual(audit.count('<a href="/checker/">ERC-4626&nbsp;checker</a>'), 1)
+        self.assertEqual(audit.count('<a href="/checker/">ERC&#8209;4626&nbsp;checker</a>'), 1)
         self.assertNotIn('<a href="/checker/">ERC-4626 checker</a>', audit)
+        self.assertNotIn('<a href="/checker/">ERC-4626&nbsp;checker</a>', audit)
 
     def test_cli_seeded_vault_passes_where_new_vault_fails(self):
         # The hosted checker lets a user seed the vault state (assets +
