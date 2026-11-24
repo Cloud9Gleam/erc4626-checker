@@ -2411,10 +2411,12 @@ class TestChecker(unittest.TestCase):
         import build
         USDC = 1_000_000
         body = build.checker_body()
+        # Verdict #190 (2026-11-24): "as&nbsp;displayed." keeps the last
+        # line from ending on the single word "displayed." at 360px.
         self.assertIn(
             "<p>Vault state (assets and shares) seeds the donation and "
             "minimum-viable-deposit checks; 0 and 0 mean a new vault. "
-            "Shares are counted at 6 decimals, as displayed.</p>", body)
+            "Shares are counted at 6 decimals, as&nbsp;displayed.</p>", body)
         self.assertNotIn(
             "minimum-viable-deposit checks; 0 and 0 mean a new vault.</p>",
             body)
@@ -2477,6 +2479,45 @@ class TestChecker(unittest.TestCase):
                       "not the raw&nbsp;totalSupply.</p>",
                       "Add&nbsp;<code>vault=YourVaultName</code>"):
             self.assertEqual(worker.count(fixed), 2)
+
+    def test_verdict190_checker_360px_orphans_have_nbsp(self):
+        # Verdict #190: the #187 orphan scan's leftover /checker/
+        # orphans at 360px — the share-price check-desc ends
+        # "deposit.", the Vault-state paragraph ends "displayed.",
+        # the loss title ends "(USDC)", the notice offset-6 paragraph
+        # ends "unchanged)." and the slippage paragraph ends
+        # "scenarios.", each alone on its last line. Each is now bound
+        # to its neighbour with &nbsp; so the last line always holds at
+        # least two words; wording is unchanged. Layout is pinned by
+        # measure-verdict187.py (re-run after the fix: zero /checker/
+        # orphans at 360px and 1919px).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        body = build.checker_body()
+        self.assertIn("on a plain&nbsp;deposit.", body)
+        self.assertIn("Shares are counted at 6 decimals, as&nbsp;displayed.</p>", body)
+        self.assertNotIn("as displayed.</p>", body)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # Both render paths carry the check-desc fix: the static page
+        # holds "on a plain&nbsp;deposit." once, and the JS renderer
+        # binds it post-esc (the replace literal is the bare
+        # "plain&nbsp;deposit.", so the bundle holds that twice).
+        # The title and notice fixes live in the JS template only
+        # (the static page is the passing default).
+        self.assertEqual(worker.count("on a plain&nbsp;deposit."), 1)
+        self.assertEqual(worker.count("plain&nbsp;deposit."), 2)
+        self.assertEqual(worker.count("Victim loss by donation size&nbsp;(USDC)"), 1)
+        self.assertEqual(worker.count("(your other parameters&nbsp;unchanged)."), 1)
+        self.assertEqual(worker.count("twelve measured&nbsp;scenarios."), 1)
+        # Old forms are gone from the bundle (the guide pages reuse
+        # "plain deposit" as prose, so the desc's plain form is not
+        # asserted absent here).
+        self.assertNotIn("Victim loss by donation size (USDC)", worker)
+        self.assertNotIn("(your other parameters unchanged).", worker)
+        self.assertNotIn("twelve measured scenarios.</p>", worker)
 
     def test_exit_fee_guide_numbers(self):
         # Exit-fee guide (site/exit-fee-model.py): a 5% fee on redemption.
