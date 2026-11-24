@@ -2179,9 +2179,9 @@ class TestChecker(unittest.TestCase):
     def test_verdict191_fail_banner_copy_button_is_red(self):
         # Checker-improvement #191 (2026-11-24): the copy button is
         # a button[type=button], so it inherits the white/green
-        # secondary style — correct on the light-green PASS banner,
-        # but green text and a green border inside the red FAIL
-        # banner (#b91c1c) read as a colour clash (visual verdict
+        # secondary style — correct on the PASS banner (pale before
+        # #197, solid after), but green text and a green border
+        # inside the red FAIL banner (#b91c1c) read as a colour clash (visual verdict
         # #189 item 6; measured baseline: button rgb(10,125,44) on
         # banner rgb(185,28,28)). The FAIL banner's button takes
         # the banner's own red; the hover tint #fdecea is the light
@@ -2217,6 +2217,62 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".result-banner.fail .copy-link-btn:hover"
             "{background:#fdecea}",
+            worker)
+
+    def test_verdict197_pass_banners_are_solid_green(self):
+        # Checker-improvement #197 (2026-11-24): visual verdict #197
+        # item 1 — the PASS strip and PASS result banner were pale
+        # green (#e6f4ea) with dark-green text while the FAIL pair
+        # is solid red (#b91c1c) with white text, so the expected
+        # result read as a minor hint and the failure as the
+        # heaviest element on the page. PASS is now the same weight:
+        # solid site green (#0a7d2c, the CTA green) with white text
+        # and a ~15% darker border (#086a25, the same proportion as
+        # the FAIL border #991b1b on #b91c1c). FAIL is untouched.
+        # The copy button inside the PASS banner keeps its generic
+        # white/green secondary style (white on green, mirroring
+        # the FAIL banner's white/red button from #191); the strip
+        # link inherits color, so it goes white with the banner.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".result-banner.pass{background:#0a7d2c;color:#fff;"
+            "border:1px solid #086a25}",
+            build.CSS)
+        self.assertIn(
+            ".verdict-strip.pass{background:#0a7d2c;color:#fff;"
+            "border:1px solid #086a25}",
+            build.CSS)
+        self.assertNotIn(
+            ".result-banner.pass{background:#e6f4ea",
+            build.CSS)
+        self.assertNotIn(
+            ".verdict-strip.pass{background:#e6f4ea",
+            build.CSS)
+        # FAIL pair untouched, same weight as the new PASS pair.
+        self.assertIn(
+            ".result-banner.fail{background:#b91c1c;color:#fff;"
+            "border:1px solid #991b1b}",
+            build.CSS)
+        self.assertIn(
+            ".verdict-strip.fail{background:#b91c1c;color:#fff;"
+            "border:1px solid #991b1b}",
+            build.CSS)
+        # The strip link inherits the banner colour (white now).
+        self.assertIn(
+            ".verdict-strip a{color:inherit",
+            build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(
+            ".result-banner.pass{background:#0a7d2c;color:#fff;"
+            "border:1px solid #086a25}",
+            worker)
+        self.assertIn(
+            ".verdict-strip.pass{background:#0a7d2c;color:#fff;"
+            "border:1px solid #086a25}",
             worker)
 
     def test_form_to_banner_stack_is_tight(self):
