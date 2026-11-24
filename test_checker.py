@@ -1971,6 +1971,27 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:460px){.twrap-hint{display:block",
                       build.CSS)
 
+    def test_verdict219_api_default_values_are_pinned_together(self):
+        # Checker-improvement 2026-11-25 (#219): the API table's Notes
+        # cells stranded their default value alone on a line — min_usdc
+        # ended "Default" / "1." at 1919px, victim_usdc ended "USDC.
+        # Default" / "100,000." at 360px (probe-verdict219-api.py). A
+        # lone "1." or "100,000." reads as a stray number, not a default.
+        # The four "Default N." pairs are bound with nbsp; the vault rows
+        # ("Default 0.") are bound too — their last lines are two words
+        # today, but a wider renderer font strands the "0." the same way.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        body = build.checker_body()
+        self.assertEqual(body.count("Default&nbsp;1."), 1)
+        self.assertEqual(body.count("Default&nbsp;100,000."), 1)
+        self.assertEqual(body.count("Default&nbsp;0."), 2)
+        self.assertEqual(body.count("Default 1."), 0)
+        self.assertEqual(body.count("Default 100,000."), 0)
+        self.assertEqual(body.count("Default 0."), 0)
+
     def test_api_params_table_states_ranges_and_defaults(self):
         # Checker-improvement 2026-11-22: the API table's Values column
         # said "number" for min_usdc, victim_usdc, vault_assets_usdc and
@@ -1989,17 +2010,17 @@ class TestChecker(unittest.TestCase):
         body = build.checker_body()
         self.assertEqual(body.count("<td>number</td>"), 0)
         self.assertIn("<td>0–1,000,000,000</td><td>Smallest deposit the "
-                      "vault accepts, in USDC. Default 1.</td>", body)
+                      "vault accepts, in USDC. Default&nbsp;1.</td>", body)
         self.assertIn("<td>0.000001–1,000,000,000</td><td>Deposit the "
                       "donation attacker targets, in USDC. "
-                      "Default 100,000.</td>", body)
+                      "Default&nbsp;100,000.</td>", body)
         self.assertIn("<td>0–1,000,000,000,000</td><td>Vault assets, in "
                       "USDC. Seeds the donation and minimum-viable-deposit "
-                      "checks. Default 0.</td>", body)
+                      "checks. Default&nbsp;0.</td>", body)
         self.assertIn("<td>0–1,000,000,000,000</td><td>Shares already "
                       "issued, as displayed. Counted at 6 decimals, the "
                       "OpenZeppelin default for a USDC vault. "
-                      "Default 0.</td>", body)
+                      "Default&nbsp;0.</td>", body)
         # Docs and code must agree: the Worker clamps are 1e15 base
         # units for min/victim, 1e18 for vault assets, 1e12 shares.
         src = (Path.home() / "workspace/taskmarket/site/build.py"
