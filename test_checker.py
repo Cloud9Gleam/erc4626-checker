@@ -19,6 +19,25 @@ class TestChecker(unittest.TestCase):
                            donations=(10_000_000_000_000,))
         self.assertFalse(r["pass"])
 
+    def test_bad_decimals_offset_fails_at_construction(self):
+        # Checker-improvement #209 (2026-11-24): a negative or
+        # non-integer offset used to make virtual_shares a float
+        # (10 ** -1 == 0.1), and run_all then died inside the
+        # formatters with "Unknown format code 'd' for object of
+        # type 'float'" — nothing about the cause. The guard must
+        # fail at construction, naming the offset. Valid offsets
+        # (0, 6, 30) still construct and run all six checks.
+        for bad in (-1, -30, 1.5, True, "6"):
+            with self.assertRaises((TypeError, ValueError), msg=repr(bad)):
+                Vault(decimals_offset=bad)
+        with self.assertRaisesRegex(ValueError, "decimals_offset must be >= 0"):
+            Vault(decimals_offset=-1)
+        with self.assertRaisesRegex(TypeError, "decimals_offset must be an integer"):
+            Vault(decimals_offset=1.5)
+        for good in (0, 6, 30):
+            v = Vault(decimals_offset=good)
+            self.assertEqual(len(run_all(v)), 6)
+
     def test_detail_lines_use_readable_units(self):
         # Result detail lines must be readable at a glance: USDC amounts
         # with 6 decimals, share counts comma-separated and labelled, and
