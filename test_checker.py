@@ -3928,7 +3928,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a class="cta" href="#audit-order">Start an audit',
                       audit)
         self.assertLess(audit.index('href="#audit-order"'),
-                        audit.index('<h2>Scope</h2>'))
+                        audit.index('<h2 id="scope">Scope</h2>'))
         self.assertIn("a.cta{display:inline-block", build.CSS)
 
     def test_audit_pay_address_shown_in_full_by_default(self):
@@ -4898,7 +4898,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         self.assertEqual(track.count('<details class="track-group"'), 5)
         self.assertEqual(track.count("<summary>"), 5)
         self.assertEqual(track.count('<details class="track-group" open>'), 4)
@@ -4996,7 +4996,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         expected = {
             "gamma": "Nov 15, 2026",
             "battlechain-confidence-pools": "Nov 15, 2026",
@@ -5083,7 +5083,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         self.assertEqual(track.count('<span class="track-lead">'), 41)
         self.assertEqual(track.count('<span class="track-detail">'), 39)
         self.assertEqual(track.count('<span class="track-date">'), 41)
@@ -5487,7 +5487,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         expected = {
             "gamma": "25 re-verified · 5H 8M 12L",
             "battlechain-confidence-pools": "9 re-verified · 3M 6L",
@@ -5593,7 +5593,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         intro = re.sub(r"\s+", " ",
                        track[:track.index("<details")])
         self.assertIn("Every review below was reproduced from source in "
@@ -5638,7 +5638,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         intro = track[:track.index("<details")]
         # Exactly one paragraph before the first group.
         paras = re.findall(r"<p[^>]*>(.*?)</p>", intro, re.S)
@@ -5674,7 +5674,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         self.assertEqual(track.count('<span class="track-toggle">'), 5)
         self.assertEqual(track.count('<span class="when-closed">'), 5)
         self.assertEqual(track.count('<span class="when-open">'), 5)
@@ -5728,7 +5728,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         # Desktop: native marker off (both the modern rule and the
         # legacy WebKit pseudo-element), toggle + its triangle intact.
         self.assertIn("@media (min-width:641px){.track-group summary{list-style:none}",
@@ -5754,7 +5754,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         ff = track[track.index("CodeHawks First Flight"):]
         ff = ff[:ff.index("</details>")]
         self.assertEqual(ff.count("<li>"), 33)
@@ -5792,7 +5792,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         # 'track-list--long' now occurs twice in the section: the <ul>
         # itself and the filter script's querySelector (verdict #105).
         self.assertEqual(track.count('track-list--long'), 2)
@@ -5819,7 +5819,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        track = audit[audit.index("<h2>Track record</h2>"):]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         self.assertEqual(track.count('class="track-list track-list--cards">'), 4)
         self.assertEqual(track.count('class="track-list">'), 0)
         # 'track-list--long' still occurs exactly twice in the section:
@@ -5885,8 +5885,8 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        section = audit[audit.index("<h2>What you get</h2>"):
-                        audit.index("<h2>What a report looks like</h2>")]
+        section = audit[audit.index('<h2 id="what-you-get">What you get</h2>'):
+                        audit.index('<h2 id="report-examples">What a report looks like</h2>')]
         self.assertEqual(section.count("<li>"), 4)
         self.assertNotIn("<p>", section)
         self.assertIn("<li>A written report within <strong>72 hours</strong> "
@@ -10315,7 +10315,7 @@ class TestChecker(unittest.TestCase):
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         self.assertTrue(audit.startswith('<div class="audit-page">'))
         self.assertTrue(audit.rstrip().endswith("</div>"))
-        self.assertEqual(audit.count("<h2>"), 7)
+        self.assertEqual(audit.count("<h2 "), 7)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".audit-page h2{font-size:1.45em;", worker)
@@ -10339,19 +10339,74 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            ".audit-page > ul:last-child{margin-bottom:0}",
+            ".audit-page > ul:last-of-type{margin-bottom:0}",
             build.CSS)
         self.assertIn(
-            ".audit-page > ul:last-child > li:last-child{margin-bottom:0}",
+            ".audit-page > ul:last-of-type > li:last-child{margin-bottom:0}",
             build.CSS)
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        self.assertTrue(audit.rstrip().endswith("</ul></div>"))
+        self.assertTrue(audit.rstrip().endswith("</p></div>"))
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
-        self.assertIn(".audit-page > ul:last-child{margin-bottom:0}", worker)
+        self.assertIn(".audit-page > ul:last-of-type{margin-bottom:0}", worker)
         self.assertIn(
-            ".audit-page > ul:last-child > li:last-child{margin-bottom:0}",
+            ".audit-page > ul:last-of-type > li:last-child{margin-bottom:0}",
             worker)
+
+    def test_audit_toc_and_back_to_top(self):
+        # Visual verdict #195 item 4 (2026-11-24): /audit/ is ~4.5
+        # viewports with 41 track-record entries and no way to jump —
+        # a visitor hunting for the price or the track record scrolled
+        # the whole page. A table of contents under the intro links to
+        # all 7 sections (ids on the h2s), and a back-to-top link sits
+        # under the last section, jumping to body id="top". No JS;
+        # wording, prices, and the track record are untouched. The
+        # 41-review count is the group summaries' sum (3+33+3+1+1).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertEqual(audit.count('<nav class="audit-toc"'), 1)
+        self.assertEqual(audit.count('aria-label="On this page"'), 1)
+        toc = audit[audit.index('<nav class="audit-toc"'):
+                    audit.index('</nav>')]
+        targets = ["#scope", "#price", "#what-you-get", "#report-examples",
+                   "#start", "#track-record", "#limits"]
+        hrefs = [t.split('href="')[1].split('"')[0]
+                 for t in toc.split("<a ")[1:]]
+        self.assertEqual(hrefs, targets)
+        self.assertIn("Track record — 41 reviews", toc)
+        self.assertLess(audit.index('<nav class="audit-toc"'),
+                        audit.index('<h2 id="scope">'))
+        for anchor, label in zip(
+                ["scope", "price", "what-you-get", "report-examples",
+                 "start", "track-record", "limits"],
+                ["Scope", "Price and payment", "What you get",
+                 "What a report looks like", "Start", "Track record",
+                 "What you do not get"]):
+            self.assertEqual(audit.count(f'<h2 id="{anchor}">{label}</h2>'), 1)
+        self.assertEqual(audit.count("<h2 "), 7)
+        for group in ("(3)", "(33)", "(3)", "(1)", "(1)"):
+            self.assertIn(group, audit[audit.index('<h2 id="track-record">'):])
+        self.assertEqual(
+            audit.count('<p class="back-to-top"><a href="#top">Back to top &uarr;</a></p>'),
+            1)
+        self.assertGreater(audit.index('class="back-to-top"'),
+                           audit.rindex("</ul>"))
+        page = build.page("T", "D", "K", "<p>x</p>", "/audit/")
+        self.assertIn('<body id="top">', page)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('<body id=\\"top\\">', worker)
+        self.assertIn('<nav class=\\"audit-toc\\"', worker)
+        self.assertIn(
+            ".audit-toc{background:#fff;border:1px solid #e5e7eb;"
+            "border-radius:10px;padding:.7em 1em .8em;margin:1em 0}",
+            build.CSS)
+        self.assertIn(
+            ".back-to-top{margin:1.2em 0 0;text-align:right;font-size:.9em}",
+            build.CSS)
 
     def test_audit_order_form_is_a_card(self):
         # Visual verdict #100 (2026-11-18): on /audit/ the Start
