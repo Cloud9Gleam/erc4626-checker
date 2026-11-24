@@ -10464,6 +10464,37 @@ class TestChecker(unittest.TestCase):
             ".back-to-top{margin:1.2em 0 0;text-align:right;font-size:.9em}",
             build.CSS)
 
+    def test_verdict198_audit_toc_is_two_column_on_desktop(self):
+        # Visual verdict #198 (2026-11-24): the /audit/ table of
+        # contents was a single column in a 946px box — the longest
+        # link ended at x=725, ~700px of dead space on the right
+        # (#197 item 6). At min-width 641px the list runs two CSS
+        # columns; below that it stays single-column (the 310px
+        # mobile box has no slack to split). CSS columns, not grid:
+        # grid items lose their li markers, column items keep them.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        rule = ("@media (min-width:641px)"
+                "{.audit-toc ul{columns:2;column-gap:2em}}")
+        self.assertIn(rule, build.CSS)
+        self.assertEqual(build.CSS.count(rule), 1)
+        self.assertIn(".audit-toc ul{margin:0;padding-left:1.2em}",
+                      build.CSS)
+        self.assertNotIn(".audit-toc ul{display:grid", build.CSS)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        toc = audit[audit.index('<nav class="audit-toc"'):
+                    audit.index('</nav>')]
+        self.assertEqual(toc.count("<li>"), 7)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # The test passes page bodies, not rendered pages, so the CSS
+        # appears once here (via the 404 page built inside
+        # worker_js); the deployed worker.js inlines it per page, 241
+        # times — the harness asserts that count.
+        self.assertEqual(worker.count(rule), 1)
+
     def test_audit_order_form_is_a_card(self):
         # Visual verdict #100 (2026-11-18): on /audit/ the Start
         # form's four inputs sat bare on the white page — no grouping
