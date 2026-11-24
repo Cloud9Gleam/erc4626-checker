@@ -5046,6 +5046,17 @@ class TestChecker(unittest.TestCase):
         # and the toggle reads "Show 33 reviews". The added height
         # still sits below the order form, so the conversion path
         # is unaffected.)
+        # (2026-11-25 update: visual verdict #209 item 2 reverses the
+        # #131 trade for the Bounded slice group ONLY — the track record
+        # still spans ~2 screens with 8 entries expanded, and the Bounded
+        # slice is the tallest open group (640.3px at 1919px, 1160.1px at
+        # 360px — taller than the strongest group at 511.6px/912.7px),
+        # so folding it saves ~550px/~1000px. The strongest proof stays
+        # open (Gamma/Zaros/BattleChain), Reference and Live finding stay
+        # open, and the folded summary's preview line still names all
+        # three reviews with their headline findings — the #138 argument
+        # for First Flight, applied to the tallest short group. Five
+        # proof entries show without a click instead of eight.)
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5054,10 +5065,11 @@ class TestChecker(unittest.TestCase):
         track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         self.assertEqual(track.count('<details class="track-group"'), 5)
         self.assertEqual(track.count("<summary>"), 5)
-        self.assertEqual(track.count('<details class="track-group" open>'), 4)
+        self.assertEqual(track.count('<details class="track-group" open>'), 3)
         # Strongest proof first: the ended contests whose full awarded
-        # sets were re-verified — open by default (see above), the
-        # three short groups with them, and since 2026-11-21 the
+        # sets were re-verified — open by default (see above), Reference
+        # and Live finding with them, the Bounded slice folded since
+        # 2026-11-25 (verdict #209 item 2, #210), and since 2026-11-21 the
         # First Flight group folded again (verdict #138 item 1).
         # Visual verdict #112 item 1: a folded row showed only its
         # title, so each summary now carries a one-line preview of the
@@ -5075,7 +5087,7 @@ class TestChecker(unittest.TestCase):
         # subtitle after the dash (visual verdicts #107/#108): the
         # distinguishing scope now leads, so the summaries are
         # distinguishable at a glance.
-        self.assertIn('<details class="track-group" open>\n'
+        self.assertIn('<details class="track-group">\n'
                       '<summary>Bounded slice — ended contests (3)'
                       '<span class="track-toggle"><span class="when-closed">Show 3 reviews</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
@@ -5128,6 +5140,38 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".track-group summary{cursor:pointer;font-size:1.1em;"
                       "font-weight:700;color:#111827}", build.CSS)
         self.assertIn(".track-group .track-list{margin-top:.4em;margin-bottom:0}", build.CSS)
+
+    def test_verdict210_bounded_slice_folds_by_default(self):
+        # Visual verdict #209 item 2 (2026-11-24): the Track record still
+        # spans ~2 screens with 8 entries expanded. The Bounded slice is
+        # the tallest open group — 640.3px at 1919px / 1160.1px at 360px
+        # (measure-verdict210.py), taller than the strongest group
+        # (511.6px / 912.7px) — so it folds by default. The strongest
+        # proof stays open, Reference and Live finding stay open, and the
+        # folded summary's preview line still names all three reviews
+        # with their headline findings, so the proof signal survives the
+        # fold (the #138 argument for First Flight).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
+        self.assertEqual(track.count('<details class="track-group" open>'), 3)
+        self.assertIn('<details class="track-group">\n'
+                      '<summary>Bounded slice — ended contests (3)'
+                      '<span class="track-toggle"><span class="when-closed">Show 3 reviews</span>'
+                      '<span class="when-open">Hide</span><span class="tri"></span></span>'
+                      '<span class="track-preview">RAAC 3 Highs + 1 Medium in 657 lines · '
+                      'QuantAMM fee-logic Medium · Nexus 14 findings</span></summary>',
+                      track)
+        # The three reviews are still one click away, not gone.
+        for slug in ("/research/raac/", "/research/quantamm/", "/research/nexus/"):
+            self.assertIn('<a href="%s"' % slug, track)
+        # The strongest group is still the open one.
+        self.assertIn('<details class="track-group" open>\n'
+                      '<summary>Full awarded set re-verified — ended contests (3)',
+                      track)
 
     def test_audit_track_record_entries_carry_review_dates(self):
         # Visual verdict #131 item 3 (2026-11-20): every Track record
