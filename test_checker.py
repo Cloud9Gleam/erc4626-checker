@@ -11236,13 +11236,13 @@ class TestChecker(unittest.TestCase):
                       "donation and minimum-viable-deposit checks.",
                       checker)
 
-    def test_checker_hints_are_one_sentence_on_all_viewports(self):
+    def test_checker_hints_are_short_on_all_viewports(self):
         # Visual verdict #139 (2026-11-21): the desktop hints were
         # still 3 sentences each (25-33 words, 3-4 lines), so the
         # one-line text that verdict #109 added for phones only is now
         # the hint on every viewport and the dual-span structure is
         # gone. Both render paths (static checker_body and the
-        # Worker-side formHTML) must carry the same six one-liners.
+        # Worker-side formHTML) must carry the same six short hints.
         # 2026-11-22: the shares hint now states the 6-decimal
         # convention ("counted at 6 decimals") — the API table already
         # said so, but the form where the number is typed did not.
@@ -11252,6 +11252,20 @@ class TestChecker(unittest.TestCase):
         # row-mates'. All three are shortened to fit one line; the
         # shares hint keeps "counted at 6 decimals" and drops its
         # "(0 = a new vault)" tail (the assets hint still says 0 = new).
+        # 2026-11-25 (visual verdict #211 item 1): the shares hint is
+        # two sentences again, on purpose — the raw-totalSupply warning
+        # ("Enter the shares the vault shows, not the raw totalSupply")
+        # lived only in the email section ~4 screens below the form,
+        # so a first-time user could type a raw 10^18 totalSupply and
+        # get wrong results with no warning at the point of typing.
+        # The hint now carries both facts (unit + warning), each half
+        # verbatim from existing page text. It wraps to 2 lines in the
+        # 285px desktop columns, which the #142 min-height:3em already
+        # reserves, so the form does not grow; only the shares hint's
+        # text bottom sits ~22px below its row-mates', the exact
+        # cosmetic cost #161 removed — accepted here because a silent
+        # wrong-result trap outweighs aligned hint text bottoms. The
+        # other five hints stay one sentence / one line.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -11263,7 +11277,7 @@ class TestChecker(unittest.TestCase):
                   "The smallest deposit the vault accepts.",
                   "The deposit made after the donation.",
                   "Assets already in the vault. 0 = new.",
-                  "Issued shares, counted at 6 decimals.",
+                  "Issued shares, counted at 6 decimals. Not the raw totalSupply.",
                   "The cut from the yield. 1000 bps = 10%.")
         html = build.checker_body()
         worker = build.worker_js(
@@ -11637,27 +11651,32 @@ class TestChecker(unittest.TestCase):
         self.assertIn("at least 1 USDC even when the minimum is 0", guide)
         self.assertIn("no loss is measured", guide)
 
-    def test_checker_hints_are_one_sentence(self):
+    def test_checker_hints_are_short(self):
         # Visual verdict #139 (2026-11-21, real browser): the checker
         # form's six hints each ran 3 sentences of small grey text, and
         # the inputs' visual weight was pressed down by the explanations
-        # -- the form read as text-crowded. All six hints are one
-        # sentence now; the displaced facts moved to the how-to guide
-        # (Step 1 / Step 3, pinned by the four *_says_what_the_model_does
-        # tests and test_vault_state_hint_names_both_checks). This test
-        # pins the six one-liners in both render copies (Python
-        # template + Worker JS mirror). 2026-11-22: the shares
-        # one-liner gained "counted at 6 decimals" — the model
-        # multiplies displayed shares by 1e6, and the form never said
-        # so while the API table did; still one sentence, per #139.
+        # -- the form read as text-crowded. Five hints are one sentence
+        # now; the displaced facts moved to the how-to guide (Step 1 /
+        # Step 3, pinned by the four *_says_what_the_model_does tests
+        # and test_vault_state_hint_names_both_checks). This test pins
+        # the six short hints in both render copies (Python template +
+        # Worker JS mirror). 2026-11-22: the shares hint gained
+        # "counted at 6 decimals" — the model multiplies displayed
+        # shares by 1e6, and the form never said so while the API
+        # table did; still one sentence, per #139.
         # 2026-11-23 (visual verdict #161 item 3): the offset, assets
-        # and shares one-liners wrapped to 2 lines in the 285px desktop
+        # and shares hints wrapped to 2 lines in the 285px desktop
         # columns (headless-shell measurement at 1919px: text bottoms
         # 593 vs 571 in row 1, 736 vs 713 in row 2), so the row's hint
         # bottoms were ~22px uneven. All three are shortened to fit
         # one line at desktop; the shares hint keeps "counted at
         # 6 decimals" and drops its "(0 = a new vault)" tail (the
         # assets hint still says 0 = new).
+        # 2026-11-25 (visual verdict #211 item 1): the shares hint is
+        # two sentences again, on purpose — see
+        # test_checker_hints_are_short_on_all_viewports for the
+        # tradeoff. The warning half is verbatim from the email
+        # section; the unit half is unchanged.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -11668,7 +11687,7 @@ class TestChecker(unittest.TestCase):
             "The smallest deposit the vault accepts.",
             "The deposit made after the donation.",
             "Assets already in the vault. 0 = new.",
-            "Issued shares, counted at 6 decimals.",
+            "Issued shares, counted at 6 decimals. Not the raw totalSupply.",
             "The cut from the yield. 1000 bps = 10%.",
         ]
         for hint in hints:
