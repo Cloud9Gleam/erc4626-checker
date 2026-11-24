@@ -6719,8 +6719,8 @@ class TestChecker(unittest.TestCase):
                      "Minimum viable deposit"):
             self.assertIn("<li>%s</li>" % name, home,
                           "hero aside no longer lists %s" % name)
-        self.assertIn("the donation check shows exactly what a donation does "
-                      "to the next depositor", home)
+        self.assertIn("the donation check shows the next depositor's loss",
+                      home)
         for title, n in bodies.items():
             self.assertGreaterEqual(n, 180, "%s body too short: %d" % (title, n))
         self.assertLessEqual(max(bodies.values()) / min(bodies.values()), 1.4,
@@ -21556,14 +21556,45 @@ class TestChecker(unittest.TestCase):
         # slack), not an eyeball error. The headless-tuned balance
         # does not hold in real Chrome; the wrap-count gap is the
         # next slice (see checker-improvements.md #180).
+        # Correction of that correction, verdict #181 (2026-11-24,
+        # checker-improvement): the wrap-count gap does not exist.
+        # The #181 browser task and headless agree on every one of
+        # the 11 line counts (intros 7/5/6, bullets [3,2,3] /
+        # [4,2,1,3] / [4,2,2,1], totals 15/15/15), and headless
+        # gaps 18.7/13.6/13.6px are self-consistent with those
+        # counts — so the 23/49/45px was a screenshot pixel-scan
+        # misread, not renderer geometry. The headless-tuned
+        # balance does hold; the remaining real defect was the
+        # 4-line first bullets themselves (head-heavy), fixed in
+        # #181 by trimming all three cards one line each (see
+        # below). Do not reopen the wrap-count gap without a
+        # rect-based measurement, never a pixel scan.
         self.assertIn(
             '<li>No guaranteed findings.</li>', build_text)
         self.assertIn(
             '<li>Findings, or a clean negative.</li>', build_text)
+        # Visual verdict #181 (2026-11-24, checker-improvement):
+        # the two 4-line first bullets are trimmed to 3 lines each
+        # (Paid drops "the request is composed for you" — the
+        # compose step lives on /audit/ itself; Research drops
+        # "each one worked through", keeping "with exact
+        # numbers"), and the Free intro drops one line the same
+        # way ("shows exactly what a donation does to the next
+        # depositor" -> "shows the next depositor's loss"), so all
+        # three cards stay at 14 content lines and the pin blank
+        # stays 13.6/8.5/8.5px. Measured after
+        # (hidden_files/probe-verdict181-candidates.py + measure
+        # -verdict181.py, 1919px): cards 550.4px (was 578.4),
+        # link tops spread 0.0, totals 14/14/14.
         self.assertIn(
             'See a sample report first — then order with a '
-            'repository link and pinned commit; the request is '
-            'composed for you.', build_text)
+            'repo link and pinned commit.', build_text)
+        self.assertIn(
+            'Six checks run on your parameters — the donation '
+            'check shows the next depositor\'s loss.', build_text)
+        self.assertIn(
+            'Guides</a> explain the attacks these checks defend '
+            'against, with exact numbers.', build_text)
         self.assertNotIn('See a sample report on the audit page first',
                          build_text)
         self.assertIn(
