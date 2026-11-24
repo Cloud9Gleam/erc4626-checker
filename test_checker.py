@@ -21537,6 +21537,21 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             '<li>All math is exact integers — no floating-point '
             'rounding anywhere.</li>', build_text)
+        # Visual verdict #180 (2026-11-24, checker-improvement):
+        # the #177 browser claim of ~70px of fill in Research did
+        # not reproduce (headless: 36.5px blank above the link,
+        # 41.6px last-li to link — no decomposition reaches 70),
+        # but the real 28px body gap was still there, so Paid
+        # service and Research each gain one honest one-line
+        # bullet, both restating copy already on the site. Measured
+        # after (hidden_files/measure-verdict180.py, 1919px): all
+        # three cards 578.4px, link tops all 1428.5 (spread 0.0),
+        # blanks above the links 13.6/8.5/8.5px (was 8.5/36.5/36.5);
+        # both new bullets render as exactly one line (28.0px).
+        self.assertIn(
+            '<li>No guaranteed findings.</li>', build_text)
+        self.assertIn(
+            '<li>Findings, or a clean negative.</li>', build_text)
         self.assertIn(
             'See a sample report first — then order with a '
             'repository link and pinned commit; the request is '
