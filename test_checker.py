@@ -2620,6 +2620,11 @@ class TestChecker(unittest.TestCase):
         # token. Each is now bound to its neighbour with &nbsp; so the
         # last line always holds at least two words; wording is
         # unchanged and the copyable <pre> block is untouched.
+        # Verdict #206: #188's "one per&nbsp;line:" still left the
+        # two-word tail "per line:" alone on line 2 at 1919px (the
+        # break fell before "per"), so "one" is bound to "per" too —
+        # the whole three-word phrase now moves as one unit and the
+        # paragraph collapses to a single line at 1919px.
         import sys, re
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2627,9 +2632,10 @@ class TestChecker(unittest.TestCase):
         USDC = 1_000_000
         para = build.email_para(0, 0, 0, 100_000_000_000,
                                 1_000_000 * USDC, 1_000_000)
-        self.assertIn("one per&nbsp;line:</p>", para)
+        self.assertIn("one&nbsp;per&nbsp;line:</p>", para)
         self.assertIn("not the raw&nbsp;totalSupply.</p>", para)
         self.assertIn("Add&nbsp;<code>vault=YourVaultName</code>", para)
+        self.assertNotIn("one per&nbsp;line:</p>", para)
         self.assertNotIn("one per line:</p>", para)
         self.assertNotIn("not the raw totalSupply.</p>", para)
         self.assertNotIn("Add <code>vault=YourVaultName</code>", para)
@@ -2642,7 +2648,7 @@ class TestChecker(unittest.TestCase):
         # Both render paths carry the same three fixes.
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
-        for fixed in ("one per&nbsp;line:</p>",
+        for fixed in ("one&nbsp;per&nbsp;line:</p>",
                       "not the raw&nbsp;totalSupply.</p>",
                       "Add&nbsp;<code>vault=YourVaultName</code>"):
             self.assertEqual(worker.count(fixed), 2)
