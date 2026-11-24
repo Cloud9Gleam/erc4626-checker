@@ -11709,6 +11709,65 @@ class TestChecker(unittest.TestCase):
             self.assertNotIn("hint-full", path_html)
             self.assertNotIn("hint-short", path_html)
 
+    def test_verdict212_preset_dropdown_flips_to_custom_on_edit(self):
+        # Checker-improvement #212 (2026-11-25, visual verdict #211
+        # item 2): editing a number left the preset dropdown showing
+        # the old preset name, so the run looked like a preset it no
+        # longer was — while the served page after submit already
+        # showed "Custom parameters" (parseParams downgrades a
+        # mismatched preset to "custom"). markCustom, called on every
+        # input edit instead of markStale, flips the dropdown to a
+        # "Custom parameters" option (inserted first if the run was a
+        # named preset) — but only when the three preset-defining
+        # numbers (offset, minimum, fee) no longer match the selected
+        # preset: the victim deposit and vault state never affect the
+        # preset name, so editing them leaves the dropdown alone.
+        # applyPreset still calls plain markStale: picking a preset
+        # fills its numbers, so the name stays true. Pinned in both
+        # render copies (Python PRESET_SCRIPT + Worker JS mirror);
+        # headless behaviour verified by measure-verdict212.py
+        # (offset edit -> custom, same-value edit -> stays, victim
+        # edit -> stays, preset pick -> stays on the pick).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # One definition per render copy: the static checker page
+        # (PRESET_SCRIPT) and the Worker template's formHTML.
+        self.assertEqual(build.PRESET_SCRIPT.count("function markCustom"), 1)
+        self.assertEqual(worker.count("function markCustom"), 2)
+        # Every input edit goes through markCustom now; no listener
+        # still calls plain markStale.
+        self.assertIn("addEventListener('input',markCustom)",
+                      build.PRESET_SCRIPT)
+        self.assertEqual(
+            worker.count("addEventListener('input',markCustom)"), 2)
+        self.assertNotIn("addEventListener('input',markStale)",
+                         build.PRESET_SCRIPT)
+        self.assertNotIn("addEventListener('input',markStale)", worker)
+        # markCustom starts by dimming (markStale) and guards on the
+        # three preset-defining numbers; it inserts the option first
+        # and selects it.
+        for src in (build.PRESET_SCRIPT, worker):
+            self.assertIn("function markCustom(){markStale();", src)
+            self.assertIn("var v=P[s.value];if(!v)return;", src)
+            self.assertIn(
+                "if(o.value==v[0]&&mv==v[1]&&e.value==v[2])return;", src)
+            self.assertIn("c.textContent='Custom parameters';", src)
+            self.assertIn("s.insertBefore(c,s.firstChild);", src)
+            self.assertIn("s.value='custom';}", src)
+        # applyPreset still calls plain markStale (picking a preset
+        # fills its numbers, so the name stays true) and never flips
+        # the dropdown itself.
+        self.assertIn("e.value=v[2];markStale();}}", build.PRESET_SCRIPT)
+        self.assertEqual(worker.count("e.value=v[2];markStale();}}"), 2)
+        # The static checker page carries the new script.
+        html = build.checker_body()
+        self.assertIn("function markCustom(){markStale();", html)
+        self.assertIn("addEventListener('input',markCustom)", html)
+
     def test_donation_nonmonotonic_explanation(self):
         # The donation loss is not monotonic in the donation size (1B
         # loses less than 1M) and the page must say why, not just show
