@@ -7766,16 +7766,31 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        # Visual verdict #220 (2026-11-25): the warning read as plain
+        # body text (400 weight, same as every other paragraph), so
+        # the imperative lead is now bold: <strong> around
+        # "Double-check the address before sending", consequence
+        # regular -- the #214 "Email first" bold-lead pattern.
+        # The plain sentence survives only after de-tagging, so the
+        # assertions below check the strong form in the markup and
+        # the plain sentence in the de-tagged row text.
         note = ("Double-check the address before sending — USDC sent "
                 "to the wrong address cannot be recovered.")
-        self.assertIn(note, audit)
+        strong = ("<strong>Double-check the address before sending"
+                  "</strong> — USDC sent to the wrong address "
+                  "cannot be recovered.")
+        self.assertIn(strong, audit)
+        self.assertNotIn(
+            '<span class="pay-note">Double-check the address before '
+            'sending —', audit)
         # The note sits inside the pay-row, after the copy button, so
         # it reads as attached to the address controls.
         row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
         self.assertIsNotNone(row, "pay-row not found")
-        self.assertIn(note, row.group(0))
+        self.assertIn(strong, row.group(0))
+        self.assertIn(note, re.sub(r"<[^>]+>", "", row.group(0)))
         self.assertLess(row.group(0).index("Copy address"),
-                        row.group(0).index(note))
+                        row.group(0).index(strong))
         m = re.search(r"\.pay-row \.pay-note\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m, ".pay-row .pay-note rule not found")
         self.assertNotIn("margin-left:auto", m.group(0))
@@ -7786,6 +7801,36 @@ class TestChecker(unittest.TestCase):
         self.assertIsNotNone(m2)
         self.assertIn("flex:0 0 100%", m2.group(0))
         self.assertNotIn("flex:0 1 auto", m2.group(0))
+
+    def test_verdict220_pay_note_lead_is_bold(self):
+        # Visual verdict #220 (2026-11-25): the pay-row warning
+        # "Double-check the address before sending — USDC sent to
+        # the wrong address cannot be recovered." rendered at 400
+        # weight, indistinguishable from body text. The imperative
+        # lead is now <strong>; the consequence stays regular
+        # (the #214 "Email first" bold-lead pattern). Markup-only:
+        # no CSS change, <strong> renders 700 by default and no
+        # global strong reset exists in build.CSS.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        lead = "<strong>Double-check the address before sending</strong>"
+        self.assertEqual(audit.count(lead), 1)
+        self.assertNotIn("pay-note\">Double-check", audit)
+        # The consequence is NOT bold: the em-dash and the rest of
+        # the sentence follow the closing </strong> tag.
+        self.assertIn("</strong> — USDC sent to the wrong address "
+                      "cannot be recovered.", audit)
+        # The .pay-note rule is untouched (no font-weight added):
+        # the bold comes from the <strong> element alone.
+        m = re.search(r"\.pay-row \.pay-note\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, ".pay-row .pay-note rule not found")
+        self.assertNotIn("font-weight", m.group(0))
+        # No global strong reset that would cancel the bold.
+        self.assertNotIn("strong{font-weight", build.CSS)
 
     def test_footer_closes_the_page_tightly(self):
         # Visual verdict #69: the page ending felt loose -- the small
