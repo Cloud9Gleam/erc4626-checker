@@ -5224,6 +5224,69 @@ class TestChecker(unittest.TestCase):
                       "share-price behavior."):
             self.assertNotIn(plain, audit)
 
+    def test_verdict193_boa_is_spelled_titanoboa_and_token_id_pinned(self):
+        # Visual verdict #192 (2026-11-24), item (v): the Track record
+        # says "11/11 boa tests passing" next to a lead that says
+        # "titanoboa-proven" — a first-time reader has no way to know
+        # "boa" is titanoboa's shorthand. The Curve item had the same
+        # split: the track record said "9/9 boa + 14/14 forge" while
+        # the Curve research page itself already said "9/9 titanoboa
+        # + 14/14 forge". All eight Track-record/research occurrences
+        # now spell it out; the research pages' technical uses of
+        # "boa" (PoC tables, `boa/` paths, `boa.env` code) are
+        # identifiers in context and are intentionally untouched.
+        # Same slice, second half: the NFT Dealers detail broke
+        # between "token" and "id," in the real browser (headless
+        # keeps them together, L1 ending "really a"), leaving "id,"
+        # at a line start. Both word pairs in that sentence are now
+        # pinned — "listing&nbsp;id" covers the other possible break
+        # ("listing" ending a line, "id" starting the next), since
+        # the #192 note recorded only "listing&nbsp;id" and the
+        # "token | id," break is the one the verdict quoted. No
+        # wording changed anywhere: "titanoboa" is the tool's name,
+        # "boa" only its shorthand, and nbsp only joins words.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, (t, d, k, b)) for p, t, d, k, b in build.PAGES)
+        bare_boa = re.compile(r"(?<!titano)boa tests passing")
+        # /audit/: two details + the Curve detail.
+        audit = pages["/audit/"][3]
+        self.assertEqual(audit.count("titanoboa tests passing"), 2)
+        self.assertEqual(audit.count(
+            "9/9 titanoboa + 14/14 forge tests passing"), 1)
+        self.assertEqual(len(bare_boa.findall(audit)), 0)
+        self.assertNotIn("9/9 boa + 14/14 forge", audit)
+        self.assertEqual(audit.count(
+            "listing&nbsp;id that is really a token&nbsp;id,"), 1)
+        self.assertNotIn("listing id that is really a token id,", audit)
+        # /research/: the three one-line leads (same sentences).
+        research = pages["/research/"][3]
+        self.assertEqual(research.count("titanoboa tests passing"), 2)
+        self.assertEqual(research.count(
+            "9/9 titanoboa + 14/14 forge tests passing"), 1)
+        self.assertEqual(len(bare_boa.findall(research)), 0)
+        # Research-page intros (desc doubles as the visible intro and
+        # the meta descriptions, so one fix covers body + OG cards).
+        self.assertEqual(pages["/research/company-simulator/"][1].count(
+            "11/11 titanoboa tests passing"), 1)
+        self.assertEqual(pages["/research/vyper-vested-claims/"][1].count(
+            "10/10 titanoboa tests passing"), 1)
+        self.assertEqual(len(bare_boa.findall(
+            pages["/research/company-simulator/"][1])), 0)
+        self.assertEqual(len(bare_boa.findall(
+            pages["/research/vyper-vested-claims/"][1])), 0)
+        self.assertEqual(pages["/research/nft-dealers/"][1].count(
+            "listing&nbsp;id that is really a token&nbsp;id,"), 1)
+        self.assertNotIn("listing id that is really a token id,",
+                         pages["/research/nft-dealers/"][1])
+        # The Curve research page already spelled it out — the track
+        # record now agrees with it instead of contradicting it.
+        self.assertEqual(pages["/research/curve-storage-proofs/"][1].count(
+            "9/9 titanoboa + 14/14 forge tests passing"), 1)
+
     def test_track_record_miss_severities_are_stated(self):
         # Visual verdict #144 (2026-11-21): the Track record entries
         # said "two/four presented as MISSes" but not WHICH severities
