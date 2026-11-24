@@ -2141,17 +2141,32 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #151 (2026-11-22): the #148 flex row still
         # squeezed the FAIL title to 3 lines at 1919px and the
         # status text read as a stray line at the banner's right
-        # edge. The banner is stacked now, not a row: .banner-text
-        # is a full-width block row, .banner-actions a second block
-        # row below it, left-aligned; the status span is gone and
-        # the button itself shows the feedback. The flex row and
-        # the mobile media query below are intentionally overturned.
+        # edge. The banner was stacked then: .banner-text a
+        # full-width block row, .banner-actions a second block row
+        # below it, left-aligned; the status span is gone and the
+        # button itself shows the feedback. The flex row and the
+        # mobile media query below were intentionally overturned.
+        # Checker-improvement #199 (2026-11-24): the stack is
+        # PARTLY reversed, on desktop only. Visual verdict #199
+        # item 1 — the banner title shows above the fold but the
+        # full-width Copy button sits entirely below it (button
+        # 1015.6-1059.5, fold 998), so the results link cannot be
+        # copied without scrolling. The reorder remedy was declined
+        # in #177/#190/#195; the verdict's other suggestion is
+        # tried instead: at >=641px the banner is a flex row and
+        # the button rides inline on the title row. #151's failure
+        # modes no longer exist: the row holds TWO items (title +
+        # button), not four — the status span is gone since #151
+        # and the mark lives inside .banner-text since #148's fix —
+        # and flex-wrap drops the button below a long title instead
+        # of squeezing it. Below 641px the stacked base rules
+        # below still apply unchanged.
         # Checker-improvement (2026-11-22): the button now fills
         # its own row (display:block, width:100%) — measured
         # 224.6px in an 894.2px row at 1280px, ~670px of empty
         # banner beside it. Right-aligned and centred placements
         # were rendered and rejected; full-width reads as an
-        # action strip. Stacking is unchanged.
+        # action strip. Stacking is unchanged below 641px.
         self.assertIn(
             ".result-banner{font-size:1.45em;font-weight:700;"
             "border-radius:8px;padding:.75em 1em;margin:.6em 0}",
@@ -2170,11 +2185,68 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertNotIn("float:right", build.CSS.split(
             ".result-banner .copy-link-btn{")[1].split("}")[0])
-        self.assertNotIn(".result-banner{display:flex", build.CSS)
+        # #199: the banner is a flex row at >=641px (button inline
+        # on the title row) and stacked below it. The BASE banner
+        # rule carries no display property — the flex lives only
+        # inside the min-width media query.
+        self.assertIn(
+            "@media (min-width:641px){.result-banner{display:flex;"
+            "align-items:center;gap:.75em;flex-wrap:wrap}"
+            ".result-banner .banner-text{flex:1 1 auto}"
+            ".result-banner .banner-actions{flex:0 0 auto;margin:0}"
+            ".result-banner .copy-link-btn{width:auto}}",
+            build.CSS)
+        base_rule = build.CSS.split(
+            ".result-banner{font-size:1.45em")[1].split("}")[0]
+        self.assertNotIn("display", base_rule)
         self.assertNotIn("copylink-msg", build.CSS)
         self.assertNotIn(
             "@media (max-width:640px){.result-banner{flex-wrap:wrap}",
             build.CSS)
+
+    def test_verdict199_banner_button_rides_inline_on_desktop(self):
+        # Checker-improvement #199 (2026-11-24): visual verdict
+        # #199 item 1 — at 1919x998 the banner title shows above
+        # the fold but the full-width Copy button sits entirely
+        # below it (measured baseline: banner 941.9-1079, button
+        # 1015.6-1059.5, fold 998), so the results link cannot be
+        # copied without scrolling. At >=641px the banner is a
+        # flex row: the title grows to fill the row and the button
+        # rides inline at its right edge, visible and clickable in
+        # the first viewport. Below 641px the stacked base rules
+        # still apply (button full-width under the title). The
+        # geometry (banner/button rects vs the 998 fold) is measured
+        # by hidden_files/measure-verdict199.py, not here.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        media = (
+            "@media (min-width:641px){.result-banner{display:flex;"
+            "align-items:center;gap:.75em;flex-wrap:wrap}"
+            ".result-banner .banner-text{flex:1 1 auto}"
+            ".result-banner .banner-actions{flex:0 0 auto;margin:0}"
+            ".result-banner .copy-link-btn{width:auto}}")
+        self.assertIn(media, build.CSS)
+        self.assertEqual(build.CSS.count(media), 1)
+        # The stacked base rules are still there for <641px.
+        self.assertIn(
+            ".result-banner .banner-actions{display:block;"
+            "margin:.55em 0 0}",
+            build.CSS)
+        self.assertIn(
+            ".result-banner .copy-link-btn{display:block;"
+            "width:100%;box-sizing:border-box;text-align:center;"
+            "font-size:.62em;font-weight:600;margin:0}",
+            build.CSS)
+        # The auto-width override exists exactly once, inside the
+        # media query — the base rule still fills its row.
+        self.assertEqual(
+            build.CSS.count(".result-banner .copy-link-btn{width:auto}"),
+            1)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(media, worker)
 
     def test_verdict191_fail_banner_copy_button_is_red(self):
         # Checker-improvement #191 (2026-11-24): the copy button is
@@ -6536,11 +6608,14 @@ class TestChecker(unittest.TestCase):
         # not the button alone.
         # Visual verdict #151 (2026-11-22): the #148 flex row still
         # squeezed the FAIL title to 3 lines at 1919px. The banner
-        # is stacked now — .banner-actions is a full-width block row
+        # was stacked then — .banner-actions a full-width block row
         # below the title at EVERY width, so the mobile-only media
-        # query is gone: the button can no longer sit beside the
-        # title on desktop or leave a dead band on mobile. The
-        # media-query pin below is intentionally overturned.
+        # query is gone. Checker-improvement #199 (2026-11-24)
+        # partly reverses the stack on desktop only: at >=641px
+        # the button rides inline on the title row (visual verdict
+        # #199 item 1, button below the fold); below 641px the
+        # button still fills its own stacked row, exactly as here.
+        # The media-query pin below is intentionally overturned.
         # Checker-improvement (2026-11-22): the button itself is
         # now full-width within that row (display:block,
         # width:100%) — the row was full-width but the button was
@@ -24547,19 +24622,24 @@ class TestChecker(unittest.TestCase):
         src = (Path.home() / "workspace/taskmarket/site/build.py"
                ).read_text()
         self.assertEqual(src.count('Copy link to these results'), 2)
-        # 'copy-link-btn' appears 5x: CSS rule + Python
+        # 'copy-link-btn' appears 6x: CSS rule + Python
         # markup + JS mirror + the two #191 FAIL-banner rules
         # (base + :hover, which recolour the button red inside the
-        # red FAIL banner). The mobile rule used to name it too
-        # (4x); visual verdict #148 moved the full-width mobile
-        # rule to the .banner-actions group, so it no longer does.
-        # Visual verdict #151 (2026-11-22): the banner is stacked,
+        # red FAIL banner) + the #199 desktop media-query rule
+        # (width:auto, button inline on the title row at >=641px).
+        # The mobile rule used to name it too (4x); visual verdict
+        # #148 moved the full-width mobile rule to the
+        # .banner-actions group, so it no longer does.
+        # Visual verdict #151 (2026-11-22): the banner was stacked,
         # not a flex row — the button rule carries no flex:none and
-        # the mobile media query is gone.
+        # the mobile media query is gone. Checker-improvement #199
+        # (2026-11-24) partly reverses the stack on desktop only
+        # (min-width:641px media query, button inline); below
+        # 641px the stack stands.
         # Checker-improvement (2026-11-22): the button now fills
         # its own row (display:block, width:100%) — it was 224.6px
         # in an 894.2px row at 1280px, ~670px of empty banner.
-        self.assertEqual(src.count('copy-link-btn'), 5)
+        self.assertEqual(src.count('copy-link-btn'), 6)
         self.assertIn('.result-banner .copy-link-btn{display:block;'
                       'width:100%;box-sizing:border-box;'
                       'text-align:center;font-size:.62em;',
@@ -24583,12 +24663,16 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #151 (2026-11-22): the #148 flex row still
         # squeezed the FAIL title to 3 lines at 1919px and the
         # status text read as a stray line at the banner's right
-        # edge. The banner is stacked now: .banner-text is a
+        # edge. The banner was stacked then: .banner-text a
         # full-width block row (mark still inline at the start of
         # line 1), .banner-actions a second block row below it with
         # the button alone — no status span anywhere, feedback is
         # the button's own text. Both renderers must carry the
-        # same structure.
+        # same structure. Checker-improvement #199 (2026-11-24)
+        # partly reverses the stack on desktop only (>=641px flex
+        # row, button inline on the title row); the mark stays
+        # inside .banner-text, so the #148 floating-mark failure
+        # cannot recur, and there is still no status span.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -24619,7 +24703,8 @@ class TestChecker(unittest.TestCase):
             self.assertIn('copy-link-btn', actions)
             self.assertNotIn('copylink-msg', h2)
             self.assertNotIn('role="status"', actions)
-        # CSS: stacked block rows, no flex row, no status rule.
+        # CSS: stacked block rows below 641px; the flex row lives
+        # only inside the #199 min-width media query (no status rule).
         self.assertIn(
             ".result-banner .banner-text{display:block}",
             build.CSS)
@@ -24628,7 +24713,13 @@ class TestChecker(unittest.TestCase):
             "margin:.55em 0 0}",
             build.CSS)
         self.assertNotIn("copylink-msg", build.CSS)
-        self.assertNotIn(".result-banner{display:flex", build.CSS)
+        self.assertIn(
+            "@media (min-width:641px){.result-banner{display:flex;"
+            "align-items:center;gap:.75em;flex-wrap:wrap}",
+            build.CSS)
+        base_rule = build.CSS.split(
+            ".result-banner{font-size:1.45em")[1].split("}")[0]
+        self.assertNotIn("display", base_rule)
         # JS mirror carries the identical stacked markup.
         src = (Path.home() / "workspace/taskmarket/site/build.py"
                ).read_text()
