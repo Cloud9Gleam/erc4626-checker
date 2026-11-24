@@ -4143,13 +4143,39 @@ class TestChecker(unittest.TestCase):
         # documents it.
         self.assertNotIn(build.PAY_ADDR_SHORT, audit)
         self.assertEqual(build.PAY_ADDR_SHORT, "0xD07C\u2026dC64")
-        self.assertIn("Show shortened", audit)
-        # The toggle still offers the full form as the collapsed-state
-        # label, so the round trip works.
+        # Checker-improvement #216 (2026-11-25): the toggle used to
+        # say bare "Show shortened" -- a first-time visitor could
+        # not tell what it shortens (visual verdict #162 item 9).
+        # It now names the object, parallel to the reverse label
+        # "Show full address" (which it offers when collapsed).
+        self.assertIn("Show shortened address", audit)
         self.assertIn("Show full address", audit)
         self.assertIn("function togglePayAddr(btn)", audit)
         self.assertIn("getAttribute('data-full')", audit)
         self.assertIn(".pay-row .addr-toggle{", build.CSS)
+
+    def test_verdict216_toggle_names_what_it_shortens(self):
+        # Checker-improvement #216 (2026-11-25): the /audit/ pay-row
+        # toggle said bare "Show shortened" -- no object, so a visitor
+        # could not tell it shortens the payment address (visual
+        # verdict #162 item 9, still open as #215 next-candidate 4).
+        # The label now names it, parallel to the reverse label the
+        # toggle offers once collapsed. Both the button label and the
+        # script's restore string must carry the full label; the bare
+        # form must not survive in either place.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertIn(">Show shortened address</button>", audit)
+        self.assertIn("btn.textContent='Show shortened address'", audit)
+        self.assertNotIn(">Show shortened</button>", audit)
+        self.assertNotIn("btn.textContent='Show shortened'", audit)
+        # The collapsed-state label is unchanged and still parallel --
+        # it only ever appears inside the toggle script, never as a
+        # static button label (on load the full address is shown).
+        self.assertIn("btn.textContent='Show full address'", audit)
 
     def test_poc_packaging_page_states_offer_and_hard_rule(self):
         # PoC-packaging service page (2026-11-18): the offer must state
@@ -7553,12 +7579,13 @@ class TestChecker(unittest.TestCase):
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
                       audit)
-        self.assertIn("Show shortened", audit)
+        self.assertIn("Show shortened address", audit)
         self.assertIn(">Copy address</button>", audit)
 
     def test_audit_pay_row_toggle_shares_line_one(self):
         # Visual verdict #115 (d): at the 1024px column the pay-row
-        # read [address][Show shortened][Copy][BaseScan] with the
+        # read [address][Show shortened address][Copy][BaseScan]
+        # with the
         # same ~10px gap between every item, so the display-preference
         # toggle looked stuck to the button group — and BaseScan
         # wrapped to an orphan second line. The first fix (flex:0 0
@@ -7616,15 +7643,15 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("font-size:.85em", t.group(0))
         self.assertNotIn("color:#6b7280", t.group(0))
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        # Button-anchored markers: the bare string "Show shortened"
+        # Button-anchored markers: the string "Show shortened address"
         # also occurs inside the toggle's own script
-        # (btn.textContent='Show shortened'), which sits before the
-        # BaseScan link in the DOM.
+        # (btn.textContent='Show shortened address'), which sits
+        # before the BaseScan link in the DOM.
         i_addr = audit.index('id="pay-addr"')
         i_copy = audit.index(">Copy address</button>")
         i_scan = audit.index(">View on BaseScan</a>")
         i_wrap = audit.index('<span class="addr-toggle-wrap">')
-        i_tog = audit.index(">Show shortened</button>")
+        i_tog = audit.index(">Show shortened address</button>")
         i_note = audit.index('<span class="pay-note">')
         self.assertLess(i_addr, i_copy)
         self.assertLess(i_copy, i_scan)
