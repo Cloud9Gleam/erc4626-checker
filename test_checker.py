@@ -10366,10 +10366,13 @@ class TestChecker(unittest.TestCase):
 
     def test_params_paragraph_is_a_card(self):
         # Visual verdict #99 (2026-11-18): the Parameters paragraph
-        # between the Run checks button and the result banner was a
-        # bare full-width line of small grey dense text — it read as
-        # a raw data dump next to the cards around it. It is now a
-        # light box in the page's #f9fafb form language.
+        # was a bare full-width line of small grey dense text — it
+        # read as a raw data dump next to the cards around it. It is
+        # now a light box in the page's #f9fafb form language.
+        # Visual verdict #201 (2026-11-24): the box used to sit
+        # between the Run checks button and the result banner; it
+        # now rides inside the results block, directly under the
+        # banner (see test_verdict201_params_sits_under_banner).
         # Visual verdict #100 (2026-11-18) follow-up: the bar was
         # still dense — the min deposit was stated twice (base units
         # AND USDC) and each line carried filler ("in the donation
@@ -10456,7 +10459,59 @@ class TestChecker(unittest.TestCase):
         # failed to replace the static copy, and the dynamic page
         # would show stale baked-in defaults.
         self.assertEqual(worker.count("<p class='params'>Parameters:"), 2)
-        self.assertIn("{{PARAMS}}", worker)
+        # Visual verdict #201 (2026-11-24): the {{PARAMS}} placeholder
+        # is retired — the paragraph rides inside the results block
+        # ({{RESULTS}}), so the Worker's resultsHTML builds it from
+        # the submitted parameters via paramsHTML(p). A leftover
+        # placeholder would mean the template still extracts it.
+        self.assertNotIn("{{PARAMS}}", worker)
+
+    def test_verdict201_params_sits_under_banner(self):
+        # Visual verdict #201 (2026-11-24, checker-improvement):
+        # the Parameters box sat between the form and the "Full
+        # results" banner, pushing the banner 75px down so its Copy
+        # button ended 7px below the 998px fold (measured
+        # hidden_files/measure-verdict199.py). The #195 remedy —
+        # move the box below the banner — was declined then because
+        # the banner was 137px tall and the move left its bottom at
+        # ~994px; after #199 the banner is 83px tall, so the same
+        # move now lands it fully above the fold. The box now rides
+        # inside the results block, directly under the banner and
+        # above the shares legend — same words, same numbers.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        html = build.checker_body()
+        self.assertLess(html.index("</form>"),
+                        html.index('<h2 id="results"'))
+        self.assertLess(html.index('<h2 id="results"'),
+                        html.index("<p class='params'>Parameters:"))
+        self.assertLess(html.index("<p class='params'>Parameters:"),
+                        html.index("class='shares-note'"))
+        self.assertLess(html.index("class='shares-note'"),
+                        html.index('<div class="check-grid">'))
+        # The box is inside the results block now, so it dims with
+        # the stale results when the form changes.
+        self.assertIn("<div id=\"results-block\">", html)
+        self.assertLess(html.index("<div id=\"results-block\">"),
+                        html.index("<p class='params'>Parameters:"))
+        self.assertLess(html.index("<p class='params'>Parameters:"),
+                        html.index("What to do next"))
+        # Worker JS renderer: resultsHTML calls paramsHTML(p) right
+        # after the banner, before the shares legend.
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        self.assertIn("h+=paramsHTML(p);", fn)
+        self.assertLess(fn.index("class='result-banner"),
+                        fn.index("h+=paramsHTML(p);"))
+        self.assertLess(fn.index("h+=paramsHTML(p);"),
+                        fn.index("class='shares-note'"))
+        # No {{PARAMS}} placeholder anywhere in the Worker source.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertNotIn("{{PARAMS}}", worker)
+        self.assertNotIn('.replace("{{PARAMS}}"', worker)
 
     def test_params_box_is_full_width(self):
         # Visual verdict #117 finding (e) (2026-11-19): the
