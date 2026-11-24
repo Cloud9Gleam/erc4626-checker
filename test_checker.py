@@ -5348,6 +5348,90 @@ class TestChecker(unittest.TestCase):
                       "share-price behavior."):
             self.assertNotIn(plain, audit)
 
+    def test_verdict200_research_text_has_pretty_and_no_orphans(self):
+        # Visual verdict #200 (2026-11-24): research-page orphan batch.
+        # Baseline (probe-verdict200-research-all.py, Range line
+        # attribution over ALL 49 research pages): 44 orphans at
+        # 1919px, 122 at 360px. text-wrap:pretty scoped to research
+        # pages cuts them to 10 and 59; the residue gets nbsp (the
+        # #192 two-piece pattern). Two probe corrections landed in
+        # this round and are pinned by the sweep, not by this test:
+        # (a) the probe must attribute a split word to EVERY line it
+        # has a fragment on — hyphenated words ("time-boxed") and long
+        # <code> tokens split across lines, and counting only the
+        # first fragment made "boxed escrow." read as lone "escrow.";
+        # (b) a lone fragment IS an orphan: "in-depth)." alone is one
+        # even though the word spans two lines, so four hyphenated
+        # compounds get non-breaking hyphens (&#8209;, U+2011) inside
+        # the compound, wording unchanged. The mycut tail is the one
+        # place nbsp does not hold: the long <code> token ends its
+        # line and "passes)." strands alone (nbsp and a .nowrap span
+        # both break at the code boundary), so the tail is lengthened
+        # to "passes as expected)." — either break outcome then has
+        # three words on the last line. Final sweep: 0 orphans at
+        # 1919px and 0 at 360px across all 49 pages.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".research-page p,.research-page li{text-wrap:pretty}",
+                      build.CSS)
+        research = build.page("T", "D", "K", "<p>x</p>",
+                              path="/research/test/")
+        self.assertIn('<main class="research-page">', research)
+        home = build.page("T", "D", "K", "<p>x</p>", path="/")
+        self.assertIn("<main>", home)
+        # The <style> block mentions .research-page on every page;
+        # only the <main> tag itself must stay bare off /research/.
+        self.assertNotIn('<main class="research-page">', home)
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        research_bodies = [b for p, b in pages.items()
+                           if p.startswith("/research/") and p != "/research/"]
+        self.assertEqual(len(research_bodies), 49)
+        self.assertEqual(sum(b.count("practice-review&nbsp;record.")
+                             for b in research_bodies), 11)
+        self.assertEqual(sum(b.count("practice-review record.")
+                             for b in research_bodies), 0)
+        self.assertEqual(sum(b.count("2026,&nbsp;read-only.")
+                             for b in research_bodies), 2)
+        self.assertEqual(sum(b.count("2026, read-only.")
+                             for b in research_bodies), 0)
+        # A sample of the per-page nbsp pairs (the full 65-paragraph
+        # set is pinned by verdict200-research-orphans-harness.mjs
+        # and the 1919/360 sweeps, both 0 orphans after this round).
+        self.assertIn("time-boxed&nbsp;escrow.",
+                      pages["/research/datingdapp/"])
+        self.assertIn("GMX-source&nbsp;confirmation.",
+                      pages["/research/gamma/"])
+        self.assertIn("transient-storage&nbsp;assembly.",
+                      pages["/research/inheritable-smart-contract-wallet/"])
+        self.assertIn("whole-system&nbsp;verdict.",
+                      pages["/research/open-eden/"])
+        self.assertIn("single-operator&nbsp;vault.",
+                      pages["/research/stratax/"])
+        # Non-breaking hyphens inside the four compounds (U+2011):
+        # the compound itself must not split at its hyphens.
+        lms = pages["/research/last-man-standing/"]
+        self.assertIn("as&nbsp;defense&#8209;in&#8209;depth).", lms)
+        self.assertNotIn("defense-in-depth", lms)
+        self.assertIn("results page&nbsp;(JS&#8209;gated).</a>",
+                      pages["/research/bid-beasts/"])
+        self.assertNotIn("results page (JS-gated).",
+                         pages["/research/bid-beasts/"])
+        self.assertIn("corroborated, not&nbsp;judge&#8209;confirmed.</p>",
+                      pages["/research/brivault/"])
+        # The second brivault occurrence is mid-sentence (". s/503")
+        # and produced no orphan, but it gets the same treatment so
+        # no plain "judge-confirmed." survives in the bundle.
+        self.assertEqual(pages["/research/brivault/"].count(
+            "judge&#8209;confirmed"), 2)
+        self.assertIn("following&nbsp;checks&#8209;effects&#8209;interactions.",
+                      pages["/research/nft-dealers/"])
+        # mycut: the tail is lengthened, not just joined.
+        mycut = pages["/research/mycut/"]
+        self.assertIn("passes as expected).", mycut)
+        self.assertNotIn("nowrap\"> passes", mycut)
+
     def test_verdict193_boa_is_spelled_titanoboa_and_token_id_pinned(self):
         # Visual verdict #192 (2026-11-24), item (v): the Track record
         # says "11/11 boa tests passing" next to a lead that says
