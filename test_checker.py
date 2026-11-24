@@ -9427,6 +9427,62 @@ class TestChecker(unittest.TestCase):
         self.assertLess(fn.index(legend),
                         fn.index("if(notice){h+=notice;}"))
 
+    def test_verdict195_pass_bound_legend_sits_under_table(self):
+        # Visual verdict #195 (2026-11-24, checker-improvement):
+        # the "Pass bound" paragraph defines the two things a
+        # first-time reader trips over in the donation table — a
+        # negative Attacker net and the green checkmark — but it
+        # sat below the chart / no-chart sentence: on noprot the
+        # table ended ~376px above it, with the chart in between
+        # (headless rect, hidden_files/measure-verdict195.py). The
+        # legend now sits directly under the table, before the
+        # chart and before the no-chart sentence that uses the
+        # bound. Render-time only: the wording, the model and the
+        # API JSON are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        legend = ("Pass bound: attacker never profits, victim loss "
+                  "≤ 0.001 USDC")
+        for off, mn, fee in ((0, 0, 0), (6, 1_000_000, 1000),
+                             (18, 1_000_000, 1000)):
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee)
+            html = build.results_html(
+                run_all(v), off=off, mn=mn, fee=fee)
+            self.assertEqual(html.count("Pass bound:"), 1)
+            self.assertLess(html.index("</table>"),
+                            html.index(legend))
+            if "Why the loss falls" in html:
+                self.assertLess(html.index(legend),
+                                html.index("Why the loss falls"))
+            # Noprot draws the chart; the legend precedes it.
+            if "loss-chart" in html:
+                self.assertLess(html.index(legend),
+                                html.index("loss-chart"))
+            # Default / offset 18 carry the no-chart sentence;
+            # the legend (which defines the bound) precedes it.
+            if "Within the bound:" in html:
+                self.assertLess(html.index(legend),
+                                html.index("Within the bound:"))
+            if "No loss:" in html:
+                self.assertLess(html.index(legend),
+                                html.index("No loss:"))
+        # Worker JS renderer: same order — hint, legend, then the
+        # chart / sentence branches and the why-falls paragraph.
+        # The JS source carries the bound sign as a \u2264 escape,
+        # so order here is pinned on the ASCII prefix only; the
+        # full wording is pinned above and in the harness.
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        prefix = "Pass bound: attacker never profits"
+        self.assertIn(prefix, fn)
+        self.assertLess(fn.index("twrap-hint"),
+                        fn.index(prefix))
+        self.assertLess(fn.index(prefix),
+                        fn.index("Why the loss falls"))
+
     def test_verdict159_minimum_preview_orphans_fixed(self):
         # Visual verdict #159 item (a) (2026-11-23, checker-
         # improvement, real browser + headless-measured): on the
