@@ -25916,8 +25916,11 @@ class TestChecker(unittest.TestCase):
                 "Every preview within 1 base unit of the exact ratio"
                 " — deposits of 1, 100, 10,000 USDC.",
             "Preview consistency":
+                # Verdict #222: "and redeem." is bound with nbsp —
+                # the real browser stranded "redeem." alone on the
+                # rule's last line (#221 item 2).
                 "Preview must equal execution exactly — tested on a "
-                "10,000 USDC deposit and a 1,000,000-share mint and redeem.",
+                "10,000 USDC deposit and a 1,000,000-share mint and&nbsp;redeem.",
             "Fee conservation":
                 "Holder gain + fee must equal the 10,000 USDC yield "
                 "exactly, and the fee must equal the yield times the "
@@ -25960,7 +25963,41 @@ class TestChecker(unittest.TestCase):
         js = build.checker_results_html_js()
         self.assertIn("if(m[3]) h+=\"<p class='check-rule'>", js)
         for rule in expected.values():
-            self.assertIn(rule, js)
+            # Verdict #222: the Preview rule's nbsp form is assembled at
+            # runtime (post-esc replace), so the template carries the
+            # plain form as its CHECK_META literal — assert that one
+            # here; the replace call is nailed by the #222 test.
+            self.assertIn(rule.replace(" and&nbsp;redeem.", " and redeem."), js)
+
+    def test_verdict222_preview_rule_and_audit_link_have_nbsp(self):
+        # Visual verdict #221 item 2 (2026-11-24): the real browser saw
+        # "redeem." alone on the Preview rule's last line (headless shows
+        # the 3-word "mint and redeem." — a one-word-per-line renderer
+        # difference, #181 mechanism), and the /audit/ intro link
+        # "ERC-4626 checker" split across lines. Bind both pairs so the
+        # last line / the link text can never strand a single word.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Python CHECK_META carries the nbsp form; the Python renderer
+        # inserts the rule raw.
+        rule = build.CHECK_META["preview_consistency"][3]
+        self.assertIn("mint and&nbsp;redeem.", rule)
+        self.assertNotIn("mint and redeem.", rule)
+        # The JS CHECK_META stays plain on purpose: the Worker renders
+        # the rule through esc(), which would print a literal nbsp
+        # entity (#190 trap) — the bind happens after esc() instead.
+        js = build.checker_results_html_js()
+        self.assertIn('"Preview must equal execution exactly — tested on a '
+                      '10,000 USDC deposit and a 1,000,000-share mint and redeem."', js)
+        self.assertIn('.replace("mint and redeem.", "mint and&nbsp;redeem.")', js)
+        # /audit/ intro: the link text is one unbreakable unit; the
+        # plain form is gone from the audit page. (The homepage intro
+        # link is paragraph-initial and was not flagged — untouched.)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertEqual(audit.count('<a href="/checker/">ERC-4626&nbsp;checker</a>'), 1)
+        self.assertNotIn('<a href="/checker/">ERC-4626 checker</a>', audit)
 
     def test_cli_seeded_vault_passes_where_new_vault_fails(self):
         # The hosted checker lets a user seed the vault state (assets +
