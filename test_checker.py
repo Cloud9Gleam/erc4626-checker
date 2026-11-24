@@ -6908,7 +6908,14 @@ class TestChecker(unittest.TestCase):
         end = home.index("This site is one independent researcher", start)
         hero = home[start:end]
         self.assertEqual(hero.count('class="cta"'), 1)
-        aside = hero[hero.index('<aside class="hero-checks">'):]
+        # Visual verdict #202 (2026-11-24): the slice used to run to
+        # the end of the hero block, which passed only because nothing
+        # below the panel carried a link — the stats strip now does
+        # (three links, by design). Bound the slice to the panel's
+        # own close tag: the "no link in the panel" invariant is
+        # about the panel, not about everything after it.
+        aside_start = hero.index('<aside class="hero-checks">')
+        aside = hero[aside_start:hero.index('</aside>', aside_start)]
         self.assertNotIn("<a ", aside)
 
     def test_hero_stats_spans_full_hero_row(self):
@@ -7081,6 +7088,15 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".hero-stats{flex-direction:column;gap:.35em}",
             build.CSS)
+        # Visual verdict #202 (2026-11-24): the stats are links to
+        # what they describe — white + underline on the dark band,
+        # since the base link green would be unreadable there.
+        self.assertIn(
+            ".hero-stats a{color:#fff;text-decoration:underline;"
+            "text-underline-offset:2px}",
+            build.CSS)
+        self.assertIn(".hero-stats a:hover{text-decoration-thickness:2px}",
+                      build.CSS)
         start = home.index('<div class="hero">')
         end = home.index("This site is one independent researcher", start)
         hero = home[start:end]
@@ -7098,12 +7114,16 @@ class TestChecker(unittest.TestCase):
         # so derive it fresh from the site's *-model.py files instead
         # of hardcoding it (the old literal 152 went stale when the
         # epoch pro-rata model made it 155).
+        # Visual verdict #202 (2026-11-24): the stats are links — the
+        # model count to /guides/ (the worked examples in readable
+        # form), the other two to /checker/. Pin the hrefs, not just
+        # the numbers, so a future edit that drops a link fails here.
         from pathlib import Path
         model_count = len(list((Path.home() / "workspace/taskmarket/site")
                                .glob("*-model.py")))
-        for fact in (f"<strong>{model_count}</strong> exact-integer worked examples",
-                     "<strong>6</strong> checks per run",
-                     "<strong>$0</strong> to run the checker"):
+        for fact in (f'<a href="/guides/"><strong>{model_count}</strong> exact-integer worked examples</a>',
+                     '<a href="/checker/"><strong>6</strong> checks per run</a>',
+                     '<a href="/checker/"><strong>$0</strong> to run the checker</a>'):
             self.assertIn(fact, hero)
 
     def test_hero_model_count_is_derived_at_build_time(self):
@@ -7121,8 +7141,40 @@ class TestChecker(unittest.TestCase):
                          len(list(site.glob("*-model.py"))))
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn(
-            f"<strong>{build.MODEL_COUNT}</strong> exact-integer worked examples",
+            f'<a href="/guides/"><strong>{build.MODEL_COUNT}</strong> exact-integer worked examples</a>',
             home)
+
+    def test_verdict202_hero_stats_are_links(self):
+        # Visual verdict #202 (2026-11-24, checker-improvement):
+        # the hero stats were plain text — the 164 worked examples,
+        # the 6 checks and the $0 price each describe something the
+        # visitor cannot reach from the strip itself. Each stat is now
+        # a link to what it describes: the model count to /guides/
+        # (the worked examples in readable form), the other two to
+        # /checker/. Exactly three links, in stat order, and no bare
+        # stat text outside an anchor — a future edit that drops a
+        # link fails here, not silently in the browser.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        start = home.index('<p class="hero-stats">')
+        end = home.index("</p>", start)
+        strip = home[start:end]
+        self.assertEqual(strip.count("<a href="), 3)
+        guides = strip.index('<a href="/guides/">')
+        checks = strip.index('<a href="/checker/"><strong>6</strong>')
+        free = strip.index('<a href="/checker/"><strong>$0</strong>')
+        self.assertLess(guides, checks)
+        self.assertLess(checks, free)
+        self.assertIn(f'<strong>{build.MODEL_COUNT}</strong> exact-integer worked examples</a>',
+                      strip)
+        # The CTA above the strip keeps its own button rule — the
+        # new underline rule is scoped to .hero-stats a only.
+        self.assertIn(".hero a.cta{display:inline-block;background:#fff;",
+                      build.CSS)
+        self.assertNotIn(".hero a{color:", build.CSS)
 
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
@@ -25924,7 +25976,8 @@ class TestChecker(unittest.TestCase):
                                 ).glob("*-model.py")))
         self.assertEqual(site_build.MODEL_COUNT, model_count)
         home = dict((p, b) for p, t, d, k, b in site_build.PAGES)["/"]
-        self.assertIn(f"<strong>{model_count}</strong> exact-integer worked examples",
+        # Visual verdict #202: the model-count stat links to /guides/.
+        self.assertIn(f'<a href="/guides/"><strong>{model_count}</strong> exact-integer worked examples</a>',
                       home)
         for num in ("5,000.000000", "40,000.000000", "3,333,333,333",
                     "2,500.000000", "9,999,999,999", "10,000 USDC"):
