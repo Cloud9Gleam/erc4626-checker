@@ -7044,6 +7044,31 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".hero-top p{text-wrap:pretty}", build.CSS)
         self.assertNotIn(".hero-top p{text-wrap:balance}", build.CSS)
 
+    def test_hero_subtitle_tail_is_nbsp_bound(self):
+        # Visual verdict #223 (2026-11-25): the hero subtitle wrapped
+        # so its last line was just "no signup." — a two-word fragment
+        # under a full first line, at 1919px and at 360px (headless
+        # re-measured 2026-11-25: L2 = "no signup." at both widths).
+        # text-wrap:pretty cannot fix this: it only guards a lone
+        # last word, and "no signup." is two words. Binding the tail
+        # with non-breaking spaces makes "no wallet, no signup." one
+        # unbreakable chunk, so the wrap moves a line earlier and the
+        # last line is the four-word phrase instead of the two-word
+        # fragment. Scoped to the hero subtitle only — the same words
+        # appear elsewhere (email paragraph, guides, OG description)
+        # where the wrap is fine, so those keep plain spaces.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index('<p>This site is one independent researcher')
+        hero = home[hero_start:hero_end]
+        self.assertIn(
+            'free, no&nbsp;wallet, no&nbsp;signup.</p>', hero)
+        self.assertNotIn('free, no wallet, no signup.</p>', hero)
+
     def test_hero_checks_panel_fills_right_half(self):
         # Visual verdict #63: after balancing, the hero intro lines
         # filled only ~55% of the hero width, leaving ~500px of blank
