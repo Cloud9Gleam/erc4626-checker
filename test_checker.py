@@ -1413,8 +1413,14 @@ class TestChecker(unittest.TestCase):
         # anchor itself carries white-space:nowrap in CSS, so it drops
         # to its own line whole instead of splitting. The inner span
         # is gone; the wording is unchanged.
+        # Visual verdict #218 (2026-11-25): "below" dropped — the
+        # noprot strip had only 30.6px of slack at 1919px, so a
+        # slightly wider real-browser font flipped the whole nowrap
+        # jump link onto line 2. The arrow still says "below" and
+        # the phrase still names the destination in words; the
+        # link stays one unbreakable unit per #152.
         self.assertIn("see the full results", failed)
-        self.assertIn("see the full results below &darr;</a>", failed)
+        self.assertIn("see the full results &darr;</a>", failed)
         self.assertNotIn("<span class=\"nowrap\">below &darr;</span>", failed)
         self.assertNotIn("Donation inflation &darr;", failed)
         # Visual verdict #147 (2026-11-22): the whole strip used to be
@@ -1436,7 +1442,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("verdict-strip pass", passed)
         self.assertNotIn("SOME FAILED", passed)
         self.assertIn("see the full results", passed)
-        self.assertIn("see the full results below &darr;</a>", passed)
+        self.assertIn("see the full results &darr;</a>", passed)
         self.assertNotIn("<span class=\"nowrap\">below &darr;</span>", passed)
         self.assertNotIn("checks passed &darr;", passed)
         # Visual verdict #147 (2026-11-22): same de-linking on the
