@@ -6216,8 +6216,12 @@ class TestChecker(unittest.TestCase):
         self.assertIn('the slices that came back clean.</p>',
                       body[first:first + 400])
         second = body.index('<p>A clean negative is reported', first)
+        # Visual verdict #187 (2026-11-24, checker-improvement):
+        # "connects a wallet." is joined with &nbsp; so "wallet."
+        # no longer dangles alone on line 4 at 360px; wording
+        # untouched, line count unchanged at both widths.
         self.assertIn('Nothing here is a paid promotion and nothing here '
-                      'connects a wallet.</p>',
+                      'connects a&nbsp;wallet.</p>',
                       body[second:second + 200])
         # The h2 is main's first child, so the global h2 top margin
         # (1.6em) must not stack on main's padding under the hero.
@@ -21705,9 +21709,14 @@ class TestChecker(unittest.TestCase):
         # The balance that keeps the pin's blank small: Free tool
         # gained a third bullet, Paid service's first bullet lost
         # its redundant "on the audit page".
+        # Visual verdict #187 (2026-11-24, checker-improvement):
+        # "rounding anywhere." is joined with &nbsp; so the last
+        # word no longer dangles alone on line 3 (orphan at both
+        # 1919px and 360px); wording untouched, line count
+        # unchanged, card balance untouched.
         self.assertIn(
             '<li>All math is exact integers — no floating-point '
-            'rounding anywhere.</li>', build_text)
+            'rounding&nbsp;anywhere.</li>', build_text)
         # Visual verdict #180 (2026-11-24, checker-improvement):
         # the #177 browser claim of ~70px of fill in Research did
         # not reproduce in headless (36.5px blank above the link,
@@ -21807,6 +21816,49 @@ class TestChecker(unittest.TestCase):
             'a forge PoC for your finding, 25 USDC on Base.',
             build_text)
         self.assertNotIn('25 USDC.</li>', build_text)
+
+    def test_verdict187_card_bullets_have_no_orphan_word(self):
+        # Visual verdict #187 (2026-11-24, checker-improvement):
+        # a systematic orphan scan of /, /checker/ (default +
+        # noprot) and /audit/ at 1919px and 360px
+        # (hidden_files/measure-verdict187.py) found three
+        # single-word last lines on the homepage cards; the
+        # #162 orphans (notice "no", fee "times the yield.",
+        # hero "live chain read.") no longer exist — the fee
+        # rule was rewritten and the notice/hero wraps changed
+        # since #162. (1) Free card "It is a model..." bullet:
+        # 1919px, 3 lines, last line just "vault." (at 360px
+        # it is 2 lines, no orphan). (2) Free card "All math
+        # is exact integers..." bullet: "anywhere." alone on
+        # line 3 at BOTH widths. (3) Paid card "Every report
+        # is written by a human.": "human." alone on line 2
+        # at BOTH widths. (4) The "What this site is" card's
+        # second paragraph: "wallet." alone on line 4 at 360px
+        # only (at 1919px it is 2 lines, last line "here
+        # connects a wallet."). All four are fixed with &nbsp;
+        # only — wording untouched, same as the #183 footer
+        # fix — and in-DOM trials (hidden_files/probe-
+        # verdict187-lines.py, probe-verdict187-wallet.py)
+        # confirm line counts are unchanged at both widths, so
+        # the #181 card balance (13.6/8.5/8.5px headless) is
+        # untouched. The many 360px-only orphans in the 33-item
+        # First Flight list all end in "passing." and are left
+        # alone: rewording 33 items for a mobile-only single
+        # word is out of scope.
+        # Layout is pinned by measure-verdict187.py and the
+        # verdict187-orphans harness; this test pins the
+        # strings in build.py.
+        from pathlib import Path
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertIn('not a live&nbsp;vault.', build_text)
+        self.assertNotIn('not a live vault.', build_text)
+        self.assertIn('rounding&nbsp;anywhere.', build_text)
+        self.assertNotIn('rounding anywhere.', build_text)
+        self.assertIn('written by&nbsp;a&nbsp;human.', build_text)
+        self.assertNotIn('written by a human.', build_text)
+        self.assertIn('connects a&nbsp;wallet.', build_text)
+        self.assertNotIn('connects a wallet.', build_text)
 
     def test_site_internal_links_resolve(self):
         # Two dead internal links shipped on 2026-11-16 and were caught
