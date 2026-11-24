@@ -10220,6 +10220,51 @@ class TestChecker(unittest.TestCase):
         self.assertIn("class='att-loss'", js)
         self.assertIn("BigInt(row.attacker_net)<0n", js)
 
+    def test_verdict205_worst_row_is_bold(self):
+        # Visual verdict #205 (2026-11-24, checker-improvement):
+        # on the ALL PASS page the worst-loss row in the donation
+        # table was indistinguishable from the zero rows (all
+        # font-weight 400) — the headline number could not be found
+        # at a glance, while breaching rows are bold red. The row
+        # with the largest victim loss is now bold (black, not red:
+        # it passes) whenever the worst loss is above zero; at
+        # offset 18 every row is 0 and no row is marked.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Default preset: the worst row is the 1,000,000,000 donation
+        # (0.000900), the only bold row; the zero rows stay plain.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertEqual(html.count("class='worst-row'"), 1)
+        self.assertIn("<tr class='worst-row'><td>1,000,000,000</td>", html)
+        self.assertIn("<td>0.000900</td>", html)
+        # noprot: the worst row is the 1,000,000 donation (0.909091);
+        # its victim-loss cell is already breach-red, the row class
+        # adds the bold to the donation, attacker-net and note cells.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertEqual(html.count("class='worst-row'"), 1)
+        self.assertIn("<tr class='worst-row'><td>1,000,000</td>", html)
+        self.assertIn("<td class='breach'>0.909091</td>", html)
+        # offset 18: every row loses 0 — no row is marked, "worst"
+        # would be arbitrary.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=18, mn=1_000_000, fee=1000)
+        self.assertNotIn("class='worst-row'", html)
+        # The CSS rule and the Worker-side template carry the same class.
+        self.assertIn(".donation-table tr.worst-row td{font-weight:700}",
+                      build.CSS)
+        js = build.checker_results_html_js()
+        self.assertIn("class='worst-row'", js)
+        self.assertIn("isWorst", js)
+
     def test_email_params_block_is_light_full_width_box(self):
         # Visual verdict #98 (2026-11-18) supersedes #76/#96: the
         # content-width fix made the block a ~270px narrow dark slab
