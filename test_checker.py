@@ -25580,6 +25580,24 @@ class TestChecker(unittest.TestCase):
                   if p.startswith("/guides/") and p != "/guides/"
                   and p != "/guides/how-to-use-the-erc4626-checker/"]
         self.assertEqual(int(m.group(1)), len(guides))
+        # The README also states the site's total ("179 guides on
+        # the hosted site") because a reader comparing the README's
+        # 178 with the index page's "179 guides" otherwise concludes
+        # the README is stale: the two numbers count different sets
+        # (worked guides vs all guide pages), and the difference is
+        # exactly the how-to tutorial. Pin the total too, and pin the
+        # index page's own count span to the same total, so the next
+        # guide forces all three numbers to move together.
+        total_m = re.search(r"(\d+) guides on the hosted site", readme)
+        self.assertIsNotNone(total_m, "README total-guides sentence missing")
+        all_guides = [p for p, t, d, k, b in build.PAGES
+                      if p.startswith("/guides/") and p != "/guides/"]
+        self.assertEqual(int(total_m.group(1)), len(all_guides))
+        self.assertEqual(len(all_guides) - len(guides), 1)
+        index_body = [b for p, t, d, k, b in build.PAGES
+                      if p == "/guides/"][0]
+        self.assertIn('id="guide-count"', index_body)
+        self.assertIn(">%d guides<" % len(all_guides), index_body)
 
     def test_action_exposes_vault_state_inputs(self):
         # The CLI gained --vault-assets-usdc / --vault-shares but
