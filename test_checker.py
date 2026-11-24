@@ -9397,8 +9397,9 @@ class TestChecker(unittest.TestCase):
         # noprot — while the breach rows already said their verdict in
         # words. A clean row now carries one green checkmark (title
         # attribute keeps the words for hover), the breach wording is
-        # unchanged, and the legend lives once in the Pass bound
-        # paragraph below the table. Both render paths.
+        # 'Breaches bound' (#182, was 'Breaches pass bound'), and the
+        # legend lives once in the Pass bound paragraph below the
+        # table. Both render paths.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -9412,7 +9413,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("title='Within pass bound'"), 2)
         # noprot: two breaching rows keep the words, two clean rows get
         # the checkmark.
-        self.assertEqual(html.count("Breaches pass bound"), 2)
+        self.assertEqual(html.count("Breaches bound"), 2)
         self.assertEqual(
             html.count("<td class='ok' title='Within pass bound'>\u2713</td>"), 2)
         self.assertIn("\u2713 means within the pass bound; values in red "
@@ -9423,7 +9424,7 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
-        self.assertNotIn("Breaches pass bound", html_default)
+        self.assertNotIn("Breaches bound", html_default)
         self.assertNotIn(">Within pass bound</td>", html_default)
         self.assertEqual(
             html_default.count(
@@ -9434,7 +9435,8 @@ class TestChecker(unittest.TestCase):
         js = build.checker_results_html_js()
         self.assertEqual(js.count("Within pass bound"), 1)
         self.assertNotIn('"Within pass bound"', js)
-        self.assertIn("Breaches pass bound", js)
+        self.assertIn("Breaches bound", js)
+        self.assertNotIn("Breaches pass bound", js)
         self.assertIn("\\u2713", js)
         self.assertIn("class='ok' title='Within pass bound'", js)
         self.assertIn("\\u2713 means within the pass bound; values in "
@@ -9442,44 +9444,54 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".ok{color:#0a7d2c;font-weight:700}", build.CSS)
 
     def test_donation_note_column_is_capped(self):
-        # Visual verdict #179 (2026-11-24, checker-improvement):
-        # on a breaching run the Note column sized itself to the
-        # unwrapped "Breaches pass bound" — 248px / 27% of the table
-        # at desktop (pixel-measured,
-        # hidden_files/measure-verdict179.py), stealing width from
-        # the three number columns; the default page's Note column
-        # is only 100px, so the table also reflowed between
-        # presets. The last column is capped at 6.25em so the phrase
-        # wraps to "Breaches" / "pass bound" (two lines): pixel-measured
-        # ("pass bound" 91.8px = 5.69em, "Breaches pass" 113.8px =
-        # 7.05em, table font 16.15px), so 6.25em = 100.9px of content
-        # fits "pass bound" on one line but not "Breaches pass".
-        # A first cut at 5.5em (88.8px) missed by 3px and wrapped to
-        # three lines — measured, not guessed. At 360px the cap is
-        # inert (measured): the table is sized by min-content there,
-        # so the Note column stays 92px / three lines, unchanged
-        # from baseline. The cap lives on the donation table
-        # only — the .check-table label/value tables and the guide
-        # tables keep their own layout.
+        # Visual verdict #182 (2026-11-24, checker-improvement):
+        # the breach Note shortened from "Breaches pass bound" to
+        # "Breaches bound" and the cap widened 6.25em to 8.5em so
+        # the new label fits on one line. Pixel-measured
+        # (hidden_files/measure-verdict182.py and
+        # probe-verdict182-lines.py, table font 16.15px): the
+        # label is 129.4px = 8.01em IN THE CELL, because .breach
+        # is bold — a detached regular-weight probe read only
+        # 123.3px, so the first cut at 8em (129.2px) missed by
+        # 0.2px and the rows stayed two lines (caught by the
+        # pixel re-measure, not by the tests). 8.5em = 137.3px
+        # of content leaves ~8px (~6%) of slack for cross-system
+        # font variation; the 6.25em cap (100.9px) would still
+        # wrap the label to "Breaches" / "bound", so the label
+        # change alone does not unify row heights. The breach
+        # rows drop from two lines (69px) to one (42px, same as
+        # the clean rows); the Note column grows 125px to ~162px
+        # on both presets and the three number columns give back
+        # ~10px each. At 360px the cap is inert (measured): the
+        # table is sized by min-content there, and the longest
+        # word is still "Breaches", so the Note column width is
+        # unchanged from baseline. The cap lives on the donation
+        # table only — the .check-table label/value tables and
+        # the guide tables keep their own layout. #179's 6.25em
+        # derivation (wrapping "Breaches pass bound" to
+        # "Breaches" / "pass bound") is retired with the old
+        # wording.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(".donation-table th:last-child,"
-                      ".donation-table td:last-child{width:6.25em}",
+                      ".donation-table td:last-child{width:8.5em}",
                       build.CSS)
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("<table class='donation-table'>", html)
         self.assertEqual(html.count("<table class='donation-table'>"), 1)
-        # The breach wording itself is untouched — only the column
-        # width changes.
-        self.assertEqual(html.count("Breaches pass bound"), 2)
+        # The breach wording is the new short label in both
+        # renderers; the old wording is gone.
+        self.assertEqual(html.count("Breaches bound"), 2)
+        self.assertNotIn("Breaches pass bound", html)
         js = build.checker_results_html_js()
         self.assertIn("<table class='donation-table'>", js)
         self.assertEqual(js.count("<table class='donation-table'>"), 1)
-        self.assertIn("Breaches pass bound", js)
+        self.assertIn("Breaches bound", js)
+        self.assertNotIn("Breaches pass bound", js)
 
     def test_donation_attacker_net_loss_is_muted(self):
         # Visual verdict #106 (noprot item 2), confirmed #107/#108:
