@@ -1671,9 +1671,11 @@ class TestChecker(unittest.TestCase):
         # be three paragraphs with the actions buried as inline green
         # links — the visitor read prose, not a next step. It is now
         # an action box: a "What to do next" heading and the two
-        # primary actions as solid buttons. The Worker JS renderer
-        # carries the same box; it is verified by the /tmp
-        # single-banner node harness, not by this suite.
+        # actions as buttons — the money action solid, the free
+        # re-run an outline secondary (visual verdict #186, 2026-11-24:
+        # two solid-green buttons read as equal weight).
+        # The Worker JS renderer carries the same box; it is verified
+        # by the /tmp single-banner node harness, not by this suite.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -1713,6 +1715,63 @@ class TestChecker(unittest.TestCase):
         self.assertIn("What to do next", nofix)
         self.assertIn("Get the vault micro-audit</a>", nofix)
         self.assertNotIn("Run the same checks with offset 6</a>", nofix)
+
+    def test_verdict186_notice_secondary_cta(self):
+        # Visual verdict #186 (2026-11-24, checker-improvement): the
+        # "What to do next" box carried two solid-green CTAs, so the
+        # money action (micro-audit) read as equal weight to the free
+        # re-run — and the re-run link was wider than the audit link.
+        # The second CTA is now the site's secondary language (white,
+        # green text, green border — the audit form's copy button,
+        # #102); the audit link stays the solid primary. Both
+        # renderers, both notice variants; the base rule carries a
+        # transparent border so the two buttons stay exactly the same
+        # height.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn("a.cta.secondary{background:#fff;color:#0a7d2c;"
+                      "border-color:#0a7d2c}", build.CSS)
+        self.assertIn("a.cta.secondary:hover{background:#e6f4ea",
+                      build.CSS)
+        self.assertIn("border:1px solid transparent", build.CSS)
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<a class='cta' href=\"/audit/?result=failed",
+                      failed)
+        self.assertIn("<a class='cta secondary' href=\"/checker/?offset=6",
+                      failed)
+        self.assertEqual(failed.count("class='cta secondary'"), 1)
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn("<a class='cta' href=\"/audit/?result=passed",
+                      passed)
+        self.assertIn("<a class='cta secondary' "
+                      "href=\"/checker/?preset=noprot#results\">",
+                      passed)
+        self.assertEqual(passed.count("class='cta secondary'"), 1)
+        # A failing run at offset >= 6 offers no offset-6 button, so
+        # no secondary CTA at all — only the solid audit link.
+        nofix = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=10**15,
+                          perf_fee_bps=0)),
+            vic=100_000_000_000, off=6, mn=10**15, fee=0)
+        self.assertNotIn("class='cta secondary'", nofix)
+        self.assertIn("<a class='cta' href=\"/audit/?result=failed",
+                      nofix)
+        # Worker JS renderer: both variants, same split.
+        js = build.checker_results_html_js()
+        self.assertIn("class='cta secondary' href='/checker/?offset=6",
+                      js)
+        self.assertIn("class='cta secondary' "
+                      "href='/checker/?preset=noprot#results'", js)
+        self.assertEqual(js.count("class='cta secondary'"), 2)
+        self.assertIn("class='cta' href='/audit/?result=failed", js)
+        self.assertIn("class='cta' href='/audit/?result=passed", js)
 
     def test_offset6_link_hidden_when_vault_state_incomplete(self):
         # Checker-improvement (2026-11-22): a half-filled vault state
