@@ -9955,6 +9955,51 @@ class TestChecker(unittest.TestCase):
                       worker)
         self.assertIn('class=\\"primary\\"', worker)
 
+    def test_audit_order_buttons_stack_full_width(self):
+        # Visual verdict #184 (2026-11-24): the two buttons at the
+        # bottom of the /audit/ order form sat inline, sized to
+        # content — 166px + 187px in a 945px card, ~560px of dead
+        # space to their right at desktop, and two different heights
+        # (47px vs 49px). Both actions now stack full-width, same
+        # size as the checker's Run checks button; hierarchy stays
+        # colour-only (green solid primary, outline secondary, per
+        # #102). Markup, handlers, and the copy status span are
+        # untouched — only the layout rules change.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "#audit-order button{display:block;width:100%;"
+            "box-sizing:border-box;text-align:center;"
+            "padding:.65em 1.6em;font-size:1.05em}",
+            build.CSS)
+        self.assertIn(
+            "#audit-order button+button{margin-top:.5em}",
+            build.CSS)
+        # The row <p> also needs max-width:none: the site-wide
+        # main p{max-width:80ch} cap would hold the row at ~778px
+        # in a ~896px card, leaving a 143px dead strip on the right.
+        self.assertIn("#audit-order p{max-width:none}", build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("#audit-order button{display:block;width:100%;",
+                      worker)
+        self.assertIn("#audit-order button+button{margin-top:.5em}",
+                      worker)
+        self.assertIn("#audit-order p{max-width:none}", worker)
+        self.assertIn(
+            '<button type="button" class="primary" '
+            'onclick="composeAuditEmail()">Compose email</button>',
+            build.AUDIT_FORM)
+        self.assertIn(
+            '<button type="button" onclick="copyAuditRequest()">'
+            'Copy request text</button>', build.AUDIT_FORM)
+        self.assertLess(
+            build.AUDIT_FORM.index('Compose email'),
+            build.AUDIT_FORM.index('Copy request text'))
+        self.assertIn('id="audit-copy-status"', build.AUDIT_FORM)
+
     def test_loss_chart_bars_are_thick_and_rows_tight(self):
         # Visual verdict #59: on /checker/?preset=noprot the Victim loss
         # chart read as broken — four ~11px hairline bars in a ~140px
