@@ -9441,6 +9441,46 @@ class TestChecker(unittest.TestCase):
                       "red breach it.", js)
         self.assertIn(".ok{color:#0a7d2c;font-weight:700}", build.CSS)
 
+    def test_donation_note_column_is_capped(self):
+        # Visual verdict #179 (2026-11-24, checker-improvement):
+        # on a breaching run the Note column sized itself to the
+        # unwrapped "Breaches pass bound" — 248px / 27% of the table
+        # at desktop (pixel-measured,
+        # hidden_files/measure-verdict179.py), stealing width from
+        # the three number columns; the default page's Note column
+        # is only 100px, so the table also reflowed between
+        # presets. The last column is capped at 6.25em so the phrase
+        # wraps to "Breaches" / "pass bound" (two lines): pixel-measured
+        # ("pass bound" 91.8px = 5.69em, "Breaches pass" 113.8px =
+        # 7.05em, table font 16.15px), so 6.25em = 100.9px of content
+        # fits "pass bound" on one line but not "Breaches pass".
+        # A first cut at 5.5em (88.8px) missed by 3px and wrapped to
+        # three lines — measured, not guessed. At 360px the cap is
+        # inert (measured): the table is sized by min-content there,
+        # so the Note column stays 92px / three lines, unchanged
+        # from baseline. The cap lives on the donation table
+        # only — the .check-table label/value tables and the guide
+        # tables keep their own layout.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".donation-table th:last-child,"
+                      ".donation-table td:last-child{width:6.25em}",
+                      build.CSS)
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<table class='donation-table'>", html)
+        self.assertEqual(html.count("<table class='donation-table'>"), 1)
+        # The breach wording itself is untouched — only the column
+        # width changes.
+        self.assertEqual(html.count("Breaches pass bound"), 2)
+        js = build.checker_results_html_js()
+        self.assertIn("<table class='donation-table'>", js)
+        self.assertEqual(js.count("<table class='donation-table'>"), 1)
+        self.assertIn("Breaches pass bound", js)
+
     def test_donation_attacker_net_loss_is_muted(self):
         # Visual verdict #106 (noprot item 2), confirmed #107/#108:
         # in the donation table a negative attacker net sat in the
