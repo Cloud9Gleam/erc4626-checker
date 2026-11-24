@@ -1255,14 +1255,10 @@ class TestChecker(unittest.TestCase):
         js = build.checker_results_html_js()
         fn = js[js.index("function resultsHTML"):]
         self.assertIn('let notice="";', fn)
-        # Visual verdict #177 item 5: the shares legend line sits
-        # between the grid close and the notice append.
-        self.assertIn('h+="</div>";\n  // Visual verdict #177 item 5: same shares '
-                      'legend as the Python renderer.\n  h+="<p class=\'shares-note\'>'
-                      'Share counts are shortened: B = billion (10^9), T = trillion '
-                      '(10^12), Q = quadrillion (10^15); exact powers of ten above '
-                      'that use the 1×10²⁴ form. The API returns exact integers.'
-                      '</p>";\n  if(notice){h+=notice;}', fn)
+        # Visual verdict #194 (2026-11-24): the #177 shares legend
+        # moved above the grid, so the grid close is now followed
+        # directly by the notice append.
+        self.assertIn('h+="</div>";\n  if(notice){h+=notice;}', fn)
         self.assertNotIn('if(notice){h+=notice;notice="";}', fn)
         self.assertNotIn(".check-grid .notice", build.CSS)
 
@@ -9374,16 +9370,21 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("price per 1,000,000", js)
         self.assertNotIn("price / 1M shares", js)
 
-    def test_verdict177_shares_abbreviations_explained(self):
+    def test_verdict194_shares_legend_above_grid(self):
         # Visual verdict #177 item 5 (2026-11-24, checker-improvement):
         # #174 compacted share counts ("1T shares", "10Q shares",
         # "1×10²⁴ shares") but the page never said what B/T/Q mean —
         # a first-time reader cannot decode them, and no legend
         # ("trillion", "quadrillion", "10^12") exists anywhere on
-        # the page. One muted line under the results grid defines
-        # all three suffixes plus the superscript form, and notes
-        # the API keeps exact integers. Render-time only: the model
-        # strings and the API JSON are untouched.
+        # the page. One muted line defines all three suffixes plus
+        # the superscript form, and notes the API keeps exact
+        # integers. Visual verdict #194 (2026-11-24): #177 put that
+        # line UNDER the grid, so the first compact count — inside
+        # the first card — was unexplained until the reader had
+        # already read all six cards. The legend now sits directly
+        # above the grid, after the verdict strip and before first
+        # use. Render-time only: the model strings and the API JSON
+        # are untouched.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -9396,8 +9397,9 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".shares-note{font-size:.85em;color:#6b7280;"
             "margin:.7em 0 0}", build.CSS)
-        # Python renderer: one legend per run, after the grid closes
-        # and before the notice, on passing and failing runs alike.
+        # Python renderer: one legend per run, after the verdict
+        # strip and before the grid opens — ahead of the first
+        # compact count — on passing and failing runs alike.
         for off, mn, fee in ((0, 0, 0), (6, 1_000_000, 1000),
                              (18, 1_000_000, 1000)):
             v = Vault(decimals_offset=off, min_deposit=mn,
@@ -9406,18 +9408,22 @@ class TestChecker(unittest.TestCase):
                 run_all(v), off=off, mn=mn, fee=fee)
             self.assertEqual(html.count("class='shares-note'"), 1)
             self.assertIn(legend, html)
-            last_close = html.rindex("</section>")
-            grid_close = html.index("</div>", last_close)
-            self.assertLess(grid_close, html.index(legend))
+            self.assertLess(html.index("Full results"),
+                            html.index(legend))
+            self.assertLess(html.index(legend),
+                            html.index('<div class="check-grid">'))
+            self.assertLess(html.index(legend),
+                            html.index("</section>"))
             self.assertLess(html.index(legend),
                             html.index("What to do next"))
-        # Worker JS renderer: the same line, between the grid close
+        # Worker JS renderer: the same line, before the grid open
         # and the notice append.
         js = build.checker_results_html_js()
         fn = js[js.index("function resultsHTML"):]
         self.assertIn("class='shares-note'", fn)
         self.assertIn(legend, fn)
-        self.assertLess(fn.rindex('h+="</div>";'), fn.index(legend))
+        self.assertLess(fn.index(legend),
+                        fn.index('h+="<div class=\'check-grid\'>";'))
         self.assertLess(fn.index(legend),
                         fn.index("if(notice){h+=notice;}"))
 
