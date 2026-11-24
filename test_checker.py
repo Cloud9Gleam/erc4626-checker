@@ -5268,8 +5268,10 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(research.count(
             "9/9 titanoboa + 14/14 forge tests passing"), 1)
         self.assertEqual(len(bare_boa.findall(research)), 0)
-        # Research-page intros (desc doubles as the visible intro and
-        # the meta descriptions, so one fix covers body + OG cards).
+        # Research-page descs (head-only: description + og + twitter +
+        # JSON-LD, four copies each — the visible intros already said
+        # "titanoboa-proven: N/N tests passing" and needed no change;
+        # this fix only affects search snippets / social cards).
         self.assertEqual(pages["/research/company-simulator/"][1].count(
             "11/11 titanoboa tests passing"), 1)
         self.assertEqual(pages["/research/vyper-vested-claims/"][1].count(
