@@ -5186,6 +5186,44 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".track-lead{display:block;margin-top:.45em}",
                       build.CSS)
 
+    def test_verdict192_audit_text_has_no_orphans(self):
+        # Visual verdict #192 (2026-11-24): /audit/ orphan batch fix.
+        # Baseline (probe-verdict192-pretty.py, Range line attribution):
+        # 1919px 3 li-level orphans (Scope "behavior.", "found).",
+        # "3/3).") and 360px 12, plus 4 lead-internal orphans at 1919
+        # and 18 span-level orphans at 360 that the li-level scan
+        # could not see. text-wrap:pretty on .audit-page text kills
+        # all of them except the residue pretty will not fix: the
+        # Scope li (it will not move "share-price" down to join
+        # "behavior.") and the 22 track-lead tails ending ", all
+        # forge-/titanoboa-/cargo-test-/PoC-proven." (it will not pull
+        # "all" down to join the long final word), plus the Algo lead
+        # "(Vyper toolchain unavailable).". Those get nbsp, the
+        # established orphan treatment (#183/#187/#188/#190). Wording
+        # is unchanged — only the join between the last two words.
+        # The same replace also nbsp'd the three research-page intros
+        # "Four/Six findings, all forge-proven." (same tail string,
+        # same treatment, no wording change); they are not asserted
+        # here because this test pins the audit page only.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".audit-page p,.audit-page li,.audit-page .track-lead,"
+                      ".audit-page .track-detail{text-wrap:pretty}", build.CSS)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertEqual(audit.count("all&nbsp;forge-proven."), 18)
+        self.assertEqual(audit.count("all&nbsp;titanoboa-proven."), 2)
+        self.assertEqual(audit.count("all&nbsp;cargo-test-proven."), 1)
+        self.assertEqual(audit.count("all&nbsp;PoC-proven."), 1)
+        self.assertEqual(audit.count("(Vyper toolchain&nbsp;unavailable)."), 1)
+        self.assertEqual(audit.count("share-price&nbsp;behavior."), 1)
+        for plain in (", all forge-proven.", ", all titanoboa-proven.",
+                      ", all cargo-test-proven.", ", all PoC-proven.",
+                      "(Vyper toolchain unavailable).",
+                      "share-price behavior."):
+            self.assertNotIn(plain, audit)
+
     def test_track_record_miss_severities_are_stated(self):
         # Visual verdict #144 (2026-11-21): the Track record entries
         # said "two/four presented as MISSes" but not WHICH severities
