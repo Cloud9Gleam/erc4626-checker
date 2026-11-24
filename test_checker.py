@@ -11273,17 +11273,22 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(".hint-full", build.CSS)
         self.assertNotIn(".hint-short", build.CSS)
         self.assertNotIn("#checker-form .hint{min-height:4.95em}", build.CSS)
+        # Visual verdict #213 item 3 (2026-11-25): the preset-override
+        # rule lived only in the API section ("Explicit numbers override
+        # the preset"); the Preset label now carries it at the form, in
+        # the words of the #212 flip behaviour. Seven hints, not six.
         shorts = ("Virtual shares: 6 standard, 0 none.",
                   "The smallest deposit the vault accepts.",
                   "The deposit made after the donation.",
                   "Assets already in the vault. 0 = new.",
                   "Issued shares, counted at 6 decimals. Not the raw totalSupply.",
-                  "The cut from the yield. 1000 bps = 10%.")
+                  "The cut from the yield. 1000 bps = 10%.",
+                  "Starting point \u2014 editing offset, minimum or fee switches this to Custom parameters.")
         html = build.checker_body()
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         for path_html in (html, worker):
-            self.assertEqual(path_html.count('class="hint"'), 6)
+            self.assertEqual(path_html.count('class="hint"'), 7)  # #213: preset hint
             self.assertNotIn("hint-full", path_html)
             self.assertNotIn("hint-short", path_html)
             for short in shorts:
@@ -11293,6 +11298,43 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(audit.count('class="hint"'), 1)
         self.assertIn("Up to 15 files. More than 15 does not fit this service.",
                       audit)
+
+    def test_verdict213_preset_hint_explains_override(self):
+        # Visual verdict #213 item 3 (2026-11-25) / #212 next candidate 1:
+        # the preset-override rule was explained only in the API section
+        # ("Explicit numbers override the preset"); the Preset label now
+        # carries it at the form, naming the three preset-defining fields
+        # the #212 markCustom guard compares (offset, minimum, fee).
+        # Victim and vault state never flip the preset, so they are not
+        # named. Python and Worker JS renderers must agree.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        hint = ("Starting point \u2014 editing offset, minimum or fee "
+                "switches this to Custom parameters.")
+        html = build.checker_body()
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        for path_html in (html, worker):
+            self.assertEqual(path_html.count(hint), 1)
+            hi = path_html.index(hint)
+            # Order within the hint's own form: the nearest preceding
+            # "Preset" and the next "Decimals offset" after it. (The
+            # worker bundle also carries an embedded static page whose
+            # em-dash is JSON-escaped, so whole-bundle index() of the
+            # label would land in the wrong copy.)
+            preset = path_html.rfind("Preset", 0, hi)
+            decimals = path_html.index("Decimals offset", hi)
+            self.assertNotEqual(preset, -1)
+            self.assertLess(preset, hi)
+            self.assertLess(hi, decimals)
+            self.assertIn("Explicit numbers override the preset.",
+                          path_html)
+        # The hint is one sentence; it explains the flip, it does not
+        # claim victim or vault-state edits change the preset.
+        self.assertNotIn("victim", hint)
+        self.assertNotIn("vault", hint)
 
     def test_checker_notice_compact_on_mobile(self):
         # Mobile checker intro compaction (2026-11-19, verdict #109
