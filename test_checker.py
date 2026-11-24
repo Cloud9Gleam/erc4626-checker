@@ -8274,17 +8274,19 @@ class TestChecker(unittest.TestCase):
         # did not fix noticeability, so alpha goes .5 -> .8 here;
         # the red-bar lines go near-black, which is their already
         # accepted look, not a regression.
-        # Visual verdict #140 item 2 (2026-11-21): #120 drew the
-        # lines ABOVE the fills so they stayed visible across a 100%
-        # bar — and the near-black lines cut every long red bar into
-        # segments. The lines now sit BEHIND the fills: the fill is
-        # positioned with z-index:1, so it paints above the
-        # z-index:auto ::after and covers the lines where the bar
-        # is; the lines stay visible on the white track beyond each
-        # bar's end and on empty rows. Alpha and width are untouched
-        # (.8, 2px) — lightening them would reopen #121–#123. The
-        # axis (#131) carries the scale reading, so the lines no
-        # longer need to cross a 100% bar.
+        # Visual verdict #140 item 2 (2026-11-21, REVERSED by #189
+        # 2026-11-24): #120 drew the lines ABOVE the fills so they
+        # stayed visible across a 100% bar — and the near-black
+        # lines cut every long red bar into segments, so #140 put
+        # the lines BEHIND the fills (fill z-index:1 over the
+        # z-index:auto ::after). Two later real-browser verdicts
+        # (#177, #189) read the result the other way: with 26.6px
+        # bars and 8.5px gaps the only visible fragments are the
+        # stubs in the gaps, which read as stray ticks, not a grid.
+        # The ::after now carries z-index:2, so the lines run
+        # continuously across the bars. Alpha and width are
+        # untouched (.8, 2px) — lightening them would reopen
+        # #121–#123.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -8292,18 +8294,19 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
                       "grid-column:2;background:transparent;border:0}",
                       build.CSS)
-        # The fill sits above the gridlines: positioned, z-index:1,
-        # over the z-index:auto ::after (pinned in full below, with
-        # no z-index of its own — that absence is what makes the
-        # fill's 1 win). Scoped to --bare: guide charts have no
-        # gridlines, so their fills stay unpositioned.
+        # The fill keeps its positioning (z-index:1), but the
+        # gridlines now sit above it: the ::after carries
+        # z-index:2 (pinned in full below), which beats the fill's
+        # 1. Scoped to --bare: guide charts have no gridlines, so
+        # their fills stay unpositioned.
         self.assertIn(".loss-chart--bare .loss-fill{position:relative;"
                       "z-index:1}", build.CSS)
         self.assertNotIn(".loss-chart .loss-fill{position:relative",
                          build.CSS)
         self.assertIn(
             ".loss-chart--bare .loss-track::after{content:\"\";"
-            "position:absolute;inset:-.325em 0;pointer-events:none;"
+            "position:absolute;inset:-1.15em 0;z-index:2;"
+            "pointer-events:none;"
             "background-image:linear-gradient(to right,transparent "
             "calc(25% - 1px),rgba(17,24,39,.8) calc(25% - 1px),"
             "rgba(17,24,39,.8) calc(25% + 1px),transparent "
@@ -8338,14 +8341,20 @@ class TestChecker(unittest.TestCase):
         # continuous line; #159 cut it .35 -> .12 when the live
         # browser read it as cracks; #160 still read cracks, so
         # a third alpha cut is not the lever — no seam over a bar
-        # at any alpha. The gridlines live only under the fills,
-        # and the ::after now extends past mid-gap (.325em each
-        # side of the .5em row-gap, #165 widening) so the lines run
-        # down the chart wherever no bar covers them. The bare
-        # track drops overflow:hidden for the extension to paint,
-        # and the fill carries the 3px corner radius itself.
-        # Mobile pulls the extension back to .15em (half the .3em
-        # gap) so it cannot poke into the stacked label/value rows.
+        # at any alpha.
+        # Visual verdict #189 (2026-11-24, checker-improvement):
+        # the gridlines now cross the fills instead of living
+        # under them (see the #140 reversal above), and the
+        # ::after extends 1.15em each side of the track so the
+        # lines run down the chart across bars and gaps alike.
+        # The .325em extension assumed single-line rows; #172's
+        # two-line key made each row 52px tall (inter-track gap
+        # 33.5px), so .325em left a ~23px white band mid-gap.
+        # The bare track drops overflow:hidden for the extension
+        # to paint, and the fill carries the 3px corner radius
+        # itself. Mobile pulls the extension back to .15em (half
+        # the .3em gap) so it cannot poke into the stacked
+        # label/value rows.
         self.assertNotIn(".loss-chart--bare .loss-track::before",
                          build.CSS)
         self.assertNotIn(".loss-chart .loss-track::before", build.CSS)
@@ -8383,6 +8392,48 @@ class TestChecker(unittest.TestCase):
         self.assertIn("c+=\"<p class='loss-title'>", js)
         self.assertIn("c+=\"<div class='loss-row'>", js)
 
+    def test_verdict189_gridlines_cross_bars(self):
+        # Visual verdict #189 (2026-11-24, checker-improvement):
+        # two real-browser verdicts (#177, #189) read the
+        # behind-bars gridlines as stray ticks — with 26.6px bars
+        # and 8.5px gaps only the stubs in the gaps showed. The
+        # ::after now sits ABOVE the fills (z-index:2 beats the
+        # fill's z-index:1, reversing #140), and its desktop
+        # extension grows .325em -> 1.15em so the lines bridge the
+        # 33.5px inter-track gap #172's two-line key leaves
+        # (pixel-measured, hidden_files/measure-verdict189.py:
+        # pitch 60.1px, key 51.6px, track font 15.64px; needed
+        # 16.8px = 1.07em per side). Mobile keeps -.15em (stacked
+        # rows) and the #164 first-row cap (top:0) still holds.
+        # Render-time only: the model, the numbers and the API
+        # JSON are untouched.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        after = re.search(
+            r"\.loss-chart--bare \.loss-track::after\{[^}]*\}",
+            build.CSS)
+        self.assertIsNotNone(after)
+        self.assertIn("z-index:2", after.group(0))
+        self.assertIn("inset:-1.15em 0", after.group(0))
+        self.assertIn("rgba(17,24,39,.8)", after.group(0))
+        # The fill keeps its own z-index:1 — the ::after's 2 is
+        # what wins, not the fill losing its positioning.
+        self.assertIn(".loss-chart--bare .loss-fill{position:relative;"
+                      "z-index:1}", build.CSS)
+        # First-row cap and mobile pull-back are unchanged.
+        self.assertIn(
+            ".loss-chart--bare .loss-row:first-of-type "
+            ".loss-track::after{top:0}",
+            build.CSS)
+        self.assertIn(
+            ".loss-chart--bare .loss-track::after{inset:-.15em 0}",
+            build.CSS)
+        # Guide charts (plain .loss-chart) get no gridlines.
+        self.assertNotIn(".loss-chart .loss-track::after", build.CSS)
+
     def test_loss_chart_row_gap_wide(self):
         # Visual verdict #163 item 3 (2026-11-24,
         # checker-improvement): the rows were too tight — bars
@@ -8391,14 +8442,16 @@ class TestChecker(unittest.TestCase):
         # so the two red bars read as one block. The bare-chart
         # row-gap doubles .25em -> .5em desktop (~8px, about 30%
         # of the bar height) and .15em -> .3em below 640px.
-        # The gridline ::after extension grows with the gap so
-        # the 25/50/75% lines stay continuous: desktop -.325em
-        # keeps #160's .15em overlap margin (2 x .325 - .5 =
-        # .15); mobile -.15em is exactly half the .3em gap, so
-        # it still cannot poke into the stacked label/value
-        # rows. The #164 first-row cap (top:0) is unchanged and
-        # still beats both inset rules. Guide charts (plain
-        # .loss-chart) keep their .25em flex-row margins.
+        # The gridline ::after extension must bridge the
+        # inter-track gap so the 25/50/75% lines stay continuous:
+        # desktop -1.15em (18.0px per side) covers the 33.5px gap
+        # #172's two-line key leaves between tracks (needed 16.8px
+        # = 1.07em; ~2.4px overlap, slit-proof per #160/#165);
+        # mobile -.15em is exactly half the .3em gap, so it still
+        # cannot poke into the stacked label/value rows. The #164
+        # first-row cap (top:0) is unchanged and still beats both
+        # inset rules. Guide charts (plain .loss-chart) keep their
+        # .25em flex-row margins.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -8410,7 +8463,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare{grid-template-columns:1fr;"
                       "row-gap:.3em}",
                       build.CSS)
-        self.assertIn("inset:-.325em 0", build.CSS)
+        self.assertIn("inset:-1.15em 0", build.CSS)
         self.assertIn(
             ".loss-chart--bare .loss-track::after{inset:-.15em 0}",
             build.CSS)
@@ -9271,13 +9324,13 @@ class TestChecker(unittest.TestCase):
             r"\.loss-chart--bare \.loss-track::after\{[^}]*\}",
             build.CSS)
         self.assertIsNotNone(after)
-        self.assertIn("inset:-.325em 0", after.group(0))
+        self.assertIn("inset:-1.15em 0", after.group(0))
         self.assertIn("rgba(17,24,39,.8)", after.group(0))
-        # The extension must reach past half the .5em row-gap, or
-        # subpixel rounding leaves a 1px white slit at mid-gap
-        # (measured with .125em: exactly one white pixel row).
-        # .325em covers a gap up to .65em and keeps #160's .15em
-        # overlap margin (2 x .325 - .5 = .15).
+        # The extension must bridge the inter-track gap (33.5px
+        # with #172's two-line key), or subpixel rounding leaves
+        # a white band mid-gap (measured with .325em: a ~23px
+        # white band). 1.15em (18.0px per side) covers the gap
+        # with ~2.4px overlap.
         self.assertIn("row-gap:.5em", build.CSS)
         # Mobile: half the .3em gap, so the extension cannot poke
         # into the stacked label/value rows.
