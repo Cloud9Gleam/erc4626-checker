@@ -62,6 +62,27 @@ class Vault:
     mgmt_fee_bps_per_year: int = 0
     accrued_fees: int = 0
 
+    def __post_init__(self):
+        # A negative or non-integer offset makes virtual_shares a
+        # float (10 ** -1 == 0.1), and the checks then die inside the
+        # formatters with a ValueError that says nothing about the
+        # cause (checker-improvement #209: offset -1, 1.5 and True
+        # all crashed cryptically). Fail here, at construction, with
+        # the cause named. Only the offset is guarded: the other
+        # fields are validated by the callers that accept them
+        # (Worker/service clamp offset to [0, 30] and fee to
+        # [0, 10000]; the CLI rejects out-of-range input), and a
+        # negative victim deposit already runs honestly (#204).
+        if isinstance(self.decimals_offset, bool) or not isinstance(
+                self.decimals_offset, int):
+            raise TypeError(
+                "decimals_offset must be an integer, got %r"
+                % (self.decimals_offset,))
+        if self.decimals_offset < 0:
+            raise ValueError(
+                "decimals_offset must be >= 0, got %r"
+                % (self.decimals_offset,))
+
     @property
     def virtual_shares(self) -> int:
         return 10 ** self.decimals_offset
@@ -271,18 +292,28 @@ def check_share_price_sanity(v: Vault) -> dict:
     w = _fresh(decimals_offset=v.decimals_offset, min_deposit=0)
     w.deposit(100_000_000_000)
     price_before = w.convert_to_assets(1_000_000)
+    buys_before = w.preview_deposit(1_000_000)
     w.deposit(100_000_000_000)
     price_after = w.convert_to_assets(1_000_000)
+    buys_after = w.preview_deposit(1_000_000)
     ok = price_before >= 0 and price_after >= price_before - 1
     # Same rule as preview consistency: when the price is unchanged
     # across the second deposit, state the number once; the "X -> Y"
     # form is kept when the two differ, because the difference is the
     # evidence. (Equal deposits keep the assets/shares ratio exact, so
     # the equal case is the normal one through run_all.)
-    price = (f"price per 1,000,000{NBSP}shares {_fmt_usdc(price_before)}{NBSP}USDC (unchanged)"
-             if price_before == price_after else
-             f"price per 1,000,000{NBSP}shares {_fmt_usdc(price_before)}{NBSP}USDC -> "
-             f"{_fmt_usdc(price_after)}{NBSP}USDC")
+    # The price is stated as shares per USDC, not USDC per million
+    # shares: a vault developer thinks in what 1 USDC buys, and the
+    # old unit read 0.000001 USDC at offset 6 and 0.000000 USDC at
+    # offset 18 — a zero price that looks broken (visual verdict
+    # #174, 2026-11-24). preview_deposit is exact, so the buys
+    # number is the same price inverted, not a new measurement.
+    # The verdict still follows the asset-price probe above, with
+    # its 1-base-unit tolerance; the display follows buys.
+    price = (f"1{NBSP}USDC buys {_fmt_int(buys_before)}{NBSP}shares (unchanged)"
+             if buys_before == buys_after else
+             f"1{NBSP}USDC buys {_fmt_int(buys_before)}{NBSP}shares -> "
+             f"{_fmt_int(buys_after)}{NBSP}shares")
     return {"name": "share_price_sanity", "pass": ok,
             "detail": [price]}
 
