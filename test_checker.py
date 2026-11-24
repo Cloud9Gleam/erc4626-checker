@@ -21619,6 +21619,36 @@ class TestChecker(unittest.TestCase):
             '<p class="card-link"><a href="/research/">'
             'Browse the research &rarr;</a></p>', build_text)
 
+    def test_verdict183_orphan_words_are_kept_together(self):
+        # Visual verdict #183 (2026-11-24, checker-improvement):
+        # two single-word runovers, both confirmed by rect-based
+        # measurement (hidden_files/measure-verdict183.py), not by
+        # pixel scan. (1) The site-wide footer at 1919px: line 1
+        # ends "...never as a" and line 2 opens with "finding."
+        # alone — line 1 has only 9.7px of slack, so "finding."
+        # (53.8px) cannot pull up; the non-breaking space keeps
+        # "a finding." together on line 2, which has 375.3px of
+        # slack. At 360px the wrap is unchanged ("a finding."
+        # already share line 4). Wording untouched. (2) The Paid
+        # card's Hunters bullet at 1919px: three lines, the last
+        # one just "USDC." — the candidate rewording
+        # (hidden_files/probe-verdict183-footer.py) keeps three
+        # lines with the last line "USDC on Base.", so the card
+        # blank is unchanged; "on Base" is the /poc-packaging/
+        # page's own wording ("for 25 USDC on Base."), not a new
+        # claim. Layout is pinned by measure-verdict183.py and
+        # the verdict183-orphans harness; this test pins the
+        # strings in build.py.
+        from pathlib import Path
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertIn('never as a&nbsp;finding.', build_text)
+        self.assertNotIn('never as a finding.', build_text)
+        self.assertIn(
+            'a forge PoC for your finding, 25 USDC on Base.',
+            build_text)
+        self.assertNotIn('25 USDC.</li>', build_text)
+
     def test_site_internal_links_resolve(self):
         # Two dead internal links shipped on 2026-11-16 and were caught
         # by a built-site sweep, not by any test: the preview-rounding
