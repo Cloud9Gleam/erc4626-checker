@@ -4054,12 +4054,20 @@ class TestChecker(unittest.TestCase):
                         audit.index('<div class="pay-row">'))
         self.assertLess(audit.index('<div class="pay-box">'),
                         audit.index('id="pay-addr"'))
-        # The box closes only after the email-first instruction, so the
-        # whole payment block (price line, address row, instruction) is
-        # inside it; the pay-row's own </div> comes first and must not
-        # end the match.
-        m = re.search(r'<div class="pay-box">.*?<p>Email first.*?</p>\s*</div>',
+        # The box closes after the address row, so the whole payment
+        # block (price line, instruction, address row) is inside it; the
+        # pay-row's own </div> comes first and must not end the match.
+        # Visual verdict #214 (2026-11-25): the email-first instruction
+        # used to sit after the address row, so a visitor read the price
+        # and the address before being told to email first. It now sits
+        # directly under the price, before "Pay in USDC on Base to:",
+        # with a bold lead -- the reading order is email first, pay second.
+        m = re.search(r'<div class="pay-box">.*?<div class="pay-row">.*?</div>\s*</div>',
                       audit, re.S)
+        self.assertLess(m.group(0).index('<p><strong>Email first</strong>'),
+                        m.group(0).index('Pay in <span class="chip">USDC</span>'))
+        self.assertLess(m.group(0).index('<p><strong>Email first</strong>'),
+                        m.group(0).index('<div class="pay-row">'))
         self.assertIsNotNone(m)
         self.assertIn(build.PAY_ADDR, m.group(0))
         self.assertIn(">Copy address</button>", m.group(0))
@@ -4083,6 +4091,35 @@ class TestChecker(unittest.TestCase):
         self.assertLess(audit.index('href="#audit-order"'),
                         audit.index('<h2 id="scope">Scope</h2>'))
         self.assertIn("a.cta{display:inline-block", build.CSS)
+
+    def test_verdict214_email_first_sits_above_payment_details(self):
+        # Visual verdict #214 (2026-11-25): in both pay-boxes the
+        # email-first instruction must come before any payment detail,
+        # so the reading order is email first, pay second. Wording is
+        # unchanged apart from the bold "Email first" lead.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        poc = pages["/poc-packaging/"]
+        for page, price in ((audit, "50 USDC"), (poc, "25 USDC")):
+            self.assertIn('<p class="price-big">' + price + '</p>', page)
+            box = page[page.index('<div class="pay-box">'):]
+            box = box[:box.index('</div>') + len('</div>')]
+            self.assertIn('<p><strong>Email first</strong> (below)', box)
+            self.assertLess(box.index('<p><strong>Email first</strong>'),
+                            box.index('Pay in <span class="chip">USDC</span>'))
+            self.assertIn('the 72-hour clock starts when payment is confirmed',
+                          box)
+        # The audit box keeps the address row after the instruction;
+        # the PoC box keeps its one-PoC-per-finding sentence.
+        self.assertLess(audit.index('<p><strong>Email first</strong>'),
+                        audit.index('<div class="pay-row">'))
+        self.assertIn('One PoC per finding', poc)
+        self.assertNotIn('<p>Email first', audit)
+        self.assertNotIn('<p>Email first', poc)
 
     def test_audit_pay_address_shown_in_full_by_default(self):
         # Visual verdict #110 (2026-11-19): the 42-char address was
