@@ -5867,6 +5867,54 @@ class TestChecker(unittest.TestCase):
         self.assertIn("function filterGuides(q)", guides)
         self.assertIn('id="guide-count"', guides)
 
+    def test_verdict226_guides_have_topic_row(self):
+        # Visual verdict #226 item 1 (2026-11-25): the /guides/ index was
+        # 179 entries in one flat list — a first-time visitor could only
+        # scroll or guess a filter word. A topic row above the list offers
+        # the library's main themes as filter shortcuts; each button sets
+        # the filter input and runs filterGuides, so the count it shows is
+        # exactly what the filter shows. Counts are computed at build time
+        # with the same normalisation filterGuides uses, so they cannot
+        # drift from the filter.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = build.render_all()
+        guides = pages["/guides/"]
+        # Row exists, sits between the filter paragraph and the list, and
+        # the filter itself is intact.
+        self.assertIn('<p class="guide-topics">Browse by topic:', guides)
+        row = guides.index('<p class="guide-topics">')
+        self.assertLess(row, guides.index('<ul class="guide-list">'))
+        self.assertIn('id="guide-filter"', guides)
+        self.assertIn('id="guide-count"', guides)
+        self.assertIn("function filterGuides(q)", guides)
+        self.assertIn("filterGuides('');", guides)
+        self.assertIn("function setGuideTopic(k)", guides)
+        # One button per GUIDE_TOPICS keyword plus an All reset, with
+        # counts recomputed here independently of guide_topics_row.
+        items = re.findall(r'<li>(.*?)</li>',
+                           re.search(r'<ul class="guide-list">(.*?)</ul>',
+                                     guides, flags=re.S).group(1), flags=re.S)
+        self.assertEqual(len(items), build.GUIDE_COUNT)
+        def norm(t):
+            t = re.sub(r'<[^>]+>', ' ', t).lower()
+            return re.sub(r'[^a-z0-9]+', ' ', t)
+        texts = [norm(x) for x in items]
+        for label, kw in build.GUIDE_TOPICS:
+            n = sum(1 for t in texts if kw in t)
+            self.assertIn(
+                'onclick="setGuideTopic(\'%s\')">%s (%d)</button>' % (kw, label, n),
+                guides)
+        self.assertIn(
+            'onclick="setGuideTopic(\'\')">All guides (%d)</button>' % len(items),
+            guides)
+        # The topic buttons are styled (pill, secondary colours).
+        self.assertIn(".guide-topics{", guides)
+        self.assertIn(".guide-topics button[type=button]{", guides)
+
     def test_thunder_loan_canonical_counts_reconcile(self):
         # Visual verdict #146 (2026-11-21): the /audit/ line said "4
         # findings" and then "6 of 7 canonical High+Medium findings
