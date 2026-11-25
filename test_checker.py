@@ -2166,6 +2166,38 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("written report in 72 hours.</p>", js)
         self.assertNotIn("written report in 72 hours).</p>", js)
 
+    def test_verdict249_notice_pass_tail_is_bound(self):
+        # Checker-improvement 2026-11-25 (#249, #248附带发现): the
+        # PASS "What to do next" second paragraph ended on a lone
+        # "no fee)." — 56.4px of a 275.8px line at 360px (frac 0.20),
+        # 146.3px at 1919px (frac 0.19). The "no&nbsp;fee)" unit was
+        # already bound, so the line was short because the break
+        # landed before it. The fix binds the longer tail
+        # "no minimum, no fee)." into one unbreakable unit, so the
+        # last line is deterministically the full phrase in both
+        # renderers. Headless baseline (measure-verdict249.py):
+        # default notice p[1] last line 146.3px frac 0.19 at 1919px,
+        # 56.4px frac 0.20 at 360px; after the fix the 360px last
+        # line is the bound unit (~139px, frac ~0.50) and the 1919px
+        # line is unchanged (the break already landed before "no
+        # minimum" there). The FAIL notice has no such sentence —
+        # its second paragraph is the offset-6 link — so only the
+        # PASS form is pinned here.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn("no&nbsp;minimum,&nbsp;no&nbsp;fee).</p>", passed)
+        self.assertNotIn("no minimum, no fee).</p>", passed)
+        # Worker JS renderer carries the same sentence.
+        js = build.checker_results_html_js()
+        self.assertIn("no&nbsp;minimum,&nbsp;no&nbsp;fee).</p>", js)
+        self.assertNotIn("no minimum, no fee).</p>", js)
+
     def test_verdict229_query_params_accept_long_aliases(self):
         # Checker-improvement 2026-11-25 (#229, verdict #223 item 5):
         # the site spelled three parameters two ways — the form and
