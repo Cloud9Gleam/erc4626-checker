@@ -26482,15 +26482,22 @@ class TestChecker(unittest.TestCase):
                 "Every preview within 1 base unit of the exact ratio"
                 " — deposits of 1, 100, 10,000 USDC.",
             "Preview consistency":
-                # Verdict #222: "and redeem." is bound with nbsp —
-                # the real browser stranded "redeem." alone on the
-                # rule's last line (#221 item 2).
+                # Verdict #222/#241: the tail is one nbsp-bound unit —
+                # #222 bound only "and redeem." and the real browser
+                # still stranded that pair alone on the narrow card's
+                # last line (#240 item 4), so #241 binds the whole
+                # "1,000,000-share mint and redeem." tail; the hyphen
+                # is U+2011 (&#8209;) so the token cannot split there
+                # either (#200 precedent).
                 "Preview must equal execution exactly — tested on a "
-                "10,000 USDC deposit and a 1,000,000-share mint and&nbsp;redeem.",
+                "10,000 USDC deposit and a 1,000,000&#8209;share&nbsp;mint&nbsp;and&nbsp;redeem.",
             "Fee conservation":
+                # Verdict #241: "fee rate." stood alone on the narrow
+                # card's last line (#240 item 4) — bind the whole
+                # "times the fee rate." tail with nbsp.
                 "Holder gain + fee must equal the 10,000 USDC yield "
-                "exactly, and the fee must equal the yield times the "
-                "fee rate.",
+                "exactly, and the fee must equal the yield "
+                "times&nbsp;the&nbsp;fee&nbsp;rate.",
             "Share-price sanity":
                 "1 USDC must buy the same number of shares after each of "
                 "two plain 100,000 USDC deposits (price checked to "
@@ -26529,35 +26536,46 @@ class TestChecker(unittest.TestCase):
         js = build.checker_results_html_js()
         self.assertIn("if(m[3]) h+=\"<p class='check-rule'>", js)
         for rule in expected.values():
-            # Verdict #222: the Preview rule's nbsp form is assembled at
+            # Verdict #222/#241: the bound forms are assembled at
             # runtime (post-esc replace), so the template carries the
             # plain form as its CHECK_META literal — assert that one
-            # here; the replace call is nailed by the #222 test.
-            self.assertIn(rule.replace(" and&nbsp;redeem.", " and redeem."), js)
+            # here; the replace calls are nailed by the #241 test.
+            plain = rule.replace("&#8209;", "-").replace("&nbsp;", " ")
+            self.assertIn(plain, js)
 
-    def test_verdict222_preview_rule_and_audit_link_have_nbsp(self):
-        # Visual verdict #221 item 2 (2026-11-24): the real browser saw
-        # "redeem." alone on the Preview rule's last line (headless shows
-        # the 3-word "mint and redeem." — a one-word-per-line renderer
-        # difference, #181 mechanism), and the /audit/ intro link
-        # "ERC-4626 checker" split across lines. Bind both pairs so the
-        # last line / the link text can never strand a single word.
+    def test_verdict241_pass_rule_tails_are_bound(self):
+        # Visual verdict #240 item 4 (2026-11-25): on the narrow
+        # two-column cards the Preview rule's last line was "and
+        # redeem." and the Fee rule's was "fee rate." — #222 bound only
+        # the two-word pair, which the real browser still stranded.
+        # Bind each whole tail phrase, so the last line can never be
+        # shorter than the bound unit; the /audit/ intro link bind
+        # from #222 is re-nailed here unchanged.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        # Python CHECK_META carries the nbsp form; the Python renderer
+        # Python CHECK_META carries the bound forms; the Python renderer
         # inserts the rule raw.
-        rule = build.CHECK_META["preview_consistency"][3]
-        self.assertIn("mint and&nbsp;redeem.", rule)
-        self.assertNotIn("mint and redeem.", rule)
+        preview = build.CHECK_META["preview_consistency"][3]
+        self.assertIn("1,000,000&#8209;share&nbsp;mint&nbsp;and&nbsp;redeem.", preview)
+        self.assertNotIn("mint and redeem.", preview)
+        self.assertNotIn("1,000,000-share mint and redeem.", preview)
+        fee = build.CHECK_META["fee_conservation"][3]
+        self.assertIn("times&nbsp;the&nbsp;fee&nbsp;rate.", fee)
+        self.assertNotIn("times the fee rate.", fee)
         # The JS CHECK_META stays plain on purpose: the Worker renders
         # the rule through esc(), which would print a literal nbsp
         # entity (#190 trap) — the bind happens after esc() instead.
         js = build.checker_results_html_js()
         self.assertIn('"Preview must equal execution exactly — tested on a '
                       '10,000 USDC deposit and a 1,000,000-share mint and redeem."', js)
-        self.assertIn('.replace("mint and redeem.", "mint and&nbsp;redeem.")', js)
+        self.assertIn('"Holder gain + fee must equal the 10,000 USDC yield '
+                      'exactly, and the fee must equal the yield times the fee rate."', js)
+        self.assertIn('.replace("1,000,000-share mint and redeem.", '
+                      '"1,000,000&#8209;share&nbsp;mint&nbsp;and&nbsp;redeem.")', js)
+        self.assertIn('.replace("times the fee rate.", '
+                      '"times&nbsp;the&nbsp;fee&nbsp;rate.")', js)
         # /audit/ intro: the link text is one unbreakable unit — the
         # nbsp binds "4626" to "checker", and the non-breaking hyphen
         # (U+2011, #200 precedent) binds "ERC" to "4626": the real
