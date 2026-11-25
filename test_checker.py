@@ -9584,8 +9584,11 @@ class TestChecker(unittest.TestCase):
         # at 0/25/50/75/100%; the labels drop .55em to clear them.
         # On mobile the three middle labels hide, and the middle
         # ticks hide with them (only 0 and scale-max ticks remain).
+        # Visual verdict #236 item 5 (2026-11-25): the labels were
+        # .8em grey #6b7280 — small and washed out next to the red
+        # bars; now .9em in #374151 (the .loss-peak grey).
         self.assertIn(".loss-axis{grid-column:2;position:relative;"
-                      "height:1.6em;font-size:.8em;color:#6b7280;"
+                      "height:1.6em;font-size:.9em;color:#374151;"
                       "border-top:1px solid #9ca3af;"
                       "background-image:linear-gradient(#9ca3af,#9ca3af),"
                       "linear-gradient(#9ca3af,#9ca3af),"
