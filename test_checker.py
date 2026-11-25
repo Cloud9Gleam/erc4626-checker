@@ -2750,8 +2750,10 @@ class TestChecker(unittest.TestCase):
 
     def test_verdict190_checker_360px_orphans_have_nbsp(self):
         # Verdict #190: the #187 orphan scan's leftover /checker/
-        # orphans at 360px — the share-price check-desc ends
-        # "deposit.", the Vault-state paragraph ends "displayed.",
+        # orphans at 360px — the share-price check-desc ended
+        # "deposit." (verdict #231: it now ends "involved).", bound
+        # as "donation&nbsp;involved)."), the Vault-state paragraph
+        # ends "displayed.",
         # the loss title ends "(USDC)", the notice offset-6 paragraph
         # ends "unchanged)." and the slippage paragraph ends
         # "scenarios.", each alone on its last line. Each is now bound
@@ -2764,19 +2766,21 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         body = build.checker_body()
-        self.assertIn("on a plain&nbsp;deposit.", body)
+        self.assertIn("on a plain&nbsp;deposit (an ordinary deposit — no donation&nbsp;involved).", body)
         self.assertIn("Shares are counted at 6 decimals, as&nbsp;displayed.</p>", body)
         self.assertNotIn("as displayed.</p>", body)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         # Both render paths carry the check-desc fix: the static page
-        # holds "on a plain&nbsp;deposit." once, and the JS renderer
-        # binds it post-esc (the replace literal is the bare
-        # "plain&nbsp;deposit.", so the bundle holds that twice).
+        # holds the glossed desc once, and the JS renderer binds
+        # both nbsp pairs post-esc (the replace literals are the
+        # bare "plain&nbsp;deposit" and "donation&nbsp;involved).",
+        # so the bundle holds each twice: static page + literal).
         # The title and notice fixes live in the JS template only
         # (the static page is the passing default).
-        self.assertEqual(worker.count("on a plain&nbsp;deposit."), 1)
-        self.assertEqual(worker.count("plain&nbsp;deposit."), 2)
+        self.assertEqual(worker.count("on a plain&nbsp;deposit (an ordinary deposit"), 1)
+        self.assertEqual(worker.count("plain&nbsp;deposit"), 2)
+        self.assertEqual(worker.count("donation&nbsp;involved)."), 2)
         self.assertEqual(worker.count("Victim loss by donation size&nbsp;(USDC)"), 1)
         self.assertEqual(worker.count("(your other parameters&nbsp;unchanged)."), 1)
         self.assertEqual(worker.count("twelve measured&nbsp;scenarios."), 1)
@@ -26059,9 +26063,9 @@ class TestChecker(unittest.TestCase):
                 "exactly, and the fee must equal the yield times the "
                 "fee rate.",
             "Share-price sanity":
-                "1 USDC must buy the same number of shares after a "
-                "second 100,000 USDC deposit (price checked to within "
-                "1 base unit).",
+                "1 USDC must buy the same number of shares after each of "
+                "two plain 100,000 USDC deposits (price checked to "
+                "within 1 base unit).",
         }
         for v, kwargs in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
