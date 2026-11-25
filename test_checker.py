@@ -11279,6 +11279,77 @@ class TestChecker(unittest.TestCase):
                 decoded = pages['/guides/'].replace("&nbsp;", " ")
                 self.assertIn(plain, decoded)
 
+    def test_verdict267_research_nov2026_tails_are_rewritten(self):
+        # Visual verdict #267 (2026-11-26, checker-improvement):
+        # the #266 census still counts 2 severe short last lines
+        # @1919 on /research/, both the date-only tail "(Nov
+        # 2026)." (frac 0.115): v4lend and Beatland. #262/#263
+        # queued them for a rewrite, not a binding: binding needs
+        # a 6-word tail (~360px for v4lend, 8 words / ~322px for
+        # Beatland) to be unique, and #263 proved a 310px bound
+        # tail overflows the ~287px mobile column (docScrollW
+        # 345 -> 350) and reverted it. This slice does the
+        # rewrite first: the date moves from the tail to a front
+        # dateline — "— Nov 2026: ..." — so each sentence ends on
+        # its verdict words, then the verdict tail is bound with
+        # &nbsp; (3 words v4lend, 4 words Beatland, ~195px, well
+        # inside the mobile column). Pixel re-measure
+        # (measure-verdict267.py, current worker): @1919 v4lend
+        # 0.115 -> 0.309 ("slice, bounded clean negative."),
+        # Beatland 0.115 -> 0.321 ("novel, 1 canonical High
+        # missed."); research-index severe 2 -> 0, short 8 -> 6;
+        # @360 both 0.787 / 0.647, docScrollW 345, no overflow.
+        # The other "(Nov 2026)." index lines (AlphaPrimer, HOPR,
+        # Twyne, Santa's List) are not severe and stay untouched.
+        # Wording is unchanged apart from the date move: build.py
+        # with &nbsp; read as spaces is the rewritten sentence.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pairs = [
+            ('v4lend (Revert Finance) review</a> \u2014 Nov 2026: '
+             'Cantina $50,000 pool, 13-file slice, '
+             'bounded&nbsp;clean&nbsp;negative.</li>',
+             'bounded clean negative.</li>',
+             'v4lend (Revert Finance) review</a> \u2014 Cantina '
+             '$50,000 pool, 13-file slice, bounded clean negative '
+             '(Nov 2026).</li>'),
+            ('Beatland Festival \u2014 six findings, five forge-proven'
+             '</a> \u2014 Nov 2026: CodeHawks First Flight #4 practice '
+             'review, 0 High + 2 Medium + 4 Low, 5/5 forge tests '
+             'passing; 1 Medium matches the canonical finding '
+             'exactly, 1 Medium over-called, 1 Low under-called, '
+             '2 Lows novel, 1&nbsp;canonical&nbsp;High&nbsp;missed.</li>',
+             '1 canonical High missed.</li>',
+             '2 Lows novel, 1 canonical High missed (Nov 2026).</li>'),
+        ]
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        full_worker = build.worker_js(build.render_all())
+        self.assertEqual(len(pairs), 2)
+        for new, plain_tail, old in pairs:
+            with self.subTest(new=new[:40]):
+                # The em dash is JSON-escaped (\u2014) in the
+                # worker (the #177 precedent); the tail carries
+                # no dash, so it is counted literally there.
+                wnew = new.replace("\u2014", "\\u2014")
+                wold = old.replace("\u2014", "\\u2014")
+                self.assertIn(new, pages['/research/'])
+                self.assertEqual(worker.count(wnew), 1)
+                self.assertEqual(full_worker.count(wnew), 1)
+                self.assertNotIn(old, pages['/research/'])
+                self.assertEqual(worker.count(wold), 0)
+                self.assertEqual(worker.count(plain_tail), 0)
+                self.assertEqual(full_worker.count(plain_tail), 0)
+                decoded = pages['/research/'].replace("&nbsp;", " ")
+                self.assertIn(new.replace("&nbsp;", " "), decoded)
+        # The other "(Nov 2026)." index lines are untouched.
+        self.assertEqual(pages['/research/'].count(
+            'bounded clean negative (Nov 2026).</li>'), 3)
+        self.assertIn('1 canonical High missed (Nov 2026).</li>',
+                      pages['/research/'])
+
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
         # the email-notes paragraph ended with the last line just
