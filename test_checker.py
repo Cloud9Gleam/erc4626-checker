@@ -4177,6 +4177,11 @@ class TestChecker(unittest.TestCase):
         # email-first instruction must come before any payment detail,
         # so the reading order is email first, pay second. Wording is
         # unchanged apart from the bold "Email first" lead.
+        # Checker-improvement #232 (2026-11-25, visual verdict #232
+        # item 1) rewords the audit box only: "(below)" becomes a
+        # link to the Start form and the box states the hash step,
+        # so "get the payment instructions" is no longer promised
+        # there. The PoC box keeps the "(below)" wording.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -4184,22 +4189,93 @@ class TestChecker(unittest.TestCase):
         pages = dict((p, b) for p, t, d, k, b in build.PAGES)
         audit = pages["/audit/"]
         poc = pages["/poc-packaging/"]
-        for page, price in ((audit, "50 USDC"), (poc, "25 USDC")):
+        for page, price, clock in (
+                (audit, "50 USDC",
+                 "The 72-hour clock starts when the payment is confirmed"),
+                (poc, "25 USDC",
+                 "the 72-hour clock starts when payment is confirmed")):
             self.assertIn('<p class="price-big">' + price + '</p>', page)
             box = page[page.index('<div class="pay-box">'):]
             box = box[:box.index('</div>') + len('</div>')]
-            self.assertIn('<p><strong>Email first</strong> (below)', box)
             self.assertLess(box.index('<p><strong>Email first</strong>'),
                             box.index('Pay in <span class="chip">USDC</span>'))
-            self.assertIn('the 72-hour clock starts when payment is confirmed',
-                          box)
+            self.assertIn(clock, box)
         # The audit box keeps the address row after the instruction;
         # the PoC box keeps its one-PoC-per-finding sentence.
         self.assertLess(audit.index('<p><strong>Email first</strong>'),
                         audit.index('<div class="pay-row">'))
         self.assertIn('One PoC per finding', poc)
+        # The PoC box keeps the "(below)" wording; the audit box
+        # links the Start form and states the hash step instead.
+        self.assertIn('<p><strong>Email first</strong> (below)', poc)
+        self.assertIn(
+            '<p><strong>Email first</strong> \u2014 use the '
+            '<a href="#start">Start form below</a> \u2014',
+            audit)
+        self.assertNotIn('to confirm scope and get the payment', audit)
         self.assertNotIn('<p>Email first', audit)
         self.assertNotIn('<p>Email first', poc)
+
+    def test_verdict232_audit_payment_matches_order(self):
+        # Visual verdict #232 (2026-11-25, this run): the audit pay
+        # box said "Email first ... to confirm scope and get the
+        # payment instructions" while showing the address right below
+        # it, and the Start form had no way to tie a payment to an
+        # order -- a visitor could pay without ever emailing. The box
+        # now states the real sequence (email first via the linked
+        # Start form, pay, paste the transaction hash so the payment
+        # can be matched to the order), the form carries an optional
+        # transaction-hash field, and the composed email includes it
+        # when filled and no longer asks for payment instructions
+        # that are already on the page.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        box = audit[audit.index('<div class="pay-box">'):]
+        box = box[:box.index('<div class="pay-row">')]
+        self.assertIn('to confirm the scope fits', box)
+        self.assertIn('paste the payment', box)
+        self.assertIn('transaction hash in the form', box)
+        self.assertIn('matched to your order', box)
+        self.assertIn('<a href="#start">Start form below</a>', box)
+        self.assertIn('The 72-hour clock starts when the payment is confirmed',
+                      box)
+        self.assertNotIn('get the payment instructions', box)
+        # The hash field sits after the email field, with its own hint.
+        self.assertIn(
+            '<label>Payment transaction hash (after you pay) '
+            '<input id="audit-txhash" type="text" size="40" '
+            'placeholder="0x\u2026">'
+            '<small class="hint">Paste it after you pay, so the payment '
+            'can be matched to your order.</small></label>',
+            build.AUDIT_FORM)
+        self.assertLess(build.AUDIT_FORM.index('id="audit-email"'),
+                        build.AUDIT_FORM.index('id="audit-txhash"'))
+        self.assertLess(build.AUDIT_FORM.index('id="audit-txhash"'),
+                        build.AUDIT_FORM.index('Compose email'))
+        # buildAuditLines reads it and includes it only when filled;
+        # the composed email no longer asks for payment instructions.
+        self.assertIn(
+            "var txhash=document.getElementById('audit-txhash').value.trim();",
+            build.AUDIT_FORM)
+        self.assertIn(
+            "if(txhash) lines.push('Payment transaction hash: '+txhash);",
+            build.AUDIT_FORM)
+        self.assertIn(
+            "lines.push('','Please confirm the scope fits (up to 15 files, "
+            "accounting only).');",
+            build.AUDIT_FORM)
+        self.assertNotIn('send the payment instructions', build.AUDIT_FORM)
+        self.assertNotIn('send the payment instructions', audit)
+        # Worker copy: the field, the wiring, and the new box text.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('id=\\"audit-txhash\\"', worker)
+        self.assertIn('Payment transaction hash', worker)
+        self.assertIn('Start form below', worker)
+        self.assertNotIn('send the payment instructions', worker)
 
     def test_audit_pay_address_shown_in_full_by_default(self):
         # Visual verdict #110 (2026-11-19): the 42-char address was
@@ -11695,11 +11771,14 @@ class TestChecker(unittest.TestCase):
             self.assertNotIn("hint-short", path_html)
             for short in shorts:
                 self.assertIn(short, path_html)
-        # The audit form's single hint is untouched: no spans there.
+        # The audit form's hints: the files cap, plus the #232
+        # transaction-hash hint (one sentence, same .hint style).
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        self.assertEqual(audit.count('class="hint"'), 1)
+        self.assertEqual(audit.count('class="hint"'), 2)
         self.assertIn("Up to 15 files. More than 15 does not fit this service.",
                       audit)
+        self.assertIn("Paste it after you pay, so the payment can be "
+                      "matched to your order.", audit)
 
     def test_verdict213_preset_hint_explains_override(self):
         # Visual verdict #213 item 3 (2026-11-25) / #212 next candidate 1:
