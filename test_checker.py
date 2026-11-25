@@ -4944,7 +4944,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("99.99 ether with zero delay", page)  # 144 split drain
         self.assertIn("10.89 ether", page)  # 144 tier straddle
         self.assertIn("confirmations read 3", page)  # 145 stale vote counts
-        self.assertIn("down to one live signer with two stale votes", page)  # 145
+        self.assertIn("down to one live signer with two stale&nbsp;votes", page)  # 145, #259 tail bound
         self.assertNotIn("lists all 135 headings", page)
         self.assertNotIn("135 pattern entries", page)
 
@@ -5029,7 +5029,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("79228162514264337593543950336", page)  # 158 sqrtPrice 2^96
         self.assertIn("currency1-membership test", page)  # 158 gate
         self.assertIn("bob\u2019s balance is 100 ether immediately", page)  # 159 auto-mint
-        self.assertIn("the review window is destroyed, not just skipped", page)  # 159
+        self.assertIn("the review window is destroyed, not just&nbsp;skipped", page)  # 159, #259 tail bound
         self.assertIn("Transaction(bob, 0)", page)  # 160 zero mint files zero
         self.assertIn("1000 \u2192 900 ether", page)  # 160 burn stays final
         self.assertIn("total supply 1900 ether", page)  # 161 two burns, one mint
@@ -5325,7 +5325,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("17.884 ETH", page)  # 204 ledger still reads
         self.assertIn("500 shares", page)  # 204 no-phantom control
         self.assertIn("Insufficient payment for sale!!!", page)  # 204 fixed
-        self.assertIn("Full suite 27/27 PASS", page)  # 204
+        self.assertIn("Full suite 27/27&nbsp;PASS", page)  # 204, #259 tail bound
         self.assertIn("ownerOf(account) == attacker", page)  # 208 bypass
         self.assertIn("UntrustedBootstrap(attackerBootstrap)", page)  # 208 fixed
         self.assertIn("InsufficientAttestations", page)  # 208 honest path
@@ -10760,6 +10760,92 @@ class TestChecker(unittest.TestCase):
         self.assertIn(pretty, worker)
 
 
+    def test_verdict259_orphan_tails_are_bound(self):
+        # Visual verdict #259 (2026-11-26, checker-improvement):
+        # the #258 global text-wrap rollout (balance >=641px,
+        # pretty <=640px) left 37 strict one-word last lines
+        # on the two long index pages: 22 at 1919px and 15 at
+        # 360px, all on /guides/ (7) and /patterns/ (29) —
+        # long list entries whose final word pretty/balance
+        # cannot pull up. probe-textwrap-global.py re-run
+        # after the rollout gave the 37; each tail is now
+        # nbsp-bound the #251-#256 way (2-5 words, wording
+        # unchanged: the new build.py with &nbsp; read as
+        # spaces is byte-identical to the pre-change one).
+        # Three tails occur twice (the same sentence on the
+        # guide page itself), so those three bind only the
+        # index occurrence via the </li> anchor; the
+        # guide-page sentence stays plain. One tail
+        # ("callback's claims") is stored as &#x27; in the
+        # source. Four residuals (defect., one., feed.,
+        # recovery.) still show as strict under the probe's
+        # old first-rect grouping, but
+        # measure-verdict259.py proves each is a hyphen-break
+        # artifact: the penultimate word breaks after a
+        # hyphen and its tail fragment sits on the last line
+        # with the final word ("path defect.", "denominated
+        # one.", "precision feed.", "contract recovery.")
+        # — so the probe now groups by the last rect and
+        # reports strict 0 at both widths. The em dash in
+        # the L-5 tail is JSON-escaped (\\u2014) in
+        # worker.js, so the worker count uses the escaped
+        # form; the page body holds the literal dash.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pairs = [
+            ('/guides/', 'at&nbsp;offset&nbsp;0.</li>', 'at offset 0.</li>', 'at offset 0.'),
+            ('/guides/', "while&nbsp;the&nbsp;victim's&nbsp;shares&nbsp;end&nbsp;up&nbsp;worth&nbsp;184,615.384607.", "while the victim's shares end up worth 184,615.384607.", "while the victim's shares end up worth 184,615.384607."),
+            ('/guides/', 'takes the full loss and none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'takes the full loss and none of the gift.</li>', 'none of the gift.'),
+            ('/guides/', 'and&nbsp;loses&nbsp;87,507.794638.</li>', 'and loses 87,507.794638.</li>', 'and loses 87,507.794638.'),
+            ('/guides/', 'deposit&nbsp;until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.', 'deposit until one tops 1,000,000.000001.', 'deposit until one tops 1,000,000.000001.'),
+            ('/guides/', '$1,000&nbsp;underwater.', '$1,000 underwater.', '$1,000 underwater.'),
+            ('/guides/', 'side&nbsp;moves&nbsp;the&nbsp;price.', 'side moves the price.', 'side moves the price.'),
+            ('/patterns/', 'in-contract&nbsp;recovery.', 'in-contract recovery.', 'in-contract recovery.'),
+            ('/patterns/', 'is&nbsp;display-only.', 'is display-only.', 'is display-only.'),
+            ('/patterns/', 'breaks&nbsp;it.', 'breaks it.', 'breaks it.'),
+            ('/patterns/', 'still&nbsp;rejected.', 'still rejected.', 'still rejected.'),
+            ('/patterns/', 'the&nbsp;pricing.', 'the pricing.', 'the pricing.'),
+            ('/patterns/', 'exponent&nbsp;is&nbsp;the&nbsp;bug.', 'exponent is the bug.', 'exponent is the bug.'),
+            ('/patterns/', 'only&nbsp;defense.', 'only defense.', 'only defense.'),
+            ('/patterns/', 'callback&#x27;s&nbsp;claims.', 'callback&#x27;s claims.', 'callback&#x27;s claims.'),
+            ('/patterns/', 'read&nbsp;for&nbsp;allocation.', 'read for allocation.', 'read for allocation.'),
+            ('/patterns/', '—&nbsp;L-5).', '— L-5).', '— L-5).'),
+            ('/patterns/', 'share-denominated&nbsp;one.', 'share-denominated one.', 'share-denominated one.'),
+            ('/patterns/', 'full-precision&nbsp;feed.', 'full-precision feed.', 'full-precision feed.'),
+            ('/patterns/', 'total&nbsp;staked.', 'total staked.', 'total staked.'),
+            ('/patterns/', 'slots.&nbsp;Full&nbsp;suite&nbsp;11/11&nbsp;PASS.', 'slots. Full suite 11/11 PASS.', 'slots. Full suite 11/11 PASS.'),
+            ('/patterns/', 'H-01&nbsp;duplicate.', 'H-01 duplicate.', 'H-01 duplicate.'),
+            ('/patterns/', 'no-keeper-path&nbsp;defect.', 'no-keeper-path defect.', 'no-keeper-path defect.'),
+            ('/patterns/', 'shares&nbsp;behind.', 'shares behind.', 'shares behind.'),
+            ('/patterns/', 'stale&nbsp;votes.', 'stale votes.', 'stale votes.'),
+            ('/patterns/', 'permanently&nbsp;undeliverable.', 'permanently undeliverable.', 'permanently undeliverable.'),
+            ('/patterns/', 'suggests&nbsp;High.', 'suggests High.', 'suggests High.'),
+            ('/patterns/', 'is&nbsp;double-counting.', 'is double-counting.', 'is double-counting.'),
+            ('/patterns/', 'at&nbsp;day&nbsp;30.', 'at day 30.', 'at day 30.'),
+            ('/patterns/', 'read&nbsp;anywhere&nbsp;in&nbsp;the&nbsp;contract.', 'read anywhere in the contract.', 'read anywhere in the contract.'),
+            ('/patterns/', 'gets&nbsp;double-spent).', 'gets double-spent).', 'gets double-spent).'),
+            ('/patterns/', 'sails&nbsp;through.', 'sails through.', 'sails through.'),
+            ('/patterns/', 'applies.&nbsp;Full&nbsp;suite&nbsp;15/15&nbsp;PASS.', 'applies. Full suite 15/15 PASS.', 'applies. Full suite 15/15 PASS.'),
+            ('/patterns/', '27/27&nbsp;PASS.', '27/27 PASS.', '27/27 PASS.'),
+            ('/patterns/', 'just&nbsp;skipped.', 'just skipped.', 'just skipped.'),
+            ('/patterns/', 'never&nbsp;arrives.', 'never arrives.', 'never arrives.'),
+        ]
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        self.assertEqual(len(pairs), 36)
+        for page, bound, old, plain in pairs:
+            with self.subTest(page=page, bound=bound):
+                # worker.js JSON-escapes non-ASCII, so the
+                # em-dash tail is counted in escaped form.
+                wbound = bound.replace("\u2014", "\\u2014")
+                self.assertEqual(worker.count(wbound), 1)
+                self.assertEqual(worker.count(old), 0)
+                self.assertIn(bound, pages[page])
+                self.assertNotIn(old, pages[page])
+                decoded = pages[page].replace("&nbsp;", " ")
+                self.assertIn(plain, decoded)
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
         # the email-notes paragraph ended with the last line just
