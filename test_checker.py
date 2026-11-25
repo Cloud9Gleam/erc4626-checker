@@ -2010,10 +2010,14 @@ class TestChecker(unittest.TestCase):
         body = build.checker_body()
         self.assertEqual(body.count("<td>number</td>"), 0)
         self.assertIn("<td>0–1,000,000,000</td><td>Smallest deposit the "
-                      "vault accepts, in USDC. Default&nbsp;1.</td>", body)
+                      "vault accepts, in USDC. Default&nbsp;1. Also accepts "
+                      "min_deposit_usdc.</td>", body)
         self.assertIn("<td>0.000001–1,000,000,000</td><td>Deposit the "
                       "donation attacker targets, in USDC. "
-                      "Default&nbsp;100,000.</td>", body)
+                      "Default&nbsp;100,000. Also accepts "
+                      "victim_deposit_usdc.</td>", body)
+        self.assertIn("<td>0–10000</td><td>Performance fee, in basis "
+                      "points. Also accepts perf_fee_bps.</td>", body)
         self.assertIn("<td>0–1,000,000,000,000</td><td>Vault assets, in "
                       "USDC. Seeds the donation and minimum-viable-deposit "
                       "checks. Default&nbsp;0.</td>", body)
@@ -2029,6 +2033,51 @@ class TestChecker(unittest.TestCase):
         self.assertIn("vic = Math.max(1, Math.min(vic, 1e15))", src)
         self.assertIn("va = Math.max(0, Math.min(va, 1e18))", src)
         self.assertIn("vs = Math.max(0, Math.min(vs, 1e12))", src)
+
+    def test_verdict229_query_params_accept_long_aliases(self):
+        # Checker-improvement 2026-11-25 (#229, verdict #223 item 5):
+        # the site spelled three parameters two ways — the form and
+        # the API table use min_usdc / victim_usdc / fee_bps, while
+        # the email block and the JSON response use min_deposit_usdc
+        # / victim_deposit_usdc / perf_fee_bps. Live-verified before
+        # the fix: /api/check?min_deposit_usdc=5 silently returned
+        # the alphaprimer defaults (min 1, victim 100000, fee 1000),
+        # so a caller reusing the JSON response keys got wrong
+        # results with no error. The Worker's parseParams now accepts
+        # both spellings; the short name wins when both are given.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # The preset shortcut must not swallow a long name alone:
+        # ?preset=noprot&min_deposit_usdc=5 has to reach the alias
+        # code instead of returning the preset defaults.
+        self.assertIn('!q.has("min_deposit_usdc")', worker)
+        self.assertIn('!q.has("perf_fee_bps")', worker)
+        self.assertIn('!q.has("victim_deposit_usdc")', worker)
+        # Alias-aware getter, used by the fee/min/victim reads.
+        self.assertIn('const get = (k, a) => q.get(k) || (a ? q.get(a) : null);',
+                      worker)
+        self.assertIn('num("fee_bps", base[2], 0, 10000, "perf_fee_bps")',
+                      worker)
+        self.assertIn('get("min_usdc", "min_deposit_usdc")', worker)
+        self.assertIn('get("victim_usdc", "victim_deposit_usdc")', worker)
+        # Short names still canonical: guard and reads keep them.
+        self.assertIn('!q.has("min_usdc")', worker)
+        self.assertIn('!q.has("victim_usdc")', worker)
+        self.assertIn('!q.has("fee_bps")', worker)
+        # The API table documents the aliases it accepts, and the
+        # email block already teaches the long names — the page is
+        # now self-consistent in both directions.
+        body = build.checker_body()
+        self.assertIn("Also accepts min_deposit_usdc.", body)
+        self.assertIn("Also accepts victim_deposit_usdc.", body)
+        self.assertIn("Also accepts perf_fee_bps.", body)
+        self.assertIn("min_deposit_usdc=", body)
+        self.assertIn("victim_deposit_usdc=", body)
+        self.assertIn("perf_fee_bps=", body)
 
     def test_checker_hint_rows_align(self):
         # Visual verdict #142 item 4 (2026-11-21): in the 3-column form
