@@ -5415,7 +5415,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("ownerOf(account) == attacker", page)  # 208 bypass
         self.assertIn("UntrustedBootstrap(attackerBootstrap)", page)  # 208 fixed
         self.assertIn("InsufficientAttestations", page)  # 208 honest path
-        self.assertIn("21/21 PASS", page)  # 208
+        self.assertIn("pre&#8209;existing&nbsp;tests:&nbsp;21/21&nbsp;PASS", page)  # 208, #264: plain "21/21 PASS" retired — it was supplied by 167/170/176, now bound; 208's own figure was bound in #262
         self.assertNotIn("194 pattern entries", page)
 
     def test_gate_brief_issue_1_state_tip_and_links(self):
@@ -5907,8 +5907,8 @@ class TestChecker(unittest.TestCase):
                       '<span class="track-findings">66 re-verified · 15H 32M 19L</span>'
                       '<span class="track-lead">66 of 70 '
                       'awarded findings re-derived (15 High, 32 Medium, '
-                      '19 Low; $70,000 pool), four presented as MISSes (1 High, '
-                      '3 Medium). </span>'
+                      '19 Low; $70,000 pool), four presented as&nbsp;MISSes&nbsp;(1&nbsp;High,&nbsp;'
+                      '3&nbsp;Medium). </span>'
                       '<span class="track-detail">Forge PoCs for M-NEGCAP 2/2, '
                       'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
         # Visual verdict #145 (2026-11-21): Gamma was the first "N of M"
@@ -6054,7 +6054,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("25 of 27 validated", track)
         self.assertIn("two presented as MISSes (1 Medium, 1 Low)", track)
         self.assertIn("66 of 70 awarded", track)
-        self.assertIn("four presented as MISSes (1 High, 3 Medium)", track)
+        self.assertIn("four presented as&nbsp;MISSes&nbsp;(1&nbsp;High,&nbsp;3&nbsp;Medium)", track)  # #264: tail bound
         # Research pages quote the same totals in sequence, not side by
         # side with a pill — no annotation needed there, and the award
         # splits still stand there.
@@ -6274,7 +6274,7 @@ class TestChecker(unittest.TestCase):
         pages = dict((p, b) for p, t, d, k, b in build.PAGES)
         audit = pages["/audit/"]
         self.assertIn("two presented as MISSes (1 Medium, 1 Low)", audit)
-        self.assertIn("four presented as MISSes (1 High, 3 Medium)", audit)
+        self.assertIn("four presented as&nbsp;MISSes&nbsp;(1&nbsp;High,&nbsp;3&nbsp;Medium)", audit)  # #264: tail bound
         # The severities must reconcile: pill split + miss split =
         # contest split, so a future edit cannot silently break the
         # count the entry itself states.
@@ -6315,7 +6315,7 @@ class TestChecker(unittest.TestCase):
                  r'two presented as MISSes \((\d+) Medium, (\d+) Low\)',
                  lambda g: (0, g[0], g[1])),
                 ("zaros",
-                 r'four presented as MISSes \((\d+) High, (\d+) Medium\)',
+                 r'four presented as&nbsp;MISSes&nbsp;\((\d+)&nbsp;High,&nbsp;(\d+)&nbsp;Medium\)',  # #264: tail bound
                  lambda g: (g[0], g[1], 0))):
             pill, miss, contest = splits(slug, miss_re, miss_map)
             self.assertEqual(tuple(p + m for p, m in zip(pill, miss)),
@@ -11085,6 +11085,61 @@ class TestChecker(unittest.TestCase):
                 self.assertIn(bound_v, pages[page])
                 self.assertNotIn(old_v, pages[page])
                 decoded = pages[page].replace("&nbsp;", " ").replace("&#8209;", "-").replace("&#x27;", "'")
+                self.assertIn(plain, decoded)
+
+    def test_verdict264_short_tails_are_bound(self):
+        # Visual verdict #264 (2026-11-26, checker-improvement):
+        # the live-browser verdict confirms two short last lines
+        # the headless probe could not reproduce. (a) Patterns 167,
+        # 170, 176 Smell paragraphs end "Full suite 21/21 PASS.":
+        # in the real browser 167's last line is just that sentence
+        # (~160px, frac ~0.23) and 176 strands "Full" at the end of
+        # the previous line, leaving "suite 21/21 PASS." alone
+        # (~130px, frac ~0.19); headless @1919 measures 0.63/0.48/
+        # 0.97 and @360 0.96/0.28/0.28, so the binding is verified
+        # in the real browser, not by headless geometry. Each tail
+        # is bound back to the end of the preceding sentence, so
+        # the last line is a full phrase in both renderers; the
+        # tails are ~300px at 1919 and fit the ~310px mobile
+        # column (167's tail already renders as one line at 360).
+        # (b) The /audit/ Zaros track-lead ends "(1 High, 3 Medium)."
+        # (headless @1919 frac 0.18, browser #264 ~13%): the tail
+        # "as MISSes (1 High, 3 Medium)." (~231px @1919, ~215px
+        # @360 vs a 237px column) is bound as one unit. The
+        # verdict's top item — widening the 80ch body measure to
+        # 85-90ch — is NOT taken here: #256 already parked the
+        # 80ch rule with the column-width decision, and it still
+        # needs a main-chat decision; the verdict's narrower
+        # framing (inner measure, not the 1020px column) is new
+        # evidence for that decision, recorded in the run log.
+        # The verdict's "TOC 4/3 imbalance" claim is falsified in
+        # this run: headless rects show left 3 / right 3 with the
+        # spanning last item (columnSpan all, #246), bottoms 466.2
+        # vs 463.7 — the spanning row was miscounted as a fourth
+        # left-column item. Wording is unchanged: build.py with
+        # &nbsp; read as spaces is byte-identical to the
+        # pre-change file (nbsp delta 22, exactly the four tails'
+        # plain-space count: 6 + 7 + 4 + 5).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pairs = [
+            ('/patterns/', 'flips&nbsp;the&nbsp;outcome.&nbsp;Full&nbsp;suite&nbsp;21/21&nbsp;PASS.', 'flips the outcome. Full suite 21/21 PASS.', 'flips&nbsp;the&nbsp;outcome.&nbsp;Full&nbsp;suite&nbsp;21/21&nbsp;PASS.', 'flips the outcome. Full suite 21/21 PASS.', 'flips the outcome. Full suite 21/21 PASS.'),
+            ('/patterns/', 'keeps&nbsp;the&nbsp;1&nbsp;ETH.&nbsp;Full&nbsp;suite&nbsp;21/21&nbsp;PASS.', 'keeps the 1 ETH. Full suite 21/21 PASS.', 'keeps&nbsp;the&nbsp;1&nbsp;ETH.&nbsp;Full&nbsp;suite&nbsp;21/21&nbsp;PASS.', 'keeps the 1 ETH. Full suite 21/21 PASS.', 'keeps the 1 ETH. Full suite 21/21 PASS.'),
+            ('/patterns/', 'wei.&nbsp;Full&nbsp;suite&nbsp;21/21&nbsp;PASS.', 'wei. Full suite 21/21 PASS.', 'wei.&nbsp;Full&nbsp;suite&nbsp;21/21&nbsp;PASS.', 'wei. Full suite 21/21 PASS.', 'wei. Full suite 21/21 PASS.'),
+            ('/audit/', 'as&nbsp;MISSes&nbsp;(1&nbsp;High,&nbsp;3&nbsp;Medium).', 'as MISSes (1 High, 3 Medium).', 'as&nbsp;MISSes&nbsp;(1&nbsp;High,&nbsp;3&nbsp;Medium).', 'as MISSes (1 High, 3 Medium).', 'as MISSes (1 High, 3 Medium).'),
+        ]
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        self.assertEqual(len(pairs), 4)
+        for page, bound, old, bound_v, old_v, plain in pairs:
+            with self.subTest(page=page, bound=bound):
+                self.assertEqual(worker.count(bound), 1)
+                self.assertEqual(worker.count(old), 0)
+                self.assertIn(bound_v, pages[page])
+                self.assertNotIn(old_v, pages[page])
+                decoded = pages[page].replace("&nbsp;", " ")
                 self.assertIn(plain, decoded)
 
     def test_verdict256_email_notes_tail_is_bound(self):
