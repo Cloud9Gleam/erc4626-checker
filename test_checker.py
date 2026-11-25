@@ -2771,6 +2771,11 @@ class TestChecker(unittest.TestCase):
         # break fell before "per"), so "one" is bound to "per" too —
         # the whole three-word phrase now moves as one unit and the
         # paragraph collapses to a single line at 1919px.
+        # Verdict #243: the third note paragraph ended with the
+        # two-word tail "the reply." alone on its last line at 1919px
+        # (74.3px, frac 0.12) — the whole tail clause "to name your
+        # vault in the reply." now moves as one unit (the #241
+        # pattern), so the last line holds ~200px instead.
         import sys, re
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2781,6 +2786,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn("one&nbsp;per&nbsp;line:</p>", para)
         self.assertIn("not the raw&nbsp;totalSupply.</p>", para)
         self.assertIn("Add&nbsp;<code>vault=YourVaultName</code>", para)
+        self.assertIn("to&nbsp;name&nbsp;your&nbsp;vault&nbsp;in&nbsp;the&nbsp;reply.</p>", para)
+        self.assertNotIn("to name your vault in the reply.</p>", para)
         self.assertNotIn("one per&nbsp;line:</p>", para)
         self.assertNotIn("one per line:</p>", para)
         self.assertNotIn("not the raw totalSupply.</p>", para)
@@ -2796,7 +2803,8 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         for fixed in ("one&nbsp;per&nbsp;line:</p>",
                       "not the raw&nbsp;totalSupply.</p>",
-                      "Add&nbsp;<code>vault=YourVaultName</code>"):
+                      "Add&nbsp;<code>vault=YourVaultName</code>",
+                      "to&nbsp;name&nbsp;your&nbsp;vault&nbsp;in&nbsp;the&nbsp;reply.</p>"):
             self.assertEqual(worker.count(fixed), 2)
 
     def test_verdict190_checker_360px_orphans_have_nbsp(self):
