@@ -4202,9 +4202,13 @@ class TestChecker(unittest.TestCase):
         # hidden behind "Show full address" while the same row warned
         # "Double-check the address before sending" -- a payer could
         # not eyeball the address the warning was about. Default
-        # display is now the full address; the toggle only collapses
-        # it to the shortened form, and the copy button (which reads
-        # data-full) is unaffected either way.
+        # display is now the full address.
+        # Checker-improvement #230 (2026-11-25, visual verdict #230
+        # item 1) retires the toggle that collapsed it: the toggle
+        # let a payer hide the very address the warning is about, so
+        # there is no shortened display anywhere on the page any
+        # more -- the address is always full, and the copy button
+        # (which reads data-full) is unaffected either way.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -4214,44 +4218,17 @@ class TestChecker(unittest.TestCase):
                       audit)
         # The full address IS the span's visible text on load.
         self.assertIn('>' + build.PAY_ADDR + '</span>', audit)
-        # The shortened form is not displayed anywhere on load; the
-        # toggle builds it at runtime (slice), so only the constant
-        # documents it.
+        # The shortened form is not displayed anywhere on load, and
+        # no toggle exists to produce it at runtime any more.
         self.assertNotIn(build.PAY_ADDR_SHORT, audit)
         self.assertEqual(build.PAY_ADDR_SHORT, "0xD07C\u2026dC64")
-        # Checker-improvement #216 (2026-11-25): the toggle used to
-        # say bare "Show shortened" -- a first-time visitor could
-        # not tell what it shortens (visual verdict #162 item 9).
-        # It now names the object, parallel to the reverse label
-        # "Show full address" (which it offers when collapsed).
-        self.assertIn("Show shortened address", audit)
-        self.assertIn("Show full address", audit)
-        self.assertIn("function togglePayAddr(btn)", audit)
+        self.assertNotIn("Show shortened address", audit)
+        self.assertNotIn("Show full address", audit)
+        self.assertNotIn("function togglePayAddr(btn)", audit)
+        self.assertNotIn("togglePayAddr", audit)
+        self.assertNotIn("addr-toggle", audit)
+        self.assertNotIn(".pay-row .addr-toggle{", build.CSS)
         self.assertIn("getAttribute('data-full')", audit)
-        self.assertIn(".pay-row .addr-toggle{", build.CSS)
-
-    def test_verdict216_toggle_names_what_it_shortens(self):
-        # Checker-improvement #216 (2026-11-25): the /audit/ pay-row
-        # toggle said bare "Show shortened" -- no object, so a visitor
-        # could not tell it shortens the payment address (visual
-        # verdict #162 item 9, still open as #215 next-candidate 4).
-        # The label now names it, parallel to the reverse label the
-        # toggle offers once collapsed. Both the button label and the
-        # script's restore string must carry the full label; the bare
-        # form must not survive in either place.
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
-        import build
-        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        self.assertIn(">Show shortened address</button>", audit)
-        self.assertIn("btn.textContent='Show shortened address'", audit)
-        self.assertNotIn(">Show shortened</button>", audit)
-        self.assertNotIn("btn.textContent='Show shortened'", audit)
-        # The collapsed-state label is unchanged and still parallel --
-        # it only ever appears inside the toggle script, never as a
-        # static button label (on load the full address is shown).
-        self.assertIn("btn.textContent='Show full address'", audit)
 
     def test_poc_packaging_page_states_offer_and_hard_rule(self):
         # PoC-packaging service page (2026-11-18): the offer must state
@@ -5048,7 +5025,7 @@ class TestChecker(unittest.TestCase):
         # button. The row now carries a "View on BaseScan" link to the
         # full address, so the address and its USDC activity can be
         # checked before paying. A plain link, not a third button: the
-        # row already has toggle + copy.
+        # row already has the copy button.
         import sys
         import re
         from pathlib import Path
@@ -5060,7 +5037,7 @@ class TestChecker(unittest.TestCase):
             + build.PAY_ADDR + '" target="_blank" rel="noopener">'
             'View on BaseScan</a>', audit)
         self.assertIn(".pay-row a.basescan-link{flex-shrink:0;"
-                      "white-space:nowrap;font-size:.9em;margin-right:1em}",
+                      "white-space:nowrap;font-size:.9em}",
                       build.CSS)
         # Inside the pay-row, after the copy button, before the note.
         row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
@@ -5076,66 +5053,44 @@ class TestChecker(unittest.TestCase):
                       worker)
         self.assertIn("View on BaseScan", worker)
 
-    def test_verdict217_pay_row_links_are_separated(self):
-        # Checker-improvement #217 (2026-11-25, visual verdict #217):
-        # the two text links in the /audit/ pay-row sat one .6em flex
-        # gap apart (~10px at the row's 17px font) and read as one
-        # continuous sentence. The BaseScan link now carries a 1em
-        # right margin, so the gap to the toggle is ~25px while the
+    def test_verdict230_pay_row_has_no_toggle(self):
+        # Checker-improvement #230 (2026-11-25, visual verdict #230
+        # item 1): the /audit/ pay-row toggle ("Show shortened
+        # address") let a payer hide the address the "Double-check"
+        # warning is about, so the toggle, its wrapper, its rules,
+        # and the 1em right margin #217 put on the BaseScan link to
+        # separate it from the toggle are all gone. The row is now
+        # address, copy button, BaseScan link, note -- and the
         # Copy-to-BaseScan gap is untouched (the empty
         # pay-copy-status span doubles the flex gap there, so a
-        # row-level gap change would overshoot it to ~51px). The
-        # margin sits on the link, not the toggle: on narrow screens
-        # the toggle wraps to its own line, where a left margin would
-        # indent it, while a right margin on the link is only trailing
-        # space on its line. #103/#124 stand: BaseScan stays a plain
-        # link, the toggle stays a display preference.
+        # row-level gap change would overshoot it to ~51px).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         rule = (".pay-row a.basescan-link{flex-shrink:0;"
-                "white-space:nowrap;font-size:.9em;margin-right:1em}")
+                "white-space:nowrap;font-size:.9em}")
         self.assertIn(rule, build.CSS)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(rule, worker)
         # The row itself is untouched: same flex gap, same wrap, same
-        # control order (copy, BaseScan, toggle, note).
+        # control order (copy, BaseScan, note).
         self.assertIn(".pay-row{display:flex;align-items:center;"
                       "gap:.6em;flex-wrap:wrap", build.CSS)
-        self.assertIn(".pay-row .addr-toggle-wrap{flex-shrink:0}",
-                      build.CSS)
+        self.assertNotIn(".pay-row .addr-toggle-wrap", build.CSS)
+        self.assertNotIn(".pay-row .addr-toggle{", build.CSS)
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         row = audit[audit.index('<div class="pay-row">'):]
         row = row[:row.index("</div>")]
         self.assertLess(row.index("Copy address"),
+                        row.index("pay-copy-status"))
+        self.assertLess(row.index("pay-copy-status"),
                         row.index("View on BaseScan"))
-        # The button label form, not the bare string: the togglePayAddr
-        # script (which restores the same label) sits inside the row
-        # before the BaseScan link.
         self.assertLess(row.index("View on BaseScan"),
-                        row.index(">Show shortened address</button>"))
-
-    def test_toggle_pay_addr_clears_copy_status(self):
-        # Verdict #56: after copying, "Payment address copied." stayed
-        # on screen when the address was toggled back to truncated — a
-        # stale confirmation next to a now-hidden full address. The
-        # toggle must clear the status line on every switch.
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
-        import build
-        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        start = audit.index("function togglePayAddr(btn)")
-        body = audit[start:audit.index("</script>", start)]
-        self.assertIn("getElementById('pay-copy-status')", body)
-        self.assertIn("m.textContent=''", body)
-        # The clear must run on every toggle, not only when collapsing
-        # back to the truncated form: it precedes the if/else that
-        # swaps the display.
-        self.assertLess(body.index("pay-copy-status"),
-                        body.index("if(el.textContent.trim()===full)"))
+                        row.index("pay-note"))
+        self.assertNotIn("togglePayAddr", row)
+        self.assertNotIn("addr-toggle", row)
 
     def test_vault_state_hint_names_both_checks(self):
         # The old hint said only the donation check uses vault state;
@@ -7912,19 +7867,20 @@ class TestChecker(unittest.TestCase):
         # was ~90% blank, so the box hugged its content (flex 0 1
         # auto) and the two controls shared the row beside it.
         # Visual verdict #110 supersedes the default: the full
-        # 42-char address is now shown on load and the toggle only
-        # collapses it — so #59's premise (a short address) is gone.
+        # 42-char address is now shown on load -- so #59's premise
+        # (a short address) is gone.
         # 2026-11-23 supersedes the hugging rule itself (visual
         # verdict 01:07): four controls still crammed one row
         # (847px in a 903px row), the address at body size, the trust
         # element not prominent. The address now takes its own
         # full-width line at 1.1em — a deposit-address field — and
-        # the three actions share the line below it. The address
+        # the two actions share the line below it. The address
         # still wraps instead of being ellipsis-clipped -- a clipped
         # payment address hides characters the payer must see.
-        # Visual verdict #115 (d) supersedes the markup: the toggle
-        # moved after the BaseScan link (see
-        # test_audit_pay_row_toggle_shares_line_one).
+        # Checker-improvement #230 (2026-11-25, visual verdict #230
+        # item 1) retires the toggle that collapsed the address, so
+        # the shortened display is gone for good and the row holds
+        # only copy, BaseScan, and the note.
         import re
         import sys
         from pathlib import Path
@@ -7944,91 +7900,9 @@ class TestChecker(unittest.TestCase):
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
                       audit)
-        self.assertIn("Show shortened address", audit)
+        self.assertNotIn("Show shortened address", audit)
+        self.assertNotIn("togglePayAddr", audit)
         self.assertIn(">Copy address</button>", audit)
-
-    def test_audit_pay_row_toggle_shares_line_one(self):
-        # Visual verdict #115 (d): at the 1024px column the pay-row
-        # read [address][Show shortened address][Copy][BaseScan]
-        # with the
-        # same ~10px gap between every item, so the display-preference
-        # toggle looked stuck to the button group — and BaseScan
-        # wrapped to an orphan second line. The first fix (flex:0 0
-        # 100% + max-width:max-content on the button itself) was
-        # disproved by visual verdict #116: max-width:max-content
-        # clamps the 100% flex-basis to the button's content width,
-        # so wrapping depended on leftover space in row 1 — headless
-        # Chromium wrapped, the real browser did not. The second fix
-        # (2026-11-19) put the toggle in a full-width wrapper span
-        # (flex:0 0 100%), which always took its own line — but left
-        # it as an orphan link on a line of its own, and visual
-        # verdict #127 still called the pay-row crowded. The third
-        # fix (2026-11-20) makes room instead: the copy button label
-        # "Copy payment address" is now "Copy address" (the section
-        # is "Price and payment" and this is the only address on the
-        # page), freeing 78px — measured line 1 is address 409 +
-        # copy 151.3 + BaseScan 128.4 + toggle 127.5 + 3 gaps 30.6 =
-        # 846.8px against a 902.7px row, 45.9px slack at the 1024px
-        # column, so all four controls share row 1 at both 1919 and
-        # 1280 (headless true render). The wrapper span stays as the
-        # flex item (flex-shrink:0, no max-width anywhere on it, no
-        # flex-basis) so it can never be clamped; if a font ever
-        # pushes the row over, the toggle wraps to its own line —
-        # the 2026-11-19 layout — rather than breaking. DOM order
-        # is address, copy button, BaseScan link, toggle, note; the
-        # copy script and the toggle function use getElementById, so
-        # the wrapper cannot break them.
-        # 2026-11-23 supersedes the one-row arrangement (visual
-        # verdict 01:07): fitting is not breathing room — the address
-        # now takes its own full-width line at 1.1em (see
-        # test_audit_pay_row_address_own_line) and the three actions
-        # share the line below it. This test's assertions still hold:
-        # the toggle wrap is unchanged, DOM order is unchanged.
-        import re
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
-        import build
-        m = re.search(r"\.pay-row \.addr-toggle-wrap\{[^}]*\}", build.CSS)
-        self.assertIsNotNone(m, ".pay-row .addr-toggle-wrap rule not found")
-        self.assertIn("flex-shrink:0", m.group(0))
-        self.assertNotIn("flex:0 0 100%", m.group(0))
-        self.assertNotIn("max-width", m.group(0))
-        t = re.search(r"\.pay-row \.addr-toggle\{[^}]*\}", build.CSS)
-        self.assertIsNotNone(t, ".pay-row .addr-toggle rule not found")
-        self.assertNotIn("flex:", t.group(0))
-        self.assertNotIn("max-width", t.group(0))
-        # Visual verdict #124 (f): the toggle was 14.45px / #6b7280 /
-        # 4.45:1 — the smallest, lowest-contrast item in the pay-row.
-        # It now renders at .95em in #374151 (the pay-note's colour,
-        # 9.49:1): legible, still a plain underlined link, still no
-        # button chrome, still below the copy button in the hierarchy.
-        self.assertIn("font-size:.95em", t.group(0))
-        self.assertIn("color:#374151", t.group(0))
-        self.assertNotIn("font-size:.85em", t.group(0))
-        self.assertNotIn("color:#6b7280", t.group(0))
-        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        # Button-anchored markers: the string "Show shortened address"
-        # also occurs inside the toggle's own script
-        # (btn.textContent='Show shortened address'), which sits
-        # before the BaseScan link in the DOM.
-        i_addr = audit.index('id="pay-addr"')
-        i_copy = audit.index(">Copy address</button>")
-        i_scan = audit.index(">View on BaseScan</a>")
-        i_wrap = audit.index('<span class="addr-toggle-wrap">')
-        i_tog = audit.index(">Show shortened address</button>")
-        i_note = audit.index('<span class="pay-note">')
-        self.assertLess(i_addr, i_copy)
-        self.assertLess(i_copy, i_scan)
-        self.assertLess(i_scan, i_wrap)
-        self.assertLess(i_wrap, i_tog)
-        self.assertLess(i_tog, i_note)
-        # The toggle button is inside the wrapper, and the wrapper
-        # closes before the pay-note: exactly one wrapper rule may
-        # set its line behaviour.
-        self.assertLess(audit.index("</span>", i_tog), i_note)
-        self.assertEqual(len(re.findall(r"\.pay-row \.addr-toggle-wrap\{",
-                                        build.CSS)), 1)
 
     def test_audit_pay_row_note_attached(self):
         # Visual verdict #67 put a payment-safety note in the
