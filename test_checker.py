@@ -3087,6 +3087,11 @@ class TestChecker(unittest.TestCase):
         # gains a last-resort break. Live geometry is pinned by
         # hidden_files/verdict261-guides-overflow-harness.mjs
         # (docScrollW 454 -> 345 at 360px, 0 overflowing items).
+        # #270 (2026-11-26): the first tail is now the 4-word "end
+        # up worth 184,615.384607." (~228px, the #269/G8 method) —
+        # the 8-word form broke under this rule at 360px, leaving
+        # the number alone on the last line (frac 0.427, strict);
+        # the assertion below pins the shortened form.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -3098,7 +3103,7 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".guide-list li{overflow-wrap:anywhere}", worker)
         build_text = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
-        self.assertIn("while&nbsp;the&nbsp;victim's&nbsp;shares&nbsp;end&nbsp;up&nbsp;worth&nbsp;184,615.384607.",
+        self.assertIn("while the victim's shares end&nbsp;up&nbsp;worth&nbsp;184,615.384607.",
                       build_text)
         self.assertIn("every deposit until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.",
                       build_text)
@@ -10903,7 +10908,7 @@ class TestChecker(unittest.TestCase):
         import build
         pairs = [
             ('/guides/', 'at&nbsp;offset&nbsp;0.</li>', 'at offset 0.</li>', 'at offset 0.'),
-            ('/guides/', "while&nbsp;the&nbsp;victim's&nbsp;shares&nbsp;end&nbsp;up&nbsp;worth&nbsp;184,615.384607.", "while the victim's shares end up worth 184,615.384607.", "while the victim's shares end up worth 184,615.384607."),
+            ('/guides/', 'end&nbsp;up&nbsp;worth&nbsp;184,615.384607.</li>', 'end up worth 184,615.384607.</li>', 'end up worth 184,615.384607.'),
             ('/guides/', 'takes the full&nbsp;loss&nbsp;and&nbsp;none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'takes the full loss and none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'full loss and none of the gift.'),
             ('/guides/', 'and&nbsp;loses&nbsp;87,507.794638.</li>', 'and loses 87,507.794638.</li>', 'and loses 87,507.794638.'),
             ('/guides/', 'deposit until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.', 'deposit&nbsp;until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.', 'deposit until one tops 1,000,000.000001.'),
@@ -11458,6 +11463,51 @@ class TestChecker(unittest.TestCase):
                 self.assertNotIn(old, pages[page])
                 decoded = pages[page].replace("&nbsp;", " ")
                 self.assertIn(plain, decoded)
+
+    def test_verdict270_hook_tail_is_shortened(self):
+        # Visual verdict #270 (2026-11-26, checker-improvement):
+        # the #269 census left one strict tail on /guides/: the
+        # deposit-hook item's 8-word #259 binding ("while the
+        # victim's shares end up worth 184,615.384607.", ~414px)
+        # broke under the #261 overflow-wrap:anywhere rule at 360px,
+        # leaving the number alone on the last line (frac 0.427,
+        # strict lastN==1; measure-verdict270b.py, current worker).
+        # Shortened the G8/#269 way — unbind "while the victim's
+        # shares", keep "end up worth 184,615.384607." bound
+        # (~228px at 360, ~242px at 1919, measured in the li's own
+        # font): the tail now fits the 287px mobile column whole, so
+        # the last line carries the full 4-word tail. Wording is
+        # unchanged (nbsp read as spaces is byte-identical). The
+        # </li> anchor keeps the pair unique: the guide page itself
+        # carries the same sentence in plain form ("...and the
+        # victim's shares end up worth 184,615.384607."), so the
+        # unanchored plain form occurs there. Geometry is pinned by
+        # hidden_files/verdict270-hook-tail-harness.mjs (Worker
+        # real run) and the measure-verdict270b.py re-run (strict 0
+        # at both widths, severe still 0).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        bound = 'end&nbsp;up&nbsp;worth&nbsp;184,615.384607.</li>'
+        old = 'end up worth 184,615.384607.</li>'
+        plain = 'end up worth 184,615.384607.'
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        self.assertEqual(worker.count(bound), 1)
+        self.assertEqual(worker.count(old), 0)
+        self.assertIn(bound, pages['/guides/'])
+        self.assertNotIn(old, pages['/guides/'])
+        decoded = pages['/guides/'].replace("&nbsp;", " ")
+        self.assertIn(plain, decoded)
+        build_text = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        self.assertIn("while the victim's shares end&nbsp;up&nbsp;worth&nbsp;184,615.384607.",
+                      build_text)
+        self.assertNotIn("while&nbsp;the&nbsp;victim's&nbsp;shares&nbsp;end&nbsp;up&nbsp;worth&nbsp;184,615.384607.",
+                         build_text)
+        # The guide page keeps the sentence in plain form.
+        self.assertIn("and the victim's shares end up worth 184,615.384607.",
+                      pages['/guides/erc4626-donation-deposit-hook-reentrancy/'])
 
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
