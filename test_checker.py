@@ -2079,6 +2079,57 @@ class TestChecker(unittest.TestCase):
         self.assertIn("victim_deposit_usdc=", body)
         self.assertIn("perf_fee_bps=", body)
 
+    def test_verdict233_email_block_names_the_long_form(self):
+        # Checker-improvement 2026-11-25 (#233, visual verdict #232
+        # item 2): the email block showed min_deposit_usdc /
+        # victim_deposit_usdc / perf_fee_bps while the form and the
+        # API table use min_usdc / victim_usdc / fee_bps, and nothing
+        # on the page said why -- the intro even claims "the same
+        # parameters" while the names differ. The long names are the
+        # mailbox wire format: agent-mailbox.js only matches the long
+        # keys, so renaming the email to the short names would
+        # silently drop the parameters from emailed checks, and
+        # renaming the form/URL to the long names would churn 175
+        # test lines and 81 harness lines for longer shareable URLs.
+        # The page instead names the mapping in the email block.
+        import sys, re
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        USDC = 1_000_000
+        para = build.email_para(0, 0, 0, 100_000_000_000,
+                                1_000_000 * USDC, 1_000_000)
+        # The sentence names both spellings and why they differ.
+        self.assertIn("The email uses the long parameter names", para)
+        self.assertIn("the mailbox reads those", para)
+        self.assertIn("both spellings work in the&nbsp;API.", para)
+        for long, short in (("min_deposit_usdc", "min_usdc"),
+                            ("victim_deposit_usdc", "victim_usdc"),
+                            ("perf_fee_bps", "fee_bps")):
+            self.assertIn(f"<code>{long}</code>", para)
+            self.assertIn(f"<code>{short}</code>", para)
+        # The copyable lines and the mailto body keep the long names
+        # the mailbox parses; the short names never appear there.
+        m = re.search(r'<pre class="api-example"><code id="email-params">(.*?)</code></pre>',
+                      para, re.DOTALL)
+        self.assertIsNotNone(m)
+        shown = m.group(1).strip().split("\n")
+        self.assertEqual([ln.split("=")[0] for ln in shown],
+                         ["offset", "min_deposit_usdc",
+                          "victim_deposit_usdc", "perf_fee_bps",
+                          "vault_assets_usdc", "vault_shares"])
+        self.assertIn("min_deposit_usdc%3D0", para)
+        self.assertIn("victim_deposit_usdc%3D100000", para)
+        self.assertIn("perf_fee_bps%3D0", para)
+        # The Worker template carries the same sentence, so the live
+        # page and the static page agree.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        for frag in ("The email uses the long parameter names",
+                     "the mailbox reads those",
+                     "both spellings work in the&nbsp;API."):
+            self.assertEqual(worker.count(frag), 2)
+
     def test_checker_hint_rows_align(self):
         # Visual verdict #142 item 4 (2026-11-21): in the 3-column form
         # the offset and vault-assets hints wrap to 2 lines while the
