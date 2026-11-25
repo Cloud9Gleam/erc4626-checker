@@ -2062,6 +2062,51 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Also accepts victim_deposit_usdc.", body)
         self.assertIn("perf_fee_bps=", body)
 
+    def test_verdict245_audit_tail_lines_are_bound(self):
+        # Checker-improvement 2026-11-25 (#245, visual verdict #244
+        # item 2): three /audit/ list items wrapped onto a short
+        # last line at 1919px — the Scope first item ended with
+        # "share-price behavior." (2 words, 166px, frac 0.21), the
+        # Twyne example with "path found)." (2 words, 98px, frac
+        # 0.13), the Dutch-clock example with "reproduction 3/3)."
+        # (2 words, 144px, frac 0.19). The tails are now bound with
+        # nbsp into a longer clause fragment ("consistency,
+        # share-price behavior.", "reproducible funds path found).",
+        # "enforced; forge reproduction 3/3).") so the last line
+        # carries a full phrase. Two of #244's four named items did
+        # NOT reproduce and are deliberately untouched: the Scope
+        # "only." item and the limits "keys." item are each a single
+        # line at 1919px, and the AlphaPrimer "model)." tail is a
+        # 5-word line at frac 0.37. Probe-verified
+        # (measure-verdict245.py / probe-verdict245-lastline.py):
+        # last lines 166.2/98.3/144.0px (frac 0.21/0.13/0.19) before,
+        # 267.2/279.5/271.5px (frac 0.34/0.36/0.35) after at 1919px;
+        # at 360px 251.5/239.3/255.5px (frac 0.87/0.83/0.89),
+        # docScrollW 345, no overflow.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertIn("preview consistency,&nbsp;share-price&nbsp;"
+                      "behavior.", audit)
+        self.assertNotIn("preview consistency, share-price&nbsp;"
+                         "behavior.", audit)
+        self.assertIn("no reproducible&nbsp;funds&nbsp;path&nbsp;found).",
+                      audit)
+        self.assertNotIn("no reproducible funds path found).", audit)
+        self.assertIn("never enforced;&nbsp;forge&nbsp;reproduction&nbsp;"
+                      "3/3).", audit)
+        self.assertNotIn("never enforced; forge reproduction 3/3).",
+                         audit)
+        # The untouched items keep their plain wording: the Scope
+        # "only." item and the limits "keys." item are single lines
+        # at desktop, and the AlphaPrimer tail is already a phrase.
+        self.assertIn("review and local forge\nreproduction only.",
+                      audit)
+        self.assertIn("never ask\nfor keys.", audit)
+        self.assertIn("verified against the checker model).", audit)
+
     def test_verdict229_query_params_accept_long_aliases(self):
         # Checker-improvement 2026-11-25 (#229, verdict #223 item 5):
         # the site spelled three parameters two ways — the form and
