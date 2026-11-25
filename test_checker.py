@@ -10876,6 +10876,10 @@ class TestChecker(unittest.TestCase):
         # the L-5 tail is JSON-escaped (\\u2014) in
         # worker.js, so the worker count uses the escaped
         # form; the page body holds the literal dash.
+        # #263 extends six of these tails (only defense /
+        # callback's claims / none of the gift / shares behind /
+        # suggests High / sails through); the pairs below carry
+        # the extended forms, the old forms are retired.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -10883,7 +10887,7 @@ class TestChecker(unittest.TestCase):
         pairs = [
             ('/guides/', 'at&nbsp;offset&nbsp;0.</li>', 'at offset 0.</li>', 'at offset 0.'),
             ('/guides/', "while&nbsp;the&nbsp;victim's&nbsp;shares&nbsp;end&nbsp;up&nbsp;worth&nbsp;184,615.384607.", "while the victim's shares end up worth 184,615.384607.", "while the victim's shares end up worth 184,615.384607."),
-            ('/guides/', 'takes the full loss and none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'takes the full loss and none of the gift.</li>', 'none of the gift.'),
+            ('/guides/', 'takes the full&nbsp;loss&nbsp;and&nbsp;none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'takes the full loss and none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'full loss and none of the gift.'),
             ('/guides/', 'and&nbsp;loses&nbsp;87,507.794638.</li>', 'and loses 87,507.794638.</li>', 'and loses 87,507.794638.'),
             ('/guides/', 'deposit&nbsp;until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.', 'deposit until one tops 1,000,000.000001.', 'deposit until one tops 1,000,000.000001.'),
             ('/guides/', '$1,000&nbsp;underwater.', '$1,000 underwater.', '$1,000 underwater.'),
@@ -10894,8 +10898,8 @@ class TestChecker(unittest.TestCase):
             ('/patterns/', 'still&nbsp;rejected.', 'still rejected.', 'still rejected.'),
             ('/patterns/', 'the&nbsp;pricing.', 'the pricing.', 'the pricing.'),
             ('/patterns/', 'exponent&nbsp;is&nbsp;the&nbsp;bug.', 'exponent is the bug.', 'exponent is the bug.'),
-            ('/patterns/', 'only&nbsp;defense.', 'only defense.', 'only defense.'),
-            ('/patterns/', 'callback&#x27;s&nbsp;claims.', 'callback&#x27;s claims.', 'callback&#x27;s claims.'),
+            ('/patterns/', 'deploy-time&nbsp;check&nbsp;is&nbsp;the&nbsp;only&nbsp;defense.', 'deploy-time check is the only&nbsp;defense.', 'deploy-time check is the only defense.'),
+            ('/patterns/', 'received,&nbsp;not&nbsp;the&nbsp;callback&#x27;s&nbsp;claims.', 'received, not the callback&#x27;s&nbsp;claims.', 'received, not the callback&#x27;s claims.'),
             ('/patterns/', 'read&nbsp;for&nbsp;allocation.', 'read for allocation.', 'read for allocation.'),
             ('/patterns/', '—&nbsp;L-5).', '— L-5).', '— L-5).'),
             ('/patterns/', 'share-denominated&nbsp;one.', 'share-denominated one.', 'share-denominated one.'),
@@ -10904,15 +10908,15 @@ class TestChecker(unittest.TestCase):
             ('/patterns/', 'slots.&nbsp;Full&nbsp;suite&nbsp;11/11&nbsp;PASS.', 'slots. Full suite 11/11 PASS.', 'slots. Full suite 11/11 PASS.'),
             ('/patterns/', 'H-01&nbsp;duplicate.', 'H-01 duplicate.', 'H-01 duplicate.'),
             ('/patterns/', 'no&#8209;keeper&#8209;path&nbsp;defect.', 'no-keeper-path defect.', 'no-keeper-path defect.'),
-            ('/patterns/', 'shares&nbsp;behind.', 'shares behind.', 'shares behind.'),
+            ('/patterns/', 'phantom&nbsp;winner&nbsp;shares&nbsp;behind.', 'phantom winner shares&nbsp;behind.', 'phantom winner shares behind.'),
             ('/patterns/', 'stale&nbsp;votes.', 'stale votes.', 'stale votes.'),
             ('/patterns/', 'permanently&nbsp;undeliverable.', 'permanently undeliverable.', 'permanently undeliverable.'),
-            ('/patterns/', 'suggests&nbsp;High.', 'suggests High.', 'suggests High.'),
+            ('/patterns/', 'validated&#8209;half&nbsp;suggests&nbsp;High.', 'validated-half suggests&nbsp;High.', 'validated-half suggests High.'),
             ('/patterns/', 'is&nbsp;double-counting.', 'is double-counting.', 'is double-counting.'),
             ('/patterns/', 'at&nbsp;day&nbsp;30.', 'at day 30.', 'at day 30.'),
             ('/patterns/', 'read&nbsp;anywhere&nbsp;in&nbsp;the&nbsp;contract.', 'read anywhere in the contract.', 'read anywhere in the contract.'),
             ('/patterns/', 'gets&nbsp;double-spent).', 'gets double-spent).', 'gets double-spent).'),
-            ('/patterns/', 'sails&nbsp;through.', 'sails through.', 'sails through.'),
+            ('/patterns/', 'differently&nbsp;and&nbsp;sails&nbsp;through.', 'differently and sails&nbsp;through.', 'differently and sails through.'),
             ('/patterns/', 'applies.&nbsp;Full&nbsp;suite&nbsp;15/15&nbsp;PASS.', 'applies. Full suite 15/15 PASS.', 'applies. Full suite 15/15 PASS.'),
             ('/patterns/', '27/27&nbsp;PASS.', '27/27 PASS.', '27/27 PASS.'),
             ('/patterns/', 'just&nbsp;skipped.', 'just skipped.', 'just skipped.'),
@@ -11007,6 +11011,82 @@ class TestChecker(unittest.TestCase):
                 self.assertNotIn(old, pages[page])
                 decoded = pages[page].replace("&nbsp;", " ").replace("&#8209;", "-")
                 self.assertIn(plain, decoded)
+    def test_verdict263_severe_short_tails_are_bound(self):
+        # Visual verdict #263 (2026-11-26, checker-improvement):
+        # the #262 probe re-run still counts 34 SEVERE short
+        # last lines at 1919px (frac < 0.20) on patterns /
+        # audit / guides-index / research-index. This round
+        # binds the next 19 in two waves. Wave A (12) is the
+        # analyzer's straight picks. Wave B (7) needed the
+        # analyzer fixed: the apostrophe regex never fired
+        # (re.escape leaves ' alone, so the old backslash-quote
+        # replacement matched nothing and 'callback's claims.'
+        # scored 0 hits), and the dual anchor list
+        # grew to </span></li> for audit leads (data copy
+        # ends '",') and </p> newline </section> for the
+        # patterns dust sentence. The dust anchor first hit
+        # the WRONG twin — the ssswap review ends </p>
+        # newline <h2> — and was reverted the same run;
+        # the bound copy is the /patterns/ body. One of
+        # the two '(Nov 2026).' items was bound, then
+        # REVERTED the same run: its 6-word tail Range-
+        # measured 269.3px at 360px, but that was the
+        # union rect of a tail wrapped over two lines —
+        # bound on one line it is 310px in a 287px column
+        # and research-index docScrollW went 345 -> 350.
+        # The other needs an 8-word / ~322px tail to be
+        # unique ('1 Low novel' vs '2 Lows novel'), over
+        # the 360px cap, so both stay queued for a rewrite.
+        # The 'validated-half' tail also carries U+2011:
+        # its hyphen split left the bound last line at
+        # 0.197, just under the threshold. The
+        # 'Copy request text' item is a button label, not a
+        # paragraph tail, and is not bound. Wording is
+        # unchanged: build.py with &nbsp; read as spaces is
+        # byte-identical to the pre-change file (nbsp delta
+        # 72, exactly the 19 tails' plain-space count).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pairs = [
+            ('/patterns/', 'deploy-time&nbsp;check&nbsp;is&nbsp;the&nbsp;only&nbsp;defense.', 'deploy-time check is the only&nbsp;defense.', 'deploy-time&nbsp;check&nbsp;is&nbsp;the&nbsp;only&nbsp;defense.', 'deploy-time check is the only&nbsp;defense.', 'deploy-time check is the only defense.'),
+            ('/patterns/', 'differently&nbsp;and&nbsp;sails&nbsp;through.', 'differently and sails&nbsp;through.', 'differently&nbsp;and&nbsp;sails&nbsp;through.', 'differently and sails&nbsp;through.', 'differently and sails through.'),
+            ('/patterns/', 'allow&nbsp;time&nbsp;is&nbsp;the&nbsp;alternative&nbsp;fix.', 'allow time is the alternative fix.', 'allow&nbsp;time&nbsp;is&nbsp;the&nbsp;alternative&nbsp;fix.', 'allow time is the alternative fix.', 'allow time is the alternative fix.'),
+            ('/patterns/', 'used,&nbsp;not&nbsp;just&nbsp;in&nbsp;the&nbsp;rule&nbsp;check.', 'used, not just in the rule check.', 'used,&nbsp;not&nbsp;just&nbsp;in&nbsp;the&nbsp;rule&nbsp;check.', 'used, not just in the rule check.', 'used, not just in the rule check.'),
+            ('/patterns/', 'phantom&nbsp;winner&nbsp;shares&nbsp;behind.', 'phantom winner shares&nbsp;behind.', 'phantom&nbsp;winner&nbsp;shares&nbsp;behind.', 'phantom winner shares&nbsp;behind.', 'phantom winner shares behind.'),
+            ('/patterns/', 'validated&#8209;half&nbsp;suggests&nbsp;High.', 'validated-half suggests&nbsp;High.', 'validated&#8209;half&nbsp;suggests&nbsp;High.', 'validated-half suggests&nbsp;High.', 'validated-half suggests High.'),
+            ('/patterns/', 'execution&nbsp;at&nbsp;any&nbsp;later&nbsp;block.', 'execution at any later block.', 'execution&nbsp;at&nbsp;any&nbsp;later&nbsp;block.', 'execution at any later block.', 'execution at any later block.'),
+            ('/audit/', 'reentrancy&nbsp;via&nbsp;_safeMint&nbsp;callback).', 'reentrancy via _safeMint callback).', 'reentrancy&nbsp;via&nbsp;_safeMint&nbsp;callback).', 'reentrancy via _safeMint callback).', 'reentrancy via _safeMint callback).'),
+            ('/research/', 'checked&nbsp;but&nbsp;never&nbsp;set)&nbsp;(Nov&nbsp;2026).', 'checked but never set) (Nov 2026).', 'checked&nbsp;but&nbsp;never&nbsp;set)&nbsp;(Nov&nbsp;2026).', 'checked but never set) (Nov 2026).', 'checked but never set) (Nov 2026).'),
+            ('/guides/', 'full&nbsp;loss&nbsp;and&nbsp;none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'full loss and none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'full&nbsp;loss&nbsp;and&nbsp;none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'full loss and none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'full loss and none of the gift.'),
+            ('/patterns/', 'depositor&nbsp;(pairs&nbsp;with&nbsp;Pattern&nbsp;47).', 'depositor (pairs with Pattern 47).', 'depositor&nbsp;(pairs&nbsp;with&nbsp;Pattern&nbsp;47).', 'depositor (pairs with Pattern 47).', 'depositor (pairs with Pattern 47).'),
+            ('/research/', 'defense,&nbsp;and&nbsp;the&nbsp;verified&nbsp;numbers.', 'defense, and the verified numbers.', 'defense,&nbsp;and&nbsp;the&nbsp;verified&nbsp;numbers.', 'defense, and the verified numbers.', 'defense, and the verified numbers.'),
+            ('/audit/', 'canonical&nbsp;findings&nbsp;missed&nbsp;in&nbsp;return.</span></li>', 'canonical findings missed in return.</span></li>', 'canonical&nbsp;findings&nbsp;missed&nbsp;in&nbsp;return.</span></li>', 'canonical findings missed in return.</span></li>', 'canonical findings missed in return.'),
+            ('/patterns/', 'pushed&nbsp;around&nbsp;from&nbsp;a&nbsp;dust&nbsp;supply.</p>\\n</section>', 'pushed around from a dust supply.</p>\\n</section>', 'pushed&nbsp;around&nbsp;from&nbsp;a&nbsp;dust&nbsp;supply.</p>\n</section>', 'pushed around from a dust supply.</p>\n</section>', 'pushed around from a dust supply.'),
+            ('/audit/', 'in&nbsp;the&nbsp;pinned&nbsp;dependency&nbsp;fork).</span></li>', 'in the pinned dependency fork).</span></li>', 'in&nbsp;the&nbsp;pinned&nbsp;dependency&nbsp;fork).</span></li>', 'in the pinned dependency fork).</span></li>', 'in the pinned dependency fork).'),
+            ('/audit/', 'claimed;&nbsp;6/6&nbsp;forge&nbsp;tests&nbsp;passing.</span></li>', 'claimed; 6/6 forge tests passing.</span></li>', 'claimed;&nbsp;6/6&nbsp;forge&nbsp;tests&nbsp;passing.</span></li>', 'claimed; 6/6 forge tests passing.</span></li>', 'claimed; 6/6 forge tests passing.'),
+            ('/audit/', 'end;&nbsp;10/10&nbsp;forge&nbsp;tests&nbsp;passing.</span></li>', 'end; 10/10 forge tests passing.</span></li>', 'end;&nbsp;10/10&nbsp;forge&nbsp;tests&nbsp;passing.</span></li>', 'end; 10/10 forge tests passing.</span></li>', 'end; 10/10 forge tests passing.'),
+            ('/patterns/', 'received,&nbsp;not&nbsp;the&nbsp;callback&#x27;s&nbsp;claims.', 'received, not the callback&#x27;s&nbsp;claims.', 'received,&nbsp;not&nbsp;the&nbsp;callback&#x27;s&nbsp;claims.', 'received, not the callback&#x27;s&nbsp;claims.', "received, not the callback's claims."),
+        ]
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        self.assertEqual(len(pairs), 18)
+        for page, bound, old, bound_v, old_v, plain in pairs:
+            with self.subTest(page=page, bound=bound):
+                # worker.js JSON-escapes non-ASCII and real
+                # newlines, so file-form strings (with the
+                # 2-char \\n) are what the worker source
+                # holds; page bodies hold the value form.
+                wbound = bound.replace("\u2212", "\\u2212")
+                wold = old.replace("\u2212", "\\u2212")
+                self.assertEqual(worker.count(wbound), 1)
+                self.assertEqual(worker.count(wold), 0)
+                self.assertIn(bound_v, pages[page])
+                self.assertNotIn(old_v, pages[page])
+                decoded = pages[page].replace("&nbsp;", " ").replace("&#8209;", "-").replace("&#x27;", "'")
+                self.assertIn(plain, decoded)
+
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
         # the email-notes paragraph ended with the last line just
