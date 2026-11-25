@@ -7369,7 +7369,15 @@ class TestChecker(unittest.TestCase):
         # "came back clean.", the second opens with the clean-negative
         # sentence.
         first = body.index('<p>This site is one independent researcher')
-        self.assertIn('the slices that came back clean.</p>',
+        # Visual verdict #251 (2026-11-25, checker-improvement): the
+        # real browser's last line was the lone "back clean." (~85px
+        # of a ~635px line, frac 0.13); the tail "that came back
+        # clean." is &nbsp;-bound so the last line is deterministically
+        # the full phrase. Wording unchanged. (Headless cannot
+        # reproduce the orphan — its 80ch line is ~778px wide, not
+        # ~635px, so the paragraph wraps to 2 nearly-full lines
+        # there; the binding is verified in the real browser.)
+        self.assertIn('the slices that&nbsp;came&nbsp;back&nbsp;clean.</p>',
                       body[first:first + 400])
         second = body.index('<p>A clean negative is reported', first)
         # Visual verdict #187 (2026-11-24, checker-improvement):
