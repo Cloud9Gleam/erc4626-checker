@@ -11209,6 +11209,76 @@ class TestChecker(unittest.TestCase):
                 decoded = pages['/patterns/'].replace("&nbsp;", " ").replace("&#8209;", "-")
                 self.assertIn(plain, decoded)
 
+    def test_verdict266_guides_severe_tails_are_bound(self):
+        # Visual verdict #266 (2026-11-26, checker-improvement):
+        # fresh #266 census (measure-verdict266.py): 7 severe short
+        # last lines @1919 — patterns 0 (cleared by #265), audit 1
+        # (a button label, "Copy request text", miscounted as a
+        # paragraph — not a defect, left alone), guides-index 4
+        # (0.184-0.197), research-index 2 (both "(Nov 2026)." —
+        # binding cannot fix a two-word date tail, they need
+        # rewriting; queued, not taken here). This slice binds the
+        # 4 guides-index tails, same mechanism as #262/#263b/#264/
+        # #265: each tail pulls 1-3 words down so the last line
+        # lands ~0.25-0.35 frac at 1919 and still fits the ~287px
+        # narrow column at 360 (est360 189-231px). Three tails are
+        # dual-anchored with </li>: the same closing sentence also
+        # ends the guide's long desc in build.py — that copy stays
+        # plain in the guide page's head meta (x4: description +
+        # og + twitter + JSON-LD), which is not visible page text,
+        # so the index copy is the only visible rendered one. The
+        # test pins both layers: worker_js() on the raw PAGES
+        # bodies (no <head>) sees only the visible index copy
+        # (bound x1, plain x0), while worker_js(render_all())
+        # reproduces the deployed worker.js byte-identically and
+        # carries the plain meta copies x4 for the three dual
+        # tails (x0 for multi-strategy, which has no second copy).
+        # multi-strategy tail was already partly bound in an
+        # earlier round ("$1,000&nbsp;underwater.") and is extended
+        # to 4 words here. The airdrop tail carries a literal em
+        # dash: in worker.js the static page is JSON-embedded, so
+        # the dash is the \u2014 escape there (the #177 precedent)
+        # — the test counts the escaped form in the worker and the
+        # literal form in the rendered page. Wording is unchanged:
+        # build.py with &nbsp; read as spaces is byte-identical to
+        # the pre-change file (nbsp delta 13: 3+4+4+2 new spaces).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pairs = [
+            ('mirror-image&nbsp;bug&nbsp;at&nbsp;$1.111111.</li>',
+             'mirror-image bug at $1.111111.', None, None, 4),
+            ('haircut&nbsp;on&nbsp;the&nbsp;depositor&nbsp;instead.</li>',
+             'haircut on the depositor instead.', None, None, 4),
+            ('supply&nbsp;snapshot&nbsp;\u2014&nbsp;kills&nbsp;it.</li>',
+             'supply snapshot \u2014 kills it.',
+             'supply&nbsp;snapshot&nbsp;\\u2014&nbsp;kills&nbsp;it.</li>',
+             'supply snapshot \\u2014 kills it.', 4),
+            ('still&nbsp;sits&nbsp;$1,000&nbsp;underwater.',
+             'still sits $1,000&nbsp;underwater.', None, None, 0),
+        ]
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        full_worker = build.worker_js(build.render_all())
+        self.assertEqual(len(pairs), 4)
+        for item in pairs:
+            bound, old = item[0], item[1]
+            worker_bound = item[2] if item[2] is not None else bound
+            worker_old = item[3] if item[3] is not None else old
+            full_old_count = item[4]
+            plain = old.replace("&nbsp;", " ")
+            with self.subTest(bound=bound):
+                self.assertEqual(worker.count(worker_bound), 1)
+                self.assertEqual(worker.count(worker_old), 0)
+                self.assertEqual(full_worker.count(worker_bound), 1)
+                self.assertEqual(full_worker.count(worker_old),
+                                 full_old_count)
+                self.assertIn(bound, pages['/guides/'])
+                self.assertNotIn(old, pages['/guides/'])
+                decoded = pages['/guides/'].replace("&nbsp;", " ")
+                self.assertIn(plain, decoded)
+
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
         # the email-notes paragraph ended with the last line just
