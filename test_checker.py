@@ -5778,7 +5778,7 @@ class TestChecker(unittest.TestCase):
                       'awarded findings re-derived (15 High, 32 Medium, '
                       '19 Low; $70,000 pool), four presented as MISSes (1 High, '
                       '3 Medium). </span>'
-                      '<span class="track-detail">forge PoCs for M-NEGCAP 2/2, '
+                      '<span class="track-detail">Forge PoCs for M-NEGCAP 2/2, '
                       'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
         # Visual verdict #145 (2026-11-21): Gamma was the first "N of M"
         # entry found leaving the missing findings' fate unstated — the
@@ -5824,6 +5824,52 @@ class TestChecker(unittest.TestCase):
                       "color:#4b5563;margin-top:.6em}", build.CSS)
         self.assertIn(".track-lead{display:block;margin-top:.45em}",
                       build.CSS)
+
+
+    def test_verdict252_track_detail_first_words_are_capitalized(self):
+        # Visual verdict #252 item 1 (2026-11-25, real browser, desktop
+        # 1919px): three Track record detail spans read as a sentence
+        # broken by a rendering error - the detail starts lowercase
+        # across the .6em lead/detail gap, continuing the lead's
+        # sentence ("all nine awarded findings re-verified... six
+        # Lows reproduced in forge", "66 of 70... forge PoCs for
+        # M-NEGCAP", "77 recurring patterns... full index table").
+        # The fix capitalizes the first word of those three details so
+        # each reads as its own sentence in the detail tier, like the
+        # other 36 details. Wording is otherwise unchanged; the
+        # lead/detail structure (39 details, .6em gap) is untouched.
+        # The same lowercase phrases elsewhere are mid-sentence and
+        # stay: the /research/ index line ("six Lows reproduced in
+        # forge, 19/19 tests passing (Nov 2026)") and the playbook
+        # index line ("full index table plus 11 deep dives").
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
+        self.assertEqual(track.count('<span class="track-detail">'), 39)
+        self.assertIn('<span class="track-detail">Six Lows reproduced '
+                      'in forge, 19/19 tests passing.</span>', track)
+        self.assertIn('<span class="track-detail">Forge PoCs for '
+                      'M-NEGCAP 2/2, M-PDINV 3/3, M-PDSET 5/5.</span>',
+                      track)
+        self.assertIn('<span class="track-detail">Full index table + '
+                      '11 deep dives with measured PoC numbers, workflow '
+                      'order, and the lessons that became rules.</span>',
+                      track)
+        self.assertNotIn('<span class="track-detail">six Lows reproduced',
+                         track)
+        self.assertNotIn('<span class="track-detail">forge PoCs for',
+                         track)
+        self.assertNotIn('<span class="track-detail">full index table',
+                         track)
+        # The mid-sentence occurrences elsewhere (the /research/
+        # index lines) keep their lowercase.
+        research = dict((p, b) for p, t, d, k, b in build.PAGES)["/research/"]
+        self.assertIn("six Lows reproduced in forge, 19/19 tests passing "
+                      "(Nov 2026)", research)
+        self.assertIn("full index table plus 11 deep dives", research)
 
 
     def test_verdict238_track_leads_match_their_pills(self):
