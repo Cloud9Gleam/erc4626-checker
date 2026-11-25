@@ -7691,11 +7691,20 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #202 (2026-11-24): the stats are links to
         # what they describe — white + underline on the dark band,
         # since the base link green would be unreadable there.
+        # Visual verdict #239 (2026-11-25): the underline lives on a
+        # label-only span, not on the anchor — the anchor's underline
+        # used to propagate onto the block-level strong's number
+        # (pixel-verified 38px white run under "179"), reading as a
+        # spellcheck mark under the big figure.
         self.assertIn(
-            ".hero-stats a{color:#fff;text-decoration:underline;"
+            ".hero-stats a{color:#fff;text-decoration:none}",
+            build.CSS)
+        self.assertIn(
+            ".hero-stats .hero-stat-label{text-decoration:underline;"
             "text-underline-offset:2px}",
             build.CSS)
-        self.assertIn(".hero-stats a:hover{text-decoration-thickness:2px}",
+        self.assertIn(".hero-stats a:hover .hero-stat-label"
+                      "{text-decoration-thickness:2px}",
                       build.CSS)
         start = home.index('<div class="hero">')
         end = home.index("This site is one independent researcher", start)
@@ -7721,9 +7730,9 @@ class TestChecker(unittest.TestCase):
         # link fails here.
         from pathlib import Path
         guide_count = len([d for d in (Path.home() / "workspace/taskmarket/site" / "guides").iterdir() if d.is_dir()])
-        for fact in (f'<a href="/guides/"><strong>{guide_count}</strong> guides</a>',
-                     '<a href="/checker/"><strong>6</strong> checks per run</a>',
-                     '<a href="/checker/"><strong>$0</strong> to run the checker</a>'):
+        for fact in (f'<a href="/guides/"><strong>{guide_count}</strong> <span class="hero-stat-label">guides</span></a>',
+                     '<a href="/checker/"><strong>6</strong> <span class="hero-stat-label">checks per run</span></a>',
+                     '<a href="/checker/"><strong>$0</strong> <span class="hero-stat-label">to run the checker</span></a>'):
             self.assertIn(fact, hero)
 
     def test_hero_guide_count_is_derived_at_build_time(self):
@@ -7748,7 +7757,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(build.GUIDE_COUNT, len(guide_pages))
         home = pages["/"]
         self.assertIn(
-            f'<a href="/guides/"><strong>{build.GUIDE_COUNT}</strong> guides</a>',
+            f'<a href="/guides/"><strong>{build.GUIDE_COUNT}</strong> <span class="hero-stat-label">guides</span></a>',
             home)
         self.assertNotIn("exact-integer worked examples</a>", home)
         index = pages["/guides/"]
@@ -7780,13 +7789,45 @@ class TestChecker(unittest.TestCase):
         free = strip.index('<a href="/checker/"><strong>$0</strong>')
         self.assertLess(guides, checks)
         self.assertLess(checks, free)
-        self.assertIn(f'<strong>{build.GUIDE_COUNT}</strong> guides</a>',
+        self.assertIn(f'<strong>{build.GUIDE_COUNT}</strong> <span class="hero-stat-label">guides</span></a>',
                       strip)
         # The CTA above the strip keeps its own button rule — the
-        # new underline rule is scoped to .hero-stats a only.
+        # underline rule is scoped to .hero-stats .hero-stat-label.
         self.assertIn(".hero a.cta{display:inline-block;background:#fff;",
                       build.CSS)
         self.assertNotIn(".hero a{color:", build.CSS)
+
+    def test_verdict239_hero_stat_numbers_carry_no_underline(self):
+        # Visual verdict #239 (2026-11-25, checker-improvement):
+        # visual verdict #238 item 5 — the big stat numbers (179/6/$0)
+        # were underlined, reading as spellcheck marks under the
+        # figures. The #202 comment claimed the anchor's underline
+        # "shows on the label text" only; pixel measurement
+        # (measure-verdict239.py) proved otherwise — a continuous
+        # 38px white run under "179" at y=461-462. An ancestor's
+        # underline propagates onto a block-level strong's text and
+        # cannot be switched off on the descendant, so the underline
+        # now lives on a label-only span: the anchor carries none,
+        # each label span carries it, and the numbers stay clean.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        start = home.index('<p class="hero-stats">')
+        end = home.index("</p>", start)
+        strip = home[start:end]
+        self.assertEqual(strip.count('class="hero-stat-label"'), 3)
+        self.assertNotIn(".hero-stats a{color:#fff;text-decoration:underline",
+                         build.CSS)
+        self.assertNotIn(".hero-stats strong{text-decoration", build.CSS)
+        for num, label in ((str(build.GUIDE_COUNT), "guides"),
+                           ("6", "checks per run"),
+                           ("$0", "to run the checker")):
+            self.assertIn(
+                f"<strong>{num}</strong> "
+                f'<span class="hero-stat-label">{label}</span></a>',
+                strip)
 
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
@@ -27119,7 +27160,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(site_build.GUIDE_COUNT, guide_count)
         home = dict((p, b) for p, t, d, k, b in site_build.PAGES)["/"]
         # Visual verdict #202: the guide-count stat links to /guides/.
-        self.assertIn(f'<a href="/guides/"><strong>{guide_count}</strong> guides</a>',
+        self.assertIn(f'<a href="/guides/"><strong>{guide_count}</strong> <span class="hero-stat-label">guides</span></a>',
                       home)
         for num in ("5,000.000000", "40,000.000000", "3,333,333,333",
                     "2,500.000000", "9,999,999,999", "10,000 USDC"):
