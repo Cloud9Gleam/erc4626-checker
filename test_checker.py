@@ -11095,13 +11095,17 @@ class TestChecker(unittest.TestCase):
         # The COLOR half of #98/#100 (light fill, visible border)
         # is unchanged. Geometry is pinned by
         # hidden_files/verdict215-email-pre-harness.mjs.
+        # Visual verdict #240 (2026-11-25) keeps fit-content but moves
+        # the notes into a right column beside the pre (see
+        # test_verdict240_email_block_is_two_column) and zeroes the
+        # pre's UA top margin so the two columns' first lines align.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
             ".email-para pre{background:#f3f4f6;color:#111827;"
-            "border:1px solid #d1d5db;width:fit-content;max-width:100%}",
+            "border:1px solid #d1d5db;width:fit-content;max-width:100%;margin:0}",
             build.CSS)
         self.assertNotIn(".email-para pre{background:#f9fafb", build.CSS)
         self.assertNotIn(".email-para pre{width:max-content", build.CSS)
@@ -11116,7 +11120,7 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn("email-para", worker)
         self.assertIn(".email-para pre{background:#f3f4f6;color:#111827;"
-                      "border:1px solid #d1d5db;width:fit-content;max-width:100%}",
+                      "border:1px solid #d1d5db;width:fit-content;max-width:100%;margin:0}",
                       worker)
         self.assertNotIn(".email-para pre{background:#f9fafb", worker)
         # The blanket "width:max-content" guard used to live here, but
@@ -11199,7 +11203,7 @@ class TestChecker(unittest.TestCase):
         import build
         self.assertIn(
             ".email-para pre{background:#f3f4f6;color:#111827;"
-            "border:1px solid #d1d5db;width:fit-content;max-width:100%}",
+            "border:1px solid #d1d5db;width:fit-content;max-width:100%;margin:0}",
             build.CSS)
         # The rule is scoped to .email-para, so it cannot touch the
         # curl pre; the shared wrap rule is untouched (still exactly
@@ -11211,14 +11215,125 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<pre class="api-example"><code id="api-curl">', html)
         # The email pre is the only pre inside .email-para, and the
         # curl pre is outside it — the new rule reaches exactly one.
-        para = html[html.index("<div class=\"email-para\""):
-                    html.index("</div>", html.index("<div class=\"email-para\""))]
+        # Visual verdict #240 (2026-11-25) nests two divs inside the
+        # block (two-column layout), so the first-</div> slice below
+        # would stop at the inner close; scan for the matching close
+        # by depth instead.
+        _start = html.index("<div class=\"email-para\"")
+        _depth = 0
+        _i = _start
+        while True:
+            _open = html.find("<div", _i)
+            _close = html.find("</div>", _i)
+            if _close == -1:
+                self.fail("email-para block has no closing tag")
+            if _open != -1 and _open < _close:
+                _depth += 1
+                _i = _open + 4
+            else:
+                _depth -= 1
+                _i = _close + 6
+                if _depth == 0:
+                    break
+        para = html[_start:_i]
         self.assertEqual(para.count("<pre"), 1)
         self.assertNotIn("api-curl", para)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn("width:fit-content;max-width:100%", worker)
         self.assertEqual(worker.count("api-example"), 5)
+
+
+    def test_verdict240_email_block_is_two_column(self):
+        # Visual verdict #240 (2026-11-25, checker-improvement): the
+        # fit-content pre from #215 is back as the #2 complaint the
+        # other way — a 275px box in a 945px column leaves ~670px
+        # blank to its right (measured 1919px: pre 274.7px,
+        # void-right 670.8px, 71% of the block). Neither width wins
+        # on its own (full-width = 75% empty gray, fit-content =
+        # 700px void), so the fix is layout, not width: the three
+        # note paragraphs move into a right column beside the pre.
+        # The pre still hugs its content (fit-content stays) and the
+        # column to its right is occupied text. Below 640px the
+        # columns stack, pre on top as before.
+        # Alignment: the pre carries the UA 1em top margin plus 1em
+        # padding, so its first code line sits ~2em below the row
+        # top; the pre margin is zeroed and the first notes paragraph
+        # gets margin-top:1em, so both first lines sit 1em below the
+        # row top. Geometry is pinned by
+        # hidden_files/verdict240-email-cols-harness.mjs and
+        # hidden_files/measure-verdict240.py.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # CSS: grid row + first-line alignment + mobile stack.
+        self.assertIn(
+            ".email-para .email-cols{display:grid;"
+            "grid-template-columns:max-content 1fr;gap:0 1.5em;"
+            "align-items:start}",
+            build.CSS)
+        self.assertIn(
+            ".email-para .email-notes-col p:first-child{margin-top:1em}",
+            build.CSS)
+        self.assertIn(
+            "@media (max-width:640px){.email-para .email-cols{display:block}}",
+            build.CSS)
+        # The pre keeps fit-content and loses its UA top margin, so
+        # the box top sits on the row top with the notes column.
+        self.assertIn(
+            ".email-para pre{background:#f3f4f6;color:#111827;"
+            "border:1px solid #d1d5db;width:fit-content;max-width:100%;margin:0}",
+            build.CSS)
+        # Python path: intro spans the block; the grid holds the pre
+        # + copy button left and the three note paragraphs right, in
+        # that order; no text moved or changed.
+        html = build.checker_body()
+        _start = html.index('<div class="email-para">')
+        _depth = 0
+        _i = _start
+        while True:
+            _open = html.find("<div", _i)
+            _close = html.find("</div>", _i)
+            if _close == -1:
+                self.fail("email-para block has no closing tag")
+            if _open != -1 and _open < _close:
+                _depth += 1
+                _i = _open + 4
+            else:
+                _depth -= 1
+                _i = _close + 6
+                if _depth == 0:
+                    break
+        para = html[_start:_i]
+        self.assertIn('<div class="email-cols">', para)
+        pre_col = para.index("email-pre-col")
+        notes_col = para.index("email-notes-col")
+        self.assertLess(pre_col, notes_col)
+        self.assertIn(
+            '<pre class="api-example"><code id="email-params">', para)
+        self.assertLess(para.index("<pre"), notes_col)
+        self.assertIn("Copy email parameters</button>", para)
+        self.assertLess(para.index("Copy email parameters</button>"),
+                        notes_col)
+        for note in ("The email uses the long parameter names",
+                     "Shares are counted at 6 decimals",
+                     "Send it to <a href=\"mailto:outreach@n1netw3n.live"):
+            self.assertIn(note, para)
+            self.assertLess(notes_col, para.index(note))
+        # Worker path: the same structure in emailParaHTML, and the
+        # template replacement still lands ({{EMAIL_PARA}} in the
+        # template once, replaced once).
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertEqual(worker.count("{{EMAIL_PARA}}"), 2)
+        fn_start = worker.index("function emailParaHTML")
+        fn = worker[fn_start:worker.index("function html(", fn_start)]
+        self.assertIn("email-cols", fn)
+        self.assertLess(fn.index("email-pre-col"),
+                        fn.index("email-notes-col"))
+        self.assertIn("email-params", fn)
+        self.assertIn("Copy email parameters", fn)
 
     def test_api_curl_follows_the_run_in_the_worker(self):
         # Visual verdict #167 item 1 (2026-11-24): the Worker serves
