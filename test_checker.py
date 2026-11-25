@@ -3074,8 +3074,9 @@ class TestChecker(unittest.TestCase):
         # /guides/ index overflowed horizontally at 360px (docScrollW
         # 454 vs 345) — two guide-list items held #259-bound nbsp
         # tails ("while the victim's shares end up worth
-        # 184,615.384607", an 8-word unbreakable run ~414px; "every
-        # deposit until one tops 1,000,000.000001", ~304px) in plain
+        # 184,615.384607", an 8-word unbreakable run ~414px; "until
+        # one tops 1,000,000.000001", ~230px after #269 shortened
+        # the #259 run by unbinding "every deposit") in plain
         # <li>s, and <li> had no overflow-wrap while <p> does. Either
         # run is longer than the 287px mobile column, so it pushed the
         # whole document 109px wide. The fix is one scoped rule —
@@ -3099,7 +3100,7 @@ class TestChecker(unittest.TestCase):
         build_text = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
         self.assertIn("while&nbsp;the&nbsp;victim's&nbsp;shares&nbsp;end&nbsp;up&nbsp;worth&nbsp;184,615.384607.",
                       build_text)
-        self.assertIn("every deposit&nbsp;until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.",
+        self.assertIn("every deposit until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.",
                       build_text)
 
     def test_verdict190_checker_360px_orphans_have_nbsp(self):
@@ -4870,7 +4871,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("9,028 per 1,000,000,000", page)  # 97 fee shortfall
         self.assertIn("1.5e18", page)  # 99 drifted weight after 2s
         self.assertIn("2^40", page)  # 100 unchecked wrap
-        self.assertIn("90.909091 of 100", page)  # 101/102 at index 1.1
+        self.assertIn("90.909091&nbsp;of&nbsp;100.", page)  # 101/102 at index 1.1; #269 binds the tail
         self.assertIn("actual 131", page)  # 103 phantom interest
         self.assertIn("4.925 ether stake", page)  # 104 redeem bypass
         self.assertIn("locks 4.925 forever", page)  # 105 overwritten stake
@@ -10905,7 +10906,7 @@ class TestChecker(unittest.TestCase):
             ('/guides/', "while&nbsp;the&nbsp;victim's&nbsp;shares&nbsp;end&nbsp;up&nbsp;worth&nbsp;184,615.384607.", "while the victim's shares end up worth 184,615.384607.", "while the victim's shares end up worth 184,615.384607."),
             ('/guides/', 'takes the full&nbsp;loss&nbsp;and&nbsp;none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'takes the full loss and none&nbsp;of&nbsp;the&nbsp;gift.</li>', 'full loss and none of the gift.'),
             ('/guides/', 'and&nbsp;loses&nbsp;87,507.794638.</li>', 'and loses 87,507.794638.</li>', 'and loses 87,507.794638.'),
-            ('/guides/', 'deposit&nbsp;until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.', 'deposit until one tops 1,000,000.000001.', 'deposit until one tops 1,000,000.000001.'),
+            ('/guides/', 'deposit until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.', 'deposit&nbsp;until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.', 'deposit until one tops 1,000,000.000001.'),
             ('/guides/', '$1,000&nbsp;underwater.', '$1,000 underwater.', '$1,000 underwater.'),
             ('/guides/', 'side&nbsp;moves&nbsp;the&nbsp;price.', 'side moves the price.', 'side moves the price.'),
             ('/patterns/', 'in-contract&nbsp;recovery.', 'in-contract recovery.', 'in-contract recovery.'),
@@ -11365,6 +11366,98 @@ class TestChecker(unittest.TestCase):
             'bounded clean negative (Nov 2026).</li>'), 3)
         self.assertIn('1 canonical High missed (Nov 2026).</li>',
                       pages['/research/'])
+
+    def test_verdict269_360_severe_tails_are_bound(self):
+        # Visual verdict #269 (2026-11-26, checker-improvement):
+        # fresh #269 census (measure-verdict269.py, current worker):
+        # @1919 severe 0 on all three index pages; @360 severe 14
+        # (patterns 7, guides-index 6 incl. 2 strict, research-index
+        # 1). This slice binds all 14, same mechanism as #262/#263/
+        # #265/#266: each tail pulls 1-3 words down so the last line
+        # lands ~0.3-0.85 frac at 360 and still fits the ~287px
+        # narrow column (est360 90-230px); at 1919 the last lines
+        # also pick up preceding words, so no desktop regression.
+        # Wording is unchanged: build.py with &nbsp; read as spaces
+        # is byte-identical to the pre-change file (nbsp delta +38).
+        # Two exceptions to plain binding: the empty-vault tail was
+        # already bound in #259 as a 4-word run (~304px) that
+        # overflow-wrap:anywhere (#261) breaks mid-number at 360,
+        # leaving a number fragment alone on the last line — so
+        # #269 SHORTENS the run by unbinding "every deposit"
+        # ("until one tops 1,000,000.000001.", ~230px), and the
+        # #259 pair + #261 assertion are updated to the new form.
+        # The First-flight tail binds the last four linked numbers
+        # with ,&nbsp; separators (the list is links, not words).
+        # The L-5 tail extends the #259 dash binding backwards to
+        # "impersonation". The em dash and the multiplication sign
+        # are JSON-escaped (\\u2014 / \\u00d7) in worker.js (the
+        # #177 precedent), so the worker counts escape both bound
+        # and old forms; the page bodies hold the literal chars.
+        # Geometry is pinned by hidden_files/
+        # verdict269-360-tails-harness.mjs.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pairs = [
+            ('/patterns/',
+             '<a href="#pattern-35">35</a>,&nbsp;<a href="#pattern-36">36</a>,&nbsp;<a href="#pattern-37">37</a>,&nbsp;<a href="#pattern-38">38</a></li>',
+             '<a href="#pattern-35">35</a>, <a href="#pattern-36">36</a>, <a href="#pattern-37">37</a>, <a href="#pattern-38">38</a></li>'),
+            ('/patterns/', 'the recipient gets 90.909091&nbsp;of&nbsp;100.',
+             'the recipient gets 90.909091 of 100.'),
+            ('/patterns/',
+             'farmable via free impersonation&nbsp;—&nbsp;L-5).',
+             'farmable via free impersonation —&nbsp;L-5).',
+             'farmable via free impersonation — L-5).'),
+            ('/patterns/', 'Each extra reset adds exactly&nbsp;1×&nbsp;the&nbsp;cap.',
+             'Each extra reset adds exactly 1× the cap.'),
+            ('/patterns/', 'never&nbsp;exceeds&nbsp;the&nbsp;cap.',
+             'never exceeds the cap.'),
+            ('/patterns/', 'before any timeout&nbsp;path&nbsp;can&nbsp;run.',
+             'before any timeout path can run.'),
+            ('/patterns/', 'never&nbsp;set&nbsp;to&nbsp;true&quot;.',
+             'never set to true&quot;.'),
+            ('/guides/', 'every deposit until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.',
+             'every deposit&nbsp;until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.',
+             'every deposit until one tops 1,000,000.000001.'),
+            ('/guides/', 'pause deposits while&nbsp;totalAssets&nbsp;is&nbsp;0</li>',
+             'pause deposits while totalAssets is 0</li>'),
+            ('/guides/', 'moves the payable&nbsp;date&nbsp;to&nbsp;day&nbsp;7.</li>',
+             'moves the payable date to day 7.</li>'),
+            ('/guides/', 'also the cheapest&nbsp;attack&nbsp;to&nbsp;run.</li>',
+             'also the cheapest attack to run.</li>'),
+            ('/guides/', 'keeps the&nbsp;price&nbsp;at&nbsp;1.00.</li>',
+             'keeps the price at 1.00.</li>'),
+            ('/guides/', 'every&nbsp;holder&nbsp;pays&nbsp;the&nbsp;fee.</li>',
+             'every holder pays the fee.</li>'),
+            ('/research/', 'one unlimited permit&nbsp;did&nbsp;most&nbsp;of&nbsp;it.</li>',
+             'one unlimited permit did most of it.</li>'),
+        ]
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        self.assertEqual(len(pairs), 14)
+        for item in pairs:
+            page, bound, old = item[0], item[1], item[2]
+            # plain is the decoded visible text; it equals old
+            # except for the shortened G8 run, whose old form is
+            # the retired fully-bound run.
+            plain = item[3] if len(item) > 3 else old
+            with self.subTest(page=page, bound=bound[:40]):
+                # worker.js JSON-escapes non-ASCII and double
+                # quotes, so both forms are counted in escaped
+                # form; the First-flight pair is the one that
+                # needs the quote escaping (its bound form is
+                # all links).
+                wbound = (bound.replace("—", "\\u2014")
+                          .replace("×", "\\u00d7").replace('"', '\\"'))
+                wold = (old.replace("—", "\\u2014")
+                        .replace("×", "\\u00d7").replace('"', '\\"'))
+                self.assertEqual(worker.count(wbound), 1)
+                self.assertEqual(worker.count(wold), 0)
+                self.assertIn(bound, pages[page])
+                self.assertNotIn(old, pages[page])
+                decoded = pages[page].replace("&nbsp;", " ")
+                self.assertIn(plain, decoded)
 
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
