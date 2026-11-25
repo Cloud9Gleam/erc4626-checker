@@ -7250,6 +7250,48 @@ class TestChecker(unittest.TestCase):
         self.assertLess(hero.index("Is your vault"),
                         hero.index('<aside class="hero-checks">'))
 
+    def test_verdict228_home_checks_match_run_order(self):
+        # Visual verdict #226 item 6 (2026-11-25): the home hero panel
+        # listed the six checks with Minimum viable deposit last, while
+        # the checker runs it third (run_all order) and the results
+        # grid shows it third — a visitor reading the panel and then
+        # the results saw two different orders for the same six
+        # checks. The panel must list them in run order; the order is
+        # derived from the model itself, not re-typed here, so a
+        # future run-order change fails this test instead of silently
+        # re-opening the mismatch. The two CHECK_META listings carry
+        # the same order, so the definition site cannot drift either.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        aside_start = home.index('<aside class="hero-checks">')
+        aside = home[aside_start:home.index('</aside>', aside_start)]
+        listed = re.findall(r"<li>([^<]+)</li>", aside)
+        # The panel uses short labels, not the CHECK_META titles
+        # ("Rounding", not "Rounding directions"); the map is only
+        # presentation names -- the order itself comes from run_all.
+        short = {"rounding": "Rounding",
+                 "donation_inflation": "Donation inflation",
+                 "minimum_viable_deposit": "Minimum viable deposit",
+                 "preview_consistency": "Preview consistency",
+                 "fee_conservation": "Fee conservation",
+                 "share_price_sanity": "Share-price sanity"}
+        run_order = [r["name"] for r in run_all(Vault(
+            decimals_offset=6, min_deposit=1_000_000,
+            perf_fee_bps=1000))]
+        self.assertEqual(listed, [short[name] for name in run_order])
+        self.assertEqual(list(build.CHECK_META), run_order)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        js_start = worker.index("const CHECK_META={")
+        js_end = worker.index("};", js_start)
+        js_keys = re.findall(r"\n  ([a-z_]+):\[",
+                             worker[js_start:js_end])
+        self.assertEqual(js_keys, run_order)
+
     def test_hero_top_capped_at_content_tier(self):
         # Visual verdict #170 item 5 (2026-11-24, measured
         # hidden_files/measure-verdict171.py at 1919px): the key
