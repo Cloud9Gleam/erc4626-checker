@@ -2116,6 +2116,56 @@ class TestChecker(unittest.TestCase):
         self.assertIn("never ask\nfor keys.", audit)
         self.assertIn("verified against the checker model).", audit)
 
+    def test_verdict248_notice_tails_are_bound(self):
+        # Checker-improvement 2026-11-25 (#248, visual verdict #248
+        # item 2): the "What to do next" first paragraph ended on a
+        # lone "hours." in the real browser (~45px of a ~720px line,
+        # frac 0.06, noprot page) — the worst short last line on the
+        # site. Headless did NOT reproduce it (2 lines, last line
+        # 767.5px, frac 0.99 at 1919px): the break point is
+        # font-metric-dependent, exactly as #245/#247 found for the
+        # Twyne "no" — so the fix binds the five-word tail
+        # "written report in 72 hours." into one unbreakable unit,
+        # making the last line deterministically the full phrase in
+        # both renderers. Both notice variants share the sentence
+        # (FAIL ends "...72 hours.", PASS ends "...72 hours)."), so
+        # both are bound in one slice. The other three last lines
+        # #248 item 2 flagged (audit "any payment.", home "back
+        # clean.", audit "on this site.") were NOT reproduced in
+        # headless either (last lines 709.5px frac 0.91, 743.8px
+        # frac 0.96, and the audit intro is a 2-line paragraph whose
+        # last line was not measured short) and are left alone until
+        # a real browser re-measures them — no blind binding.
+        # Pixel-verified (measure-verdict248.py): noprot notice p[0]
+        # last line stays 767.5px at 1919px (headless already had
+        # the tail on it; the binding bites in the real browser),
+        # 360px docScrollW 345, no overflow.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("written&nbsp;report&nbsp;in&nbsp;72&nbsp;hours.</p>",
+                      failed)
+        self.assertNotIn("written report in 72 hours.</p>", failed)
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn("written&nbsp;report&nbsp;in&nbsp;72&nbsp;hours).</p>",
+                      passed)
+        self.assertNotIn("written report in 72 hours).</p>", passed)
+        # Worker JS renderer carries the same two sentences.
+        js = build.checker_results_html_js()
+        self.assertIn("written&nbsp;report&nbsp;in&nbsp;72&nbsp;hours.</p>",
+                      js)
+        self.assertIn("written&nbsp;report&nbsp;in&nbsp;72&nbsp;hours).</p>",
+                      js)
+        self.assertNotIn("written report in 72 hours.</p>", js)
+        self.assertNotIn("written report in 72 hours).</p>", js)
+
     def test_verdict229_query_params_accept_long_aliases(self):
         # Checker-improvement 2026-11-25 (#229, verdict #223 item 5):
         # the site spelled three parameters two ways — the form and
