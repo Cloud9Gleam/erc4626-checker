@@ -11923,6 +11923,41 @@ class TestChecker(unittest.TestCase):
         # times — the harness asserts that count.
         self.assertEqual(worker.count(rule), 1)
 
+    def test_verdict246_audit_toc_last_item_spans_both_columns(self):
+        # Visual verdict #246 (2026-11-25): with 7 items the balanced
+        # CSS columns split 3 left / 4 right — the right column ended
+        # one row (~28px, headless rects) lower than the left, left
+        # light / right heavy (#244 measured the same ~24-28px).
+        # The last item now spans both columns, so the first six
+        # balance 3/3 and the longest link (Track record — 41
+        # reviews) takes its own full-width row. Geometry is pinned
+        # by hidden_files/measure-verdict246.py (1919px: column
+        # bottoms 466.2 / 463.7, diff 2.5px, was 28.0px; 360px
+        # single-column, unchanged). Below 641px there are no
+        # columns, so the rule is a no-op there.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        rule = ".audit-toc li:last-child{column-span:all}"
+        self.assertIn(rule, build.CSS)
+        self.assertEqual(build.CSS.count(rule), 1)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        toc = audit[audit.index('<nav class="audit-toc"'):
+                    audit.index('</nav>')]
+        self.assertEqual(toc.count("<li>"), 7)
+        # The spanner rule is positional (:last-child), so the
+        # track-record item must be the last li in the list.
+        self.assertIn(
+            '<li><a href="#track-record">Track record — 41 reviews</a>'
+            '</li>\n</ul>', audit)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # As in the #198 test: the CSS appears once in this
+        # in-test build; the deployed worker.js inlines it 241
+        # times — the harness asserts that count.
+        self.assertEqual(worker.count(rule), 1)
+
     def test_audit_order_form_is_a_card(self):
         # Visual verdict #100 (2026-11-18): on /audit/ the Start
         # form's four inputs sat bare on the white page — no grouping
