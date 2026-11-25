@@ -10518,7 +10518,8 @@ class TestChecker(unittest.TestCase):
         # to wrap on their own at a ~138px label column (the value
         # column's longest token used to be the 26-char
         # "10,000,000,000,000,000 shares"; visual verdict #174
-        # compacts it to "10Q shares" at render time, but the label
+        # compacts it to "10 quadrillion shares" at render time,
+        # but the label
         # shortening stays). The displayed labels shorten at render
         # time; the model strings, the splitter and the API JSON keep
         # the full wording (pinned by test_split_detail_line and by
@@ -10572,13 +10573,18 @@ class TestChecker(unittest.TestCase):
         self.assertIn("nbspUnits(esc(shortLabel(row[0])))", js)
         self.assertNotIn("shortLabel(row[1])", js)
 
-    def test_verdict174_share_counts_are_compact(self):
+    def test_verdict268_share_counts_are_spelled_out(self):
         # Visual verdict #174 (2026-11-24, checker-improvement):
         # the default page showed "1 USDC mints 1,000,000,000,000
         # shares" and "deposit preview matches execution:
         # 10,000,000,000,000,000 shares" — exact, but a first-time
         # vault developer cannot read a 13- or 20-digit run, and at
-        # offset 18 the counts reach 25 digits. Render-time only:
+        # offset 18 the counts reach 25 digits. Visual verdict #268
+        # (2026-11-26, real browser): the #174 letters "1T shares"
+        # / "10Q shares" read as jargon — a first-time visitor
+        # cannot tell the order of magnitude without hovering or
+        # finding the legend. The units are now spelled out in
+        # words, so the magnitude reads at a glance. Render-time only:
         # the model strings, the splitter and the API JSON keep the
         # exact integers; only the displayed value compacts, and
         # only when the compact form is exact — never rounded. The
@@ -10596,11 +10602,11 @@ class TestChecker(unittest.TestCase):
         # keeps its full digits; USDC amounts are never touched.
         self.assertEqual(
             build.compact_shares(f"1,000,000,000,000{NB}shares"),
-            "<span class='nowrap' title='1,000,000,000,000 shares'>1T shares</span>")
+            "<span class='nowrap' title='1,000,000,000,000 shares'>1 trillion shares</span>")
         self.assertEqual(
             build.compact_shares(
                 f"10,000,000,000,000,000{NB}shares"),
-            "<span class='nowrap' title='10,000,000,000,000,000 shares'>10Q shares</span>")
+            "<span class='nowrap' title='10,000,000,000,000,000 shares'>10 quadrillion shares</span>")
         self.assertEqual(
             build.compact_shares(
                 f"1,000,000,000,000,000,000,000,000{NB}shares"),
@@ -10612,7 +10618,7 @@ class TestChecker(unittest.TestCase):
             build.compact_shares(
                 f"deposit 10,000,000,000{NB}shares == "
                 f"10,000,000,001{NB}shares"),
-            "deposit <span class='nowrap' title='10,000,000,000 shares'>10B shares</span> == "
+            "deposit <span class='nowrap' title='10,000,000,000 shares'>10 billion shares</span> == "
             f"10,000,000,001{NB}shares")
         self.assertEqual(
             build.compact_shares(f"999,999,999,999{NB}shares"),
@@ -10638,8 +10644,8 @@ class TestChecker(unittest.TestCase):
         # ("<strong>1</strong>T shares") and nbsp_units wraps the
         # label ("<span class='nowrap'>1 USDC</span> buys").
         for off, mn, fee, compact in (
-                (0, 0, 0, "10B shares"),
-                (6, 1_000_000, 1000, "1T shares"),
+                (0, 0, 0, "10 billion shares"),
+                (6, 1_000_000, 1000, "1 trillion shares"),
                 (18, 1_000_000, 1000, "1×10²⁴ shares")):
             v = Vault(decimals_offset=off, min_deposit=mn,
                       perf_fee_bps=fee)
@@ -10651,7 +10657,7 @@ class TestChecker(unittest.TestCase):
             self.assertNotIn("price per 1,000,000", plain)
             self.assertNotIn("1,000,000,000,000,000,000,000,000", plain)
             if off == 6:
-                self.assertIn("10Q shares", plain)
+                self.assertIn("10 quadrillion shares", plain)
                 self.assertNotIn("10,000,000,000,000,000", plain)
                 self.assertNotIn("1,000,000,000,000", plain)
         # The Worker-side template carries the same formatter and
@@ -10665,9 +10671,10 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("price per 1,000,000", js)
         self.assertNotIn("price / 1M shares", js)
 
-    def test_verdict194_shares_legend_above_grid(self):
+    def test_verdict268_shares_legend_spells_units(self):
         # Visual verdict #177 item 5 (2026-11-24, checker-improvement):
-        # #174 compacted share counts ("1T shares", "10Q shares",
+        # #174 compacted share counts ("1 trillion shares",
+        # "10 quadrillion shares" since #268,
         # "1×10²⁴ shares") but the page never said what B/T/Q mean —
         # a first-time reader cannot decode them, and no legend
         # ("trillion", "quadrillion", "10^12") exists anywhere on
@@ -10678,8 +10685,12 @@ class TestChecker(unittest.TestCase):
         # the first card — was unexplained until the reader had
         # already read all six cards. The legend now sits directly
         # above the grid, after the verdict strip and before first
-        # use. Render-time only: the model strings and the API JSON
-        # are untouched.
+        # use. Visual verdict #268 (2026-11-26, real browser): the
+        # B/T/Q letters themselves were the problem — a first-time
+        # visitor should not need a legend to read a magnitude at
+        # all. The counts are now spelled out in words, and the
+        # legend says so instead of defining letters. Render-time
+        # only: the model strings and the API JSON are untouched.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -10688,10 +10699,11 @@ class TestChecker(unittest.TestCase):
         # returns exact integers." is bound as one unit — the real
         # browser orphaned "API returns exact integers." on the last
         # line with "The" left above.
-        legend = ("Share counts are shortened: B = billion (10^9), "
-                  "T = trillion (10^12), Q = quadrillion (10^15); "
-                  "exact powers of ten above that use the 1×10²⁴ form. "
-                  "Hover a shortened count to see its exact value. "
+        legend = ("Large share counts are written in words "
+                  "(billion = 10^9, trillion = 10^12, "
+                  "quadrillion = 10^15); exact powers of ten above "
+                  "that use the 1×10²⁴ form. "
+                  "Hover a count to see its exact value. "
                   "The&nbsp;API&nbsp;returns&nbsp;exact&nbsp;integers.")
         # CSS: the muted note style exists.
         self.assertIn(
@@ -10743,10 +10755,14 @@ class TestChecker(unittest.TestCase):
         import build
         bound = "The&nbsp;API&nbsp;returns&nbsp;exact&nbsp;integers."
         plain = "The API returns exact integers."
-        plain_legend = ("Share counts are shortened: B = billion (10^9), "
-                        "T = trillion (10^12), Q = quadrillion (10^15); "
-                        "exact powers of ten above that use the 1×10²⁴ form. "
-                        "Hover a shortened count to see its exact value. "
+        # Visual verdict #268 (2026-11-26): the legend wording
+        # changed with the spelled-out units; the tail binding is
+        # unchanged.
+        plain_legend = ("Large share counts are written in words "
+                        "(billion = 10^9, trillion = 10^12, "
+                        "quadrillion = 10^15); exact powers of ten above "
+                        "that use the 1×10²⁴ form. "
+                        "Hover a count to see its exact value. "
                         "The API returns exact integers.")
         for off, mn, fee in ((0, 0, 0), (6, 1_000_000, 1000),
                              (18, 1_000_000, 1000)):
@@ -10767,7 +10783,7 @@ class TestChecker(unittest.TestCase):
         # bound form.
         lines = [l for l in fn.splitlines()
                  if "shares-note" in l
-                 and "Share counts are shortened" in l]
+                 and "Large share counts are written in words" in l]
         self.assertEqual(len(lines), 1)
         self.assertIn(bound, lines[0])
         self.assertNotIn(plain, lines[0])
@@ -11395,7 +11411,8 @@ class TestChecker(unittest.TestCase):
     def test_verdict207_compact_shares_carry_exact_title(self):
         # Visual verdict #207 (2026-11-24, checker-improvement):
         # the #177 legend defines B/T/Q, but it sits below the grid
-        # while the first compact count ("1T shares") appears in the
+        # while the first compact count ("1 trillion shares" since
+        # #268; "1T shares" before) appears in the
         # first card — a first-time reader has to scroll to decode
         # it, and #189/#191/#205 each re-raised the same complaint.
         # The shortened span now carries the exact integer in a
@@ -11416,11 +11433,11 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(
             build.compact_shares(f"1,000,000,000,000{NB}shares"),
             "<span class='nowrap' title='1,000,000,000,000 shares'>"
-            "1T shares</span>")
+            "1 trillion shares</span>")
         self.assertEqual(
             build.compact_shares(f"1,500,000,000,000{NB}shares"),
             "<span class='nowrap' title='1,500,000,000,000 shares'>"
-            "1,500B shares</span>")
+            "1,500 billion shares</span>")
         self.assertEqual(
             build.compact_shares(
                 f"1,000,000,000,000,000,000,000,000{NB}shares"),
@@ -11439,7 +11456,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(
             piped,
             "<span class='nowrap' title='1,000,000,000,000 shares'>"
-            "<strong>1</strong>T shares</span>")
+            "<strong>1</strong> trillion shares</span>")
         self.assertNotIn("<strong>1,000,000,000,000</strong>", piped)
         # Rendered pages: titles on every compact span, none broken.
         for off, mn, fee in ((0, 0, 0), (6, 1_000_000, 1000),
@@ -11455,7 +11472,7 @@ class TestChecker(unittest.TestCase):
             self.assertNotIn("title='<strong>", html)
             self.assertNotIn("</strong> shares'", html)
             plain = re.sub(r"<[^>]+>", "", html)
-            self.assertIn("Hover a shortened count to see its "
+            self.assertIn("Hover a count to see its "
                           "exact value.", plain)
         # Worker JS mirror: same title branches, same tag-skip.
         js = build.checker_results_html_js()
@@ -11464,7 +11481,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             "function boldNumbers(s){return s.replace("
             "/<[^>]*>|(-?", js)
-        self.assertIn("Hover a shortened count to see its exact "
+        self.assertIn("Hover a count to see its exact "
                       "value.", js)
 
     def test_verdict195_pass_bound_legend_sits_under_table(self):
@@ -11766,7 +11783,8 @@ class TestChecker(unittest.TestCase):
         # shortens to "1 base unit") and still through boldNumbers —
         # every numeric token in a value cell stays bold. Visual
         # verdict #174 adds compactShares between them: huge share
-        # counts compact ("1T") before bolding, so the bold count
+        # counts compact ("1 trillion") before bolding, so the bold
+        # count
         # still matches the numeric tokens in the displayed text.
         self.assertIn(
             "boldNumbers(nbspUnits(compactShares("
