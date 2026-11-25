@@ -5596,8 +5596,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/research/zaros/">Zaros Part 2</a>'
                       '<span class="track-findings">66 re-verified · 15H 32M 19L</span>'
                       '<span class="track-lead">66 of 70 '
-                      'awarded findings re-derived (16 High, 35 Medium, '
-                      '19 Low of the 70; $70,000 pool), four presented as MISSes (1 High, '
+                      'awarded findings re-derived (15 High, 32 Medium, '
+                      '19 Low; $70,000 pool), four presented as MISSes (1 High, '
                       '3 Medium). </span>'
                       '<span class="track-detail">forge PoCs for M-NEGCAP 2/2, '
                       'M-PDINV 3/3, M-PDSET 5/5.</span>', track)
@@ -5613,7 +5613,7 @@ class TestChecker(unittest.TestCase):
             r'<a href="/research/gamma/">Gamma Perpetual Vault</a>'
             r'<span class="track-findings">25 re-verified · 5H 8M 12L</span>'
             r'<span class="track-lead">25 of 27 validated\s+contest findings re-verified '
-            r'\(5 High, 9 Medium, 13 Low of the 27; \$50,000 pool\), two presented '
+            r'\(5 High, 8 Medium, 12 Low; \$50,000 pool\), two presented '
             r'as MISSes \(1 Medium, 1 Low\), four with\s+forge PoCs, one live&nbsp;on-chain\.</span></li>')
         # 2026-11-21 22:37, full audit of all 41 Track record entries:
         # the 21:37 round's "Gamma was the only one" was incomplete —
@@ -5647,20 +5647,27 @@ class TestChecker(unittest.TestCase):
                       build.CSS)
 
 
-    def test_verdict221_track_leads_label_the_total_split(self):
-        # Visual verdict #221 item 3 (2026-11-25): a first-time reader
-        # adds the pill split (Gamma 5H 8M 12L = 25) and the lead split
-        # (5 High, 9 Medium, 13 Low = 27) and reads a contradiction —
-        # the lead parenthetical is the contest's own award (the total),
-        # the pill is only the re-verified subset. The track-record
-        # intro already says so, but the verdict shows readers do not
-        # carry it down to the cards. Each of the two dual-number cards
-        # now labels its parenthetical as the total's split, so the
-        # arithmetic closes on the card: total minus the MISSes equals
-        # the pill (Gamma 27 - 1M - 1L = 25; Zaros 70 - 1H - 3M = 66).
-        # Only these two cards have two number sets — every other
-        # entry's pill and lead already agree (checked in the audit
-        # loop of 2026-11-24 #221 triage).
+    def test_verdict238_track_leads_match_their_pills(self):
+        # Visual verdict #238 item 3 (2026-11-25): the #221 fix did not
+        # hold. #221 labelled the lead parenthetical as the total's
+        # split ("of the 27" / "of the 70") so the arithmetic would
+        # close on the card — but #238's fresh-eyes browser looked at
+        # the live site WITH that label in place and still read the
+        # pill (Gamma 5H 8M 12L) against the lead (5 High, 9 Medium,
+        # 13 Low) as a contradiction at a glance: "fine reading
+        # explains it, scanning thinks the numbers are wrong". Two
+        # label fixes have now failed to kill this confusion (#161
+        # relabelled the pill noun, #221 labelled the total), so the
+        # remaining lever is removing the second number set from the
+        # card entirely. Each lead now carries the RE-VERIFIED split,
+        # identical to its pill — there is only one split per card to
+        # misread. The award split lives only on the linked review
+        # page and the research index (both still pinned below).
+        # Totals, MISSes and pool stay, so the award split is still
+        # derivable on the card: Gamma 25 + 1M + 1L = 27 (5H 9M 13L);
+        # Zaros 66 + 1H + 3M = 70 (16H 35M 19L). Only these two cards
+        # ever had two number sets — every other entry's pill and
+        # lead already agree.
         import re
         import sys
         from pathlib import Path
@@ -5668,10 +5675,17 @@ class TestChecker(unittest.TestCase):
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
-        self.assertIn("(5 High, 9 Medium, 13 Low of the 27; $50,000 pool)",
+        # Lead split == pill split on both dual-number cards.
+        self.assertIn("(5 High, 8 Medium, 12 Low; $50,000 pool)",
                       track)
-        self.assertIn("(16 High, 35 Medium, 19 Low of the 70; $70,000 pool)",
+        self.assertIn("(15 High, 32 Medium, 19 Low; $70,000 pool)",
                       track)
+        # The award-split parentheticals are gone from the cards
+        # (both the #221 "of the N" form and the bare form).
+        self.assertNotIn("(5 High, 9 Medium, 13 Low of the 27; $50,000 pool)",
+                         track)
+        self.assertNotIn("(16 High, 35 Medium, 19 Low of the 70; $70,000 pool)",
+                         track)
         self.assertNotIn("(5 High, 9 Medium, 13 Low; $50,000 pool)", track)
         self.assertNotIn("(16 High, 35 Medium, 19 Low; $70,000 pool)", track)
         # Pills still carry the re-verified split; sums match the counts.
@@ -5679,9 +5693,15 @@ class TestChecker(unittest.TestCase):
         self.assertIn("66 re-verified · 15H 32M 19L", track)
         self.assertEqual(5 + 8 + 12, 25)
         self.assertEqual(15 + 32 + 19, 66)
+        # Totals, MISSes and pools stay — the award split stays
+        # derivable, and the review pages keep quoting it in full.
+        self.assertIn("25 of 27 validated", track)
+        self.assertIn("two presented as MISSes (1 Medium, 1 Low)", track)
+        self.assertIn("66 of 70 awarded", track)
+        self.assertIn("four presented as MISSes (1 High, 3 Medium)", track)
         # Research pages quote the same totals in sequence, not side by
-        # side with a pill — no annotation needed there, and the old
-        # parenthetical forms still stand there.
+        # side with a pill — no annotation needed there, and the award
+        # splits still stand there.
         gamma_desc = [d for p, t, d, k, b in build.PAGES
                       if p == "/research/gamma/"][0]
         self.assertIn("27 validated findings (5 High, 9 Medium, 13 Low, "
@@ -5910,9 +5930,14 @@ class TestChecker(unittest.TestCase):
         for mid in ("M-FEEDIST", "M-OWNABLEINIT", "M-CONNVAULT"):
             self.assertIn(mid, zaros)
         self.assertIn("Four groups are presented as <strong>MISSes</strong>", zaros)
-        # The severities must reconcile against the page itself: pill
-        # split (re-verified) + miss split = contest split, so a future
-        # edit cannot silently break the count the entry itself states.
+        # The severities must reconcile: pill split (re-verified) +
+        # miss split = contest split, so a future edit cannot silently
+        # break the count the entry itself states. Visual verdict #238
+        # (2026-11-25) moved the contest split off the card — the lead
+        # now carries the re-verified split, identical to the pill —
+        # so the contest split is read from the linked review page,
+        # where it still stands ("27 findings: 5 High, 9 Medium,
+        # 13 Low"), not from the lead.
         def splits(slug, miss_re, miss_map):
             m = re.search(
                 r'<a href="/research/%s/">.*?<span class="track-findings">'
@@ -5921,7 +5946,8 @@ class TestChecker(unittest.TestCase):
             self.assertIsNotNone(m, slug)
             pill = tuple(int(x) for x in m.groups()[1:])
             m = re.search(
-                r'(\d+) High, (\d+) Medium, (\d+) Low', audit[m.start():])
+                r'(\d+) High, (\d+) Medium, (\d+) Low',
+                pages["/research/%s/" % slug])
             self.assertIsNotNone(m, slug)
             contest = tuple(int(x) for x in m.groups())
             m = re.search(miss_re, audit[m.start():])
