@@ -10686,6 +10686,32 @@ class TestChecker(unittest.TestCase):
         self.assertIn(bound, lines[0])
         self.assertNotIn(plain, lines[0])
 
+    def test_verdict257_inline_code_chip_padding_is_tight(self):
+        # Visual verdict #257 (2026-11-25, checker-improvement, from
+        # verdict #256 item 7): inline <code> chips sat apart from
+        # their punctuation — "( min_deposit_usdc , ... )" in the
+        # /checker/ email notes. Measured headless (hidden_files/
+        # measure-verdict257.py): chip side padding was 6.1px against
+        # a 4.4px plain word space, so the comma after a chip floated
+        # 6.1px from its word while a plain comma touches its word,
+        # and the chip box overhung the glyph top by 2.3px. The chip
+        # padding is now .1em .25em — a 3.8px side gap at desktop,
+        # under the word space, and a 1.5px top/bottom overhang. The
+        # chip itself is unchanged (grey bg, radius, .9em); pre code
+        # keeps padding:0 and the pay-box code keeps its white bg.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "code{background:#f3f4f6;padding:.1em .25em;"
+            "border-radius:5px;font-size:.9em;overflow-wrap:anywhere}",
+            build.CSS)
+        self.assertNotIn("padding:.15em .4em", build.CSS)
+        self.assertIn("pre code{background:none;color:inherit;padding:0}",
+                      build.CSS)
+        self.assertIn(".pay-box code{background:#fff}", build.CSS)
+
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
         # the email-notes paragraph ended with the last line just
