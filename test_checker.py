@@ -5138,7 +5138,14 @@ class TestChecker(unittest.TestCase):
             "no money,", page)
         self.assertIn("full name, date of birth, proof of address", page)
         self.assertIn("0.909091 USDC", page)
-        self.assertIn("0.0009 USDC", page)
+        # Visual verdict #242 (2026-11-25): the old form attached
+        # the ladder-worst 0.0009 to the 1,000,000 USDC donation;
+        # offset 6 loses 0.000001 USDC to that donation and 0.000900
+        # only at the 1,000,000,000 USDC donation — both figures are
+        # now stated with their own donation.
+        self.assertIn("0.000001&nbsp;USDC", page)
+        self.assertIn("0.000900&nbsp;USDC", page)
+        self.assertNotIn("the loss is <strong>0.0009 USDC</strong>", page)
         self.assertIn("0x334FfC5922290d5595ad539Ee7717aF75F66f729", page)
         self.assertIn("USDC on Base", page)
         self.assertIn("outreach@n1netw3n.live", page)
@@ -6751,9 +6758,19 @@ class TestChecker(unittest.TestCase):
         # checker page writes the same loss as 0.000900. The sentence
         # now names the scenario itself ("the same deposit ... to
         # the same donation") and the exact six-decimal loss.
+        # Visual verdict #242 (2026-11-25): #225 attached the wrong
+        # number to that named scenario — 0.000900 is the worst loss
+        # across the donation ladder, at the 1,000,000,000 USDC
+        # donation, not the loss "to the same donation" (the
+        # 1,000,000 USDC one, where offset 6 loses 1 base unit).
+        # The sentence now states both figures with their own
+        # donation attached: 0.000001 to the same donation, 0.000900
+        # even at a 1,000,000,000 USDC donation.
         self.assertIn("the same deposit loses", hero)
-        self.assertIn("0.000900&nbsp;USDC", hero)
+        self.assertIn("0.000001&nbsp;USDC", hero)
         self.assertIn("to the same donation", hero)
+        self.assertIn("1,000,000,000 USDC donation costs it only <strong>0.000900&nbsp;USDC</strong>", hero)
+        self.assertNotIn("loses <strong>0.000900", hero)
         self.assertNotIn("the loss is under", hero)
         self.assertNotIn("defense, under", hero)
         self.assertIn("100,000 USDC", hero)
@@ -6764,12 +6781,18 @@ class TestChecker(unittest.TestCase):
         rows = {r["name"]: r for r in run_all(noprot)}["donation_inflation"]["detail"]
         self.assertEqual(max(r["victim_loss"] for r in rows), 909091)
         # Same re-derivation for the offset-6 sentence: same deposit,
-        # same donation ladder, worst row is 900 base units (0.000900
-        # USDC) — the donation check's loss and the checker's worst
-        # loss across all six checks at the default preset.
+        # same donation ladder. The 1,000,000 USDC row is 1 base unit
+        # (0.000001 USDC) — the figure the sentence attaches to "the
+        # same donation" — and the worst row is 900 base units
+        # (0.000900 USDC, at the 1,000,000,000 USDC donation) — the
+        # figure the sentence attaches to the billion-USDC donation,
+        # and the checker's worst loss across all six checks at the
+        # default preset.
         offset6 = Vault(decimals_offset=6, min_deposit=0)
         rows6 = {r["name"]: r for r in run_all(offset6)}["donation_inflation"]["detail"]
         self.assertEqual(max(r["victim_loss"] for r in rows6), 900)
+        self.assertEqual(
+            [r for r in rows6 if r["donation"] == 1_000_000_000_000][0]["victim_loss"], 1)
         # Layout: horizontal flow on desktop, stacked with down arrows
         # on a phone viewport.
         self.assertIn(".flow{display:flex;align-items:stretch;justify-content:center;", build.CSS)
@@ -7321,6 +7344,12 @@ class TestChecker(unittest.TestCase):
         # heading, one line). The paragraphs sit in the .hero-top text
         # column (verdict #63 put a checks panel on the right), so the
         # rule targets them there instead of as direct .hero children.
+        # Visual verdict #242 (2026-11-25): the comparison is now
+        # 0.909091 vs 0.000001 to the same donation, with 0.000900 as
+        # the billion-USDC worst-case tail — the #225 form attached
+        # the worst-case number to the 1,000,000 USDC donation, which
+        # was wrong by 900x. The pretty-wrap rationale is unchanged:
+        # it guards the last line of the now-longer paragraph.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -23818,11 +23847,22 @@ class TestChecker(unittest.TestCase):
         # longer sentence-final, so the orphan it guarded moved to
         # the sentence tail; text-wrap:pretty on .hero-top p covers
         # a lone last word).
+        # Visual verdict #242 (2026-11-25): #225 attached the wrong
+        # number — 0.000900 is the ladder-worst, at the
+        # 1,000,000,000 USDC donation. The sentence now reads
+        # "...loses 0.000001 USDC to the same donation — and even a
+        # 1,000,000,000 USDC donation costs it only 0.000900 USDC."
+        # The guarded pair is now the sentence-final "0.000900
+        # USDC." (also the gate-brief sentence's tail, so the worker
+        # bundle carries it twice), plus the same-donation figure
+        # "0.000001 USDC to the same donation".
         from pathlib import Path
         build_text = (Path.home() / "workspace/taskmarket/site"
                       / "build.py").read_text()
-        self.assertIn("<strong>0.000900&nbsp;USDC</strong> to the same donation.", build_text)
-        self.assertNotIn("<strong>0.000900 USDC</strong> to the same donation.", build_text)
+        self.assertIn("<strong>0.000900&nbsp;USDC</strong>.", build_text)
+        self.assertNotIn("<strong>0.000900 USDC</strong>.", build_text)
+        self.assertIn("<strong>0.000001&nbsp;USDC</strong> to the same donation", build_text)
+        self.assertNotIn("<strong>0.000001 USDC</strong> to the same donation", build_text)
         self.assertIn("depositor's&nbsp;loss.", build_text)
         self.assertNotIn("depositor's loss.", build_text)
         self.assertIn("Inbound only, no&nbsp;KYC.</p>", build_text)
@@ -23838,7 +23878,10 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertEqual(worker.count("no&nbsp;fee).</p>"), 2)
         self.assertNotIn("no fee).</p>", worker)
-        self.assertEqual(worker.count("<strong>0.000900&nbsp;USDC</strong> to the same donation."), 1)
+        self.assertEqual(worker.count("<strong>0.000900&nbsp;USDC</strong>."), 2)
+        self.assertEqual(worker.count("<strong>0.000001&nbsp;USDC</strong> to the same donation"), 1)
+        self.assertNotIn("<strong>0.000900 USDC</strong>.", worker)
+        self.assertNotIn("<strong>0.000001 USDC</strong> to the same donation", worker)
         self.assertEqual(worker.count("depositor's&nbsp;loss."), 1)
         self.assertEqual(worker.count("Inbound only, no&nbsp;KYC.</p>"), 1)
 
