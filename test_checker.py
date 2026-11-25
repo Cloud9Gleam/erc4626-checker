@@ -2970,6 +2970,11 @@ class TestChecker(unittest.TestCase):
         # (74.3px, frac 0.12) — the whole tail clause "to name your
         # vault in the reply." now moves as one unit (the #241
         # pattern), so the last line holds ~200px instead.
+        # Verdict #254: #206's bound "one per line:" still landed
+        # alone on the last line (~100px of ~960px, frac 0.13) — a
+        # bound phrase can still BE the last line. The longer tail
+        # "parameters — one per line:" is bound instead (per #251/
+        # #253), so the last line holds ~245px at 1919px.
         import sys, re
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -2978,10 +2983,12 @@ class TestChecker(unittest.TestCase):
         para = build.email_para(0, 0, 0, 100_000_000_000,
                                 1_000_000 * USDC, 1_000_000)
         self.assertIn("one&nbsp;per&nbsp;line:</p>", para)
+        self.assertIn("parameters&nbsp;—&nbsp;one&nbsp;per&nbsp;line:</p>", para)
         self.assertIn("not the raw&nbsp;totalSupply.</p>", para)
         self.assertIn("Add&nbsp;<code>vault=YourVaultName</code>", para)
         self.assertIn("to&nbsp;name&nbsp;your&nbsp;vault&nbsp;in&nbsp;the&nbsp;reply.</p>", para)
         self.assertNotIn("to name your vault in the reply.</p>", para)
+        self.assertNotIn("parameters — one&nbsp;per&nbsp;line:</p>", para)
         self.assertNotIn("one per&nbsp;line:</p>", para)
         self.assertNotIn("one per line:</p>", para)
         self.assertNotIn("not the raw totalSupply.</p>", para)
@@ -3000,6 +3007,14 @@ class TestChecker(unittest.TestCase):
                       "Add&nbsp;<code>vault=YourVaultName</code>",
                       "to&nbsp;name&nbsp;your&nbsp;vault&nbsp;in&nbsp;the&nbsp;reply.</p>"):
             self.assertEqual(worker.count(fixed), 2)
+        # Verdict #254: the bound tail appears twice in the worker, once
+        # with a literal em dash (the JS template) and once JSON-escaped
+        # as \u2014 (the embedded Python-rendered copy) — count both
+        # encodings. (The old partial-bound form is gone in both.)
+        self.assertEqual(worker.count("parameters&nbsp;—&nbsp;one&nbsp;per&nbsp;line:</p>")
+                         + worker.count("parameters&nbsp;\\u2014&nbsp;one&nbsp;per&nbsp;line:</p>"), 2)
+        self.assertNotIn("parameters — one&nbsp;per&nbsp;line:</p>", worker)
+        self.assertNotIn("parameters \\u2014 one&nbsp;per&nbsp;line:</p>", worker)
 
     def test_verdict190_checker_360px_orphans_have_nbsp(self):
         # Verdict #190: the #187 orphan scan's leftover /checker/
