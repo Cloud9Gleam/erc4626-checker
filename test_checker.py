@@ -2017,14 +2017,14 @@ class TestChecker(unittest.TestCase):
                       "Default&nbsp;100,000. Also accepts "
                       "victim_deposit_usdc.</td>", body)
         self.assertIn("<td>0–10000</td><td>Performance fee, in basis "
-                      "points. Also accepts perf_fee_bps.</td>", body)
+                      "points. Also accepts&nbsp;perf_fee_bps.</td>", body)
         self.assertIn("<td>0–1,000,000,000,000</td><td>Vault assets, in "
                       "USDC. Seeds the donation and minimum-viable-deposit "
                       "checks. Default&nbsp;0.</td>", body)
         self.assertIn("<td>0–1,000,000,000,000</td><td>Shares already "
                       "issued, as displayed. Counted at 6 decimals, the "
-                      "OpenZeppelin default for a USDC vault. "
-                      "Default&nbsp;0.</td>", body)
+                      "OpenZeppelin default for a "
+                      "USDC&nbsp;vault.&nbsp;Default&nbsp;0.</td>", body)
         # Docs and code must agree: the Worker clamps are 1e15 base
         # units for min/victim, 1e18 for vault assets, 1e12 shares.
         src = (Path.home() / "workspace/taskmarket/site/build.py"
@@ -2033,6 +2033,34 @@ class TestChecker(unittest.TestCase):
         self.assertIn("vic = Math.max(1, Math.min(vic, 1e15))", src)
         self.assertIn("va = Math.max(0, Math.min(va, 1e18))", src)
         self.assertIn("vs = Math.max(0, Math.min(vs, 1e12))", src)
+
+    def test_verdict244_api_notes_have_no_orphan_last_line(self):
+        # Checker-improvement 2026-11-25 (#244, visual verdict #244
+        # item 1): the API table's Notes column wrapped two cells onto
+        # a lone tail — fee_bps ended with "perf_fee_bps." alone on
+        # its second line, vault_shares with "Default 0." alone on
+        # its third (1919px, ~425px column; browser-verdict #244).
+        # The tails are now bound with nbsp into a clause fragment
+        # ("accepts perf_fee_bps.", "USDC vault. Default 0.") so the
+        # last line carries a full phrase. Probe-verified
+        # (probe-verdict244-api-notes.py): the bound units are 161px
+        # / 164px, under the 360px column width (~169px), so the
+        # sideways-scrolling table does not grow on mobile.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        body = build.checker_body()
+        self.assertIn("Also accepts&nbsp;perf_fee_bps.", body)
+        self.assertNotIn("Also accepts perf_fee_bps.", body)
+        self.assertIn("for a USDC&nbsp;vault.&nbsp;Default&nbsp;0.", body)
+        self.assertNotIn("for a USDC vault. Default&nbsp;0.", body)
+        # The other alias cells are unchanged (their last lines were
+        # already full phrases) and the email block still teaches the
+        # long names.
+        self.assertIn("Also accepts min_deposit_usdc.", body)
+        self.assertIn("Also accepts victim_deposit_usdc.", body)
+        self.assertIn("perf_fee_bps=", body)
 
     def test_verdict229_query_params_accept_long_aliases(self):
         # Checker-improvement 2026-11-25 (#229, verdict #223 item 5):
@@ -2074,7 +2102,7 @@ class TestChecker(unittest.TestCase):
         body = build.checker_body()
         self.assertIn("Also accepts min_deposit_usdc.", body)
         self.assertIn("Also accepts victim_deposit_usdc.", body)
-        self.assertIn("Also accepts perf_fee_bps.", body)
+        self.assertIn("Also accepts&nbsp;perf_fee_bps.", body)
         self.assertIn("min_deposit_usdc=", body)
         self.assertIn("victim_deposit_usdc=", body)
         self.assertIn("perf_fee_bps=", body)
