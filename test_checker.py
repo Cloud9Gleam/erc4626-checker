@@ -10846,6 +10846,54 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("donation-table--clean", errored)
         self.assertIn("below minimum deposit", errored)
 
+    def test_verdict235_guide_plain_deposit_is_glossed(self):
+        # Verdict #231 (2026-11-25) glossed "plain deposit" in the
+        # checker's share-price description — "(an ordinary deposit —
+        # no donation involved)" — but the same sentence recurs in
+        # four prose spots, still bare: the donation-inflation
+        # research page's "What the checker tests", the
+        # share-price-manipulation guide's "What to check", the
+        # audit checklist's section 5, and the how-to guide's
+        # six-checks list. Each now carries the gloss in the same
+        # sentence. Inside the two parenthetical enumerations the
+        # gloss rides an em dash instead of nested parens; the two
+        # standalone sentences use #231's parenthetical form. The
+        # how-to item's gloss is shortened to "no donation": the
+        # full gloss strands "involved)." alone on its last line at
+        # 360px (measure-verdict235), and binding it with &nbsp;
+        # would move the #190/#231 "donation&nbsp;involved)."
+        # counts off 2. The EIP-7702 guide's "a plain deposit of
+        # 100,000 gas" is a gas-cost figure, not the check's term,
+        # and is deliberately left alone.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        dash = ("on a plain deposit \u2014 an ordinary deposit,"
+                " no donation involved)")
+        paren = ("on a plain deposit (an ordinary deposit \u2014"
+                 " no donation involved).")
+        paren_short = ("on a plain deposit (an ordinary deposit \u2014"
+                       " no donation).")
+        self.assertIn(dash, pages["/research/erc4626-donation-inflation/"])
+        self.assertIn(dash,
+                      pages["/guides/vault-share-price-manipulation/"])
+        self.assertIn(paren, pages["/guides/erc4626-audit-checklist/"])
+        self.assertIn(paren_short,
+                      pages["/guides/how-to-use-the-erc4626-checker/"])
+        # No bare "on a plain deposit" survives in those four
+        # pages: the glosses above are the only occurrences (the
+        # checker's own desc lives on /checker/, not here).
+        for slug in ("/research/erc4626-donation-inflation/",
+                     "/guides/vault-share-price-manipulation/",
+                     "/guides/erc4626-audit-checklist/",
+                     "/guides/how-to-use-the-erc4626-checker/"):
+            body = pages[slug]
+            self.assertEqual(body.count("on a plain deposit"), 1)
+            self.assertNotIn("on a plain deposit),", body)
+            self.assertNotIn("on a plain deposit.</", body)
+
     def test_donation_attacker_net_loss_is_muted(self):
         # Visual verdict #106 (noprot item 2), confirmed #107/#108:
         # in the donation table a negative attacker net sat in the
