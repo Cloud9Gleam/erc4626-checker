@@ -10598,11 +10598,15 @@ class TestChecker(unittest.TestCase):
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
+        # Visual verdict #255 (2026-11-25): the tail "The API
+        # returns exact integers." is bound as one unit — the real
+        # browser orphaned "API returns exact integers." on the last
+        # line with "The" left above.
         legend = ("Share counts are shortened: B = billion (10^9), "
                   "T = trillion (10^12), Q = quadrillion (10^15); "
                   "exact powers of ten above that use the 1×10²⁴ form. "
                   "Hover a shortened count to see its exact value. "
-                  "The API returns exact integers.")
+                  "The&nbsp;API&nbsp;returns&nbsp;exact&nbsp;integers.")
         # CSS: the muted note style exists.
         self.assertIn(
             ".shares-note{font-size:.85em;color:#6b7280;"
@@ -10636,6 +10640,51 @@ class TestChecker(unittest.TestCase):
                         fn.index('h+="<div class=\'check-grid\'>";'))
         self.assertLess(fn.index(legend),
                         fn.index("if(notice){h+=notice;}"))
+
+    def test_verdict255_shares_note_tail_is_bound(self):
+        # Visual verdict #255 (2026-11-25, checker-improvement):
+        # #252/#254 verdicts kept flagging the shares legend's last
+        # line — the real browser rendered just "API returns exact
+        # integers." (~19-26% of the line) with "The" left on the
+        # line above. The tail is now one non-breaking unit, so the
+        # last line is deterministically "The API returns exact
+        # integers." in both renderers. Wording is unchanged: with
+        # the nbsp entities read as spaces, the legend is the same
+        # sentence #194 pinned.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        bound = "The&nbsp;API&nbsp;returns&nbsp;exact&nbsp;integers."
+        plain = "The API returns exact integers."
+        plain_legend = ("Share counts are shortened: B = billion (10^9), "
+                        "T = trillion (10^12), Q = quadrillion (10^15); "
+                        "exact powers of ten above that use the 1×10²⁴ form. "
+                        "Hover a shortened count to see its exact value. "
+                        "The API returns exact integers.")
+        for off, mn, fee in ((0, 0, 0), (6, 1_000_000, 1000),
+                             (18, 1_000_000, 1000)):
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee)
+            html = build.results_html(
+                run_all(v), off=off, mn=mn, fee=fee)
+            self.assertIn(bound, html)
+            self.assertNotIn(plain, html)
+            # Visible text is the same sentence, nbsp aside.
+            self.assertIn(plain_legend, html.replace("&nbsp;", " "))
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        self.assertIn(bound, fn)
+        # The plain sentence still appears in the #255 comment above
+        # the template line, so the absence check is scoped to that
+        # line — the rendered markup itself must carry only the
+        # bound form.
+        lines = [l for l in fn.splitlines()
+                 if "shares-note" in l
+                 and "Share counts are shortened" in l]
+        self.assertEqual(len(lines), 1)
+        self.assertIn(bound, lines[0])
+        self.assertNotIn(plain, lines[0])
 
     def test_verdict207_compact_shares_carry_exact_title(self):
         # Visual verdict #207 (2026-11-24, checker-improvement):
