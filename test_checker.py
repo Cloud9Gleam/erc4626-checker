@@ -11896,6 +11896,15 @@ class TestChecker(unittest.TestCase):
         # cosmetic cost #161 removed — accepted here because a silent
         # wrong-result trap outweighs aligned hint text bottoms. The
         # other five hints stay one sentence / one line.
+        # 2026-11-25 (visual verdict #236 item 4): the trade-off above
+        # is retired — the hint now keeps both facts in one line:
+        # "6 decimals — not the raw totalSupply." (37 chars, 264.5px
+        # in the 285px desktop column, headless-shell measurement).
+        # The "Issued shares" half is redundant with the label
+        # ("Vault shares now") and "counted at" is implied by
+        # "6 decimals" in context, so nothing the warning needs is
+        # lost; the shares hint is a one-liner again and all seven
+        # hint bottoms sit on one line.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -11911,7 +11920,7 @@ class TestChecker(unittest.TestCase):
                   "The smallest deposit the vault accepts.",
                   "The deposit made after the donation.",
                   "Assets already in the vault. 0 = new.",
-                  "Issued shares, counted at 6 decimals. Not the raw totalSupply.",
+                  "6 decimals \u2014 not the raw totalSupply.",
                   "The cut from the yield. 1000 bps = 10%.",
                   "Starting point \u2014 editing offset, minimum or fee switches this to Custom parameters.")
         html = build.checker_body()
@@ -12352,6 +12361,10 @@ class TestChecker(unittest.TestCase):
         # test_checker_hints_are_short_on_all_viewports for the
         # tradeoff. The warning half is verbatim from the email
         # section; the unit half is unchanged.
+        # 2026-11-25 (visual verdict #236 item 4): the #211 trade-off
+        # is retired — the hint is shortened to "6 decimals — not the
+        # raw totalSupply.", which keeps both facts (unit + warning)
+        # in one line; see test_checker_hints_are_short_on_all_viewports.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -12362,7 +12375,7 @@ class TestChecker(unittest.TestCase):
             "The smallest deposit the vault accepts.",
             "The deposit made after the donation.",
             "Assets already in the vault. 0 = new.",
-            "Issued shares, counted at 6 decimals. Not the raw totalSupply.",
+            "6 decimals \u2014 not the raw totalSupply.",
             "The cut from the yield. 1000 bps = 10%.",
         ]
         for hint in hints:
