@@ -3069,6 +3069,39 @@ class TestChecker(unittest.TestCase):
         self.assertIn('subject=ERC-4626%20check', para)
         self.assertIn('subject=ERC-4626%20check', worker)
 
+    def test_verdict261_guide_list_items_can_wrap_anywhere(self):
+        # Visual verdict #261 (2026-11-26, checker-improvement): the
+        # /guides/ index overflowed horizontally at 360px (docScrollW
+        # 454 vs 345) — two guide-list items held #259-bound nbsp
+        # tails ("while the victim's shares end up worth
+        # 184,615.384607", an 8-word unbreakable run ~414px; "every
+        # deposit until one tops 1,000,000.000001", ~304px) in plain
+        # <li>s, and <li> had no overflow-wrap while <p> does. Either
+        # run is longer than the 287px mobile column, so it pushed the
+        # whole document 109px wide. The fix is one scoped rule —
+        # .guide-list li{overflow-wrap:anywhere} — so the run breaks
+        # as a last resort only where it would otherwise overflow;
+        # at desktop widths it never triggers. The tails themselves
+        # stay bound (the #259 orphan fix stands); only the wrapping
+        # gains a last-resort break. Live geometry is pinned by
+        # hidden_files/verdict261-guides-overflow-harness.mjs
+        # (docScrollW 454 -> 345 at 360px, 0 overflowing items).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertEqual(build.CSS.count(
+            ".guide-list li{overflow-wrap:anywhere}"), 1)
+        self.assertIn("p{overflow-wrap:anywhere}", build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(".guide-list li{overflow-wrap:anywhere}", worker)
+        build_text = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        self.assertIn("while&nbsp;the&nbsp;victim's&nbsp;shares&nbsp;end&nbsp;up&nbsp;worth&nbsp;184,615.384607.",
+                      build_text)
+        self.assertIn("every deposit&nbsp;until&nbsp;one&nbsp;tops&nbsp;1,000,000.000001.",
+                      build_text)
+
     def test_verdict190_checker_360px_orphans_have_nbsp(self):
         # Verdict #190: the #187 orphan scan's leftover /checker/
         # orphans at 360px — the share-price check-desc ended
