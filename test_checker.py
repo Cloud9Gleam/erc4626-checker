@@ -2116,6 +2116,36 @@ class TestChecker(unittest.TestCase):
         self.assertIn("never ask\nfor keys.", audit)
         self.assertIn("verified against the checker model).", audit)
 
+    def test_verdict253_audit_start_intro_tail_is_bound(self):
+        # Checker-improvement 2026-11-25 (#253, visual verdict #252
+        # item 2): the /audit/ Start intro paragraph ended on a lone
+        # "any payment." in the real browser (4 lines, last line
+        # ~110px of a ~710px line, frac 0.15). Headless did NOT
+        # reproduce it (3 lines, last line 709.5px, frac 0.91 at
+        # 1919px; 8 lines, last line 102.1px at 360px) — the break
+        # point is font-metric-dependent, the same mechanism as #251.
+        # The fix binds the four-word tail "so before any payment."
+        # into one unbreakable unit, making the last line
+        # deterministically the full phrase in both renderers; at
+        # 360px the unit is ~175px < 309.8px column, so it fits.
+        # The two other "before any payment" wordings are different
+        # sentences and deliberately untouched: the form JS status
+        # ("we will say so before any payment.", on /audit/) and the
+        # report list item ("and say so before any payment.", on
+        # /poc-packaging/).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        self.assertIn("we say so&nbsp;before&nbsp;any&nbsp;payment.</p>",
+                      audit)
+        self.assertNotIn("we say so before any payment.</p>", audit)
+        self.assertIn("we will say so before any payment.", audit)
+        self.assertIn("and say so before any payment.</li>",
+                      pages["/poc-packaging/"])
+
     def test_verdict248_notice_tails_are_bound(self):
         # Checker-improvement 2026-11-25 (#248, visual verdict #248
         # item 2): the "What to do next" first paragraph ended on a
