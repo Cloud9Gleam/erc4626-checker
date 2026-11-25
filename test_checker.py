@@ -2296,7 +2296,7 @@ class TestChecker(unittest.TestCase):
         # The sentence names both spellings and why they differ.
         self.assertIn("The email uses the long parameter names", para)
         self.assertIn("the mailbox reads those", para)
-        self.assertIn("both spellings work in the&nbsp;API.", para)
+        self.assertIn("both&nbsp;spellings&nbsp;work&nbsp;in&nbsp;the&nbsp;API.", para)
         for long, short in (("min_deposit_usdc", "min_usdc"),
                             ("victim_deposit_usdc", "victim_usdc"),
                             ("perf_fee_bps", "fee_bps")):
@@ -2321,7 +2321,7 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         for frag in ("The email uses the long parameter names",
                      "the mailbox reads those",
-                     "both spellings work in the&nbsp;API."):
+                     "both&nbsp;spellings&nbsp;work&nbsp;in&nbsp;the&nbsp;API."):
             self.assertEqual(worker.count(frag), 2)
 
     def test_checker_hint_rows_align(self):
@@ -10682,6 +10682,48 @@ class TestChecker(unittest.TestCase):
         lines = [l for l in fn.splitlines()
                  if "shares-note" in l
                  and "Share counts are shortened" in l]
+        self.assertEqual(len(lines), 1)
+        self.assertIn(bound, lines[0])
+        self.assertNotIn(plain, lines[0])
+
+    def test_verdict256_email_notes_tail_is_bound(self):
+        # Visual verdict #256 (2026-11-25, checker-improvement):
+        # the email-notes paragraph ended with the last line just
+        # "work in the API." (~120px of a ~645px column, frac ~0.19
+        # in the real browser) — "in the API" was bound, but "work"
+        # was not, so it landed with the bound phrase. The longer
+        # tail "both spellings work in the API." now moves as one
+        # unit (the #251/#253/#254/#255 pattern), so the last line
+        # holds ~255px instead. Wording is unchanged: with the nbsp
+        # entities read as spaces, the sentence is the same one #233
+        # pinned. The 5-word unit is ~255px, so it fits the ~310px
+        # mobile column (the email-cols stack below 640px) with room
+        # to spare; the pixel check is in
+        # hidden_files/measure-verdict256.py.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        bound = "both&nbsp;spellings&nbsp;work&nbsp;in&nbsp;the&nbsp;API."
+        plain = "both spellings work in the API."
+        USDC = 1_000_000
+        para = build.email_para(0, 0, 0, 100_000_000_000,
+                                1_000_000 * USDC, 1_000_000)
+        self.assertIn(bound, para)
+        self.assertNotIn(plain, para)
+        # Visible text is the same sentence, nbsp aside.
+        self.assertIn(plain, para.replace("&nbsp;", " "))
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertEqual(worker.count(bound), 2)
+        # The plain sentence survives only in build.py comments
+        # (#233/#256), which are not shipped in worker.js.
+        self.assertEqual(worker.count(plain), 0)
+        fn_start = worker.index("function emailParaHTML")
+        fn = worker[fn_start:worker.index("function html(", fn_start)]
+        lines = [l for l in fn.splitlines()
+                 if "email-notes-col" in l
+                 and "The email uses the long parameter names" in l]
         self.assertEqual(len(lines), 1)
         self.assertIn(bound, lines[0])
         self.assertNotIn(plain, lines[0])
