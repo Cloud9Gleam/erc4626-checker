@@ -11142,6 +11142,73 @@ class TestChecker(unittest.TestCase):
                 decoded = pages[page].replace("&nbsp;", " ")
                 self.assertIn(plain, decoded)
 
+    def test_verdict265_patterns_severe_tails_are_bound(self):
+        # Visual verdict #265 (2026-11-26, checker-improvement):
+        # fresh #265 census from the deployed worker (measure-
+        # verdict265.py): 16 severe short last lines @1919 — patterns
+        # 9, guides-index 4, research-index 2, audit 1 (a button
+        # label, "Copy request text", miscounted as a paragraph —
+        # not a defect, left alone). This slice binds the 9 patterns
+        # tails, all Check/Smell paragraphs, same mechanism as
+        # #262/#263b/#264: each tail pulls 1-3 words down from the
+        # line above so the last line lands ~0.25-0.35 frac at 1919
+        # and still fits the ~287px narrow column at 360 (est360
+        # 196-252px). The 0.186 tail ("in both directions.") also
+        # ends the Smell paragraph of the same pattern ("...matching
+        # the fresh conversion in both directions. Full suite 24/24
+        # PASS."), so it is dual-anchored with </p>: only the Check
+        # copy is bound, the Smell copy stays plain. Wording is
+        # unchanged: build.py with &nbsp; read as spaces is
+        # byte-identical to the pre-change file (nbsp delta 29:
+        # 3+5+3+4+5+3+2+2+2). Queued, not taken here: guides-index 4,
+        # research-index 2 (both "(Nov 2026)." — binding cannot fix
+        # a two-word date tail, they need rewriting). Two tails
+        # needed one more step: the nbsp-bound "one-line slot fix
+        # flips the outcome." and "owner-only routine config call."
+        # still split at the ASCII hyphen (headless rect probe:
+        # "one-"/"line" and "owner-"/"only" on adjacent lines), so
+        # the hyphen inside each tail is the non-breaking &#8209;
+        # (U+2011, the #262 precedent) and the tail stays one unit.
+        # The decoded check below reads &#8209; back as "-".
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pairs = [
+            ('require&nbsp;iterating&nbsp;the&nbsp;list?).',
+             'require iterating the list?).'),
+            ('one&#8209;line&nbsp;slot&nbsp;fix&nbsp;flips&nbsp;the&nbsp;outcome.',
+             'one-line slot fix flips the outcome.'),
+            ('conversion&nbsp;in&nbsp;both&nbsp;directions.</p>',
+             'conversion in both directions.</p>',
+             'conversion in both directions.'),
+            ('bound&nbsp;or&nbsp;a&nbsp;monotonicity&nbsp;rule.',
+             'bound or a monotonicity rule.'),
+            ('in&nbsp;the&nbsp;contract&nbsp;is&nbsp;the&nbsp;tell.',
+             'in the contract is the tell.'),
+            ('owner&#8209;only&nbsp;routine&nbsp;config&nbsp;call.',
+             'owner-only routine config call.'),
+            ('*dismissed:&nbsp;signature&nbsp;replay*).',
+             '*dismissed: signature replay*).'),
+            ('but&nbsp;never&nbsp;read&nbsp;for&nbsp;allocation.',
+             'but never read for allocation.'),
+            ('user&nbsp;still&nbsp;gets&nbsp;double-spent).',
+             'user still gets double-spent).'),
+        ]
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        self.assertEqual(len(pairs), 9)
+        for item in pairs:
+            bound, old = item[0], item[1]
+            plain = item[2] if len(item) > 2 else old
+            with self.subTest(bound=bound):
+                self.assertEqual(worker.count(bound), 1)
+                self.assertEqual(worker.count(old), 0)
+                self.assertIn(bound, pages['/patterns/'])
+                self.assertNotIn(old, pages['/patterns/'])
+                decoded = pages['/patterns/'].replace("&nbsp;", " ").replace("&#8209;", "-")
+                self.assertIn(plain, decoded)
+
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
         # the email-notes paragraph ended with the last line just
