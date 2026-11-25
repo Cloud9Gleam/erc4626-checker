@@ -10788,10 +10788,63 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("Breaches bound"), 2)
         self.assertNotIn("Breaches pass bound", html)
         js = build.checker_results_html_js()
-        self.assertIn("<table class='donation-table'>", js)
-        self.assertEqual(js.count("<table class='donation-table'>"), 1)
+        # Visual verdict #234 (2026-11-25): the template no longer
+        # emits a static class — the class is built from the rows,
+        # clean pages get donation-table--clean (see
+        # test_verdict234_note_column_narrows_on_clean_pages).
+        self.assertIn("const _clean=r.detail.every(", js)
+        self.assertIn('(_clean?" donation-table--clean":"")', js)
+        self.assertNotIn("<table class='donation-table'>", js)
         self.assertIn("Breaches bound", js)
         self.assertNotIn("Breaches pass bound", js)
+
+    def test_verdict234_note_column_narrows_on_clean_pages(self):
+        # Visual verdict #234 (2026-11-25): the Note column's 8.5em
+        # cap is 161px of mostly empty space on a page where every
+        # Note cell is a single green checkmark — the checkmark needs
+        # ~16px and the header "Note" ~36px. Those tables carry
+        # donation-table--clean and the column narrows to 2.5em; the
+        # freed ~97px goes to the three number columns (the table is
+        # width:100%). Breach and error pages keep the 8.5em cap:
+        # "Breaches bound" needs its full line and error text needs
+        # the room. The clean rule must come after the 8.5em rule —
+        # equal specificity, so order decides.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        css = build.CSS
+        self.assertIn(".donation-table--clean th:last-child,"
+                      ".donation-table--clean td:last-child{width:2.5em}",
+                      css)
+        self.assertLess(css.index("width:8.5em}"),
+                        css.index(".donation-table--clean th:last-child"))
+        # Default preset: all four rows clean, so the table is clean.
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertEqual(
+            passed.count("<table class='donation-table donation-table--clean'>"), 1)
+        self.assertNotIn("<table class='donation-table'>", passed)
+        # Noprot: two rows breach, so the plain cap stays.
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertEqual(failed.count("<table class='donation-table'>"), 1)
+        self.assertNotIn("donation-table--clean", failed)
+        # Error rows: the Note cell holds the error text, so the
+        # wide cap stays even though no row breaches.
+        errored = build.results_html(
+            [{"name": "donation_inflation", "pass": False, "detail": [
+                {"donation": 1_000_000, "victim_loss": None,
+                 "attacker_net": None, "error": "below minimum deposit"},
+                {"donation": 1_000_000_000, "victim_loss": None,
+                 "attacker_net": None, "error": "below minimum deposit"}]}],
+            vic=500_000, off=0, mn=1_000_000, fee=0)
+        self.assertEqual(errored.count("<table class='donation-table'>"), 1)
+        self.assertNotIn("donation-table--clean", errored)
+        self.assertIn("below minimum deposit", errored)
 
     def test_donation_attacker_net_loss_is_muted(self):
         # Visual verdict #106 (noprot item 2), confirmed #107/#108:
