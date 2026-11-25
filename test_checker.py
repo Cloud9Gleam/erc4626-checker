@@ -3016,6 +3016,59 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("parameters — one&nbsp;per&nbsp;line:</p>", worker)
         self.assertNotIn("parameters \\u2014 one&nbsp;per&nbsp;line:</p>", worker)
 
+    def test_verdict260_hyphen_terms_do_not_break(self):
+        # Visual verdict #260 item 4 (2026-11-26): three hyphenated
+        # terms split across lines in a real browser — the /checker/
+        # "Prefer email?" code broke as "ERC-" / "4626 check" (two
+        # grey chips), the homepage intro as "ERC-" / "4626 vaults:",
+        # the Free tool bullet as "floating-" / "point rounding".
+        # Headless reproduces only the code split (1919px: two
+        # rects, 41px + 96px; the other two stay whole at 1919 and
+        # 360 — see hidden_files/measure-verdict260.py), so the
+        # wider real-browser font is the difference — but all three
+        # are bound anyway, because the fix is free where headless
+        # is right and decisive where the browser is right. The
+        # prose terms take the non-breaking hyphen (U+2011,
+        # &#8209;), the device already used for offset&#8209;6 in
+        # the hero and ERC&#8209;4626 in the audit intro. The email
+        # code additionally gets class="nowrap"
+        # (.nowrap{white-space:nowrap}) so the whole 137px phrase
+        # moves as one unit — the hyphen alone would still leave a
+        # space break between "ERC-4626" and "check". The mailto
+        # subject (ERC-4626%20check) and the copied <pre> block are
+        # untouched. Live geometry is pinned by
+        # hidden_files/verdict260-hyphen-harness.mjs.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        para = build.email_para(6, 1_000_000, 1000, 100_000_000_000)
+        self.assertIn('<code class="nowrap">ERC&#8209;4626 check</code>', para)
+        self.assertNotIn('<code>ERC-4626 check</code>', para)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # Twice in the worker: the JS template and the embedded
+        # Python-rendered copy - both carry the JS-source form,
+        # one backslash before each quote (the form the JS string
+        # literal parses to a clean class attribute). The first
+        # build of this fix had three backslashes in the JS
+        # template (an edit escaping slip): the served page then
+        # carried literal backslashes in the tag, and the
+        # harness caught it - so the over-escaped form is pinned
+        # absent here, not just the bound form present.
+        self.assertEqual(worker.count('<code class=\\"nowrap\\">ERC&#8209;4626 check</code>'), 2)
+        self.assertNotIn('<code class=\\\\\\"nowrap\\\\\\">ERC&#8209;4626 check</code>', worker)
+        self.assertEqual(worker.count('ERC&#8209;4626 check'), 2)
+        self.assertNotIn('<code>ERC-4626 check</code>', worker)
+        build_text = (Path.home() / "workspace/taskmarket/site/build.py").read_text()
+        self.assertIn('working record for ERC&#8209;4626 vaults:', build_text)
+        self.assertNotIn('working record for ERC-4626 vaults:', build_text)
+        self.assertIn('no floating&#8209;point rounding&nbsp;anywhere.', build_text)
+        self.assertNotIn('no floating-point rounding&nbsp;anywhere.', build_text)
+        # The mailto subject keeps the plain hyphen (a URL, not prose).
+        self.assertIn('subject=ERC-4626%20check', para)
+        self.assertIn('subject=ERC-4626%20check', worker)
+
     def test_verdict190_checker_360px_orphans_have_nbsp(self):
         # Verdict #190: the #187 orphan scan's leftover /checker/
         # orphans at 360px — the share-price check-desc ended
@@ -24254,7 +24307,7 @@ class TestChecker(unittest.TestCase):
         # 1919px and 360px); wording untouched, line count
         # unchanged, card balance untouched.
         self.assertIn(
-            '<li>All math is exact integers — no floating-point '
+            '<li>All math is exact integers — no floating&#8209;point '
             'rounding&nbsp;anywhere.</li>', build_text)
         # Visual verdict #180 (2026-11-24, checker-improvement):
         # the #177 browser claim of ~70px of fill in Research did
