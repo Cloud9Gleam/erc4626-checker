@@ -2071,9 +2071,16 @@ class TestChecker(unittest.TestCase):
         # 0.13), the Dutch-clock example with "reproduction 3/3)."
         # (2 words, 144px, frac 0.19). The tails are now bound with
         # nbsp into a longer clause fragment ("consistency,
-        # share-price behavior.", "reproducible funds path found).",
-        # "enforced; forge reproduction 3/3).") so the last line
-        # carries a full phrase. Two of #244's four named items did
+        # share-price behavior.", "no reproducible funds path
+        # found).", "enforced; forge reproduction 3/3).") so the last
+        # line carries a full phrase. #247 binds "no" into the Twyne
+        # unit as well: #245 left it outside, and in the real browser
+        # the break stranded "no" at the end of the previous line
+        # (gap ~197px, #246) while headless already showed all five
+        # words on the last line — the break point was
+        # font-metric-dependent. With "no" bound, the last line is
+        # deterministically the five-word phrase in both renderers;
+        # at 360px the unit is ~264px < 287.4px column, so it fits.
         # NOT reproduce and are deliberately untouched: the Scope
         # "only." item and the limits "keys." item are each a single
         # line at 1919px, and the AlphaPrimer "model)." tail is a
@@ -2092,8 +2099,10 @@ class TestChecker(unittest.TestCase):
                       "behavior.", audit)
         self.assertNotIn("preview consistency, share-price&nbsp;"
                          "behavior.", audit)
-        self.assertIn("no reproducible&nbsp;funds&nbsp;path&nbsp;found).",
+        self.assertIn("no&nbsp;reproducible&nbsp;funds&nbsp;path&nbsp;found).",
                       audit)
+        self.assertNotIn("no reproducible&nbsp;funds&nbsp;path&nbsp;found).",
+                         audit)
         self.assertNotIn("no reproducible funds path found).", audit)
         self.assertIn("never enforced;&nbsp;forge&nbsp;reproduction&nbsp;"
                       "3/3).", audit)
