@@ -4502,7 +4502,10 @@ class TestChecker(unittest.TestCase):
         # and the address before being told to email first. It now sits
         # directly under the price, before "Pay in USDC on Base to:",
         # with a bold lead -- the reading order is email first, pay second.
-        m = re.search(r'<div class="pay-box">.*?<div class="pay-row">.*?</div>\s*</div>',
+        # Checker-improvement #271 (2026-11-26): the QR figure sits between
+        # the address row and the box close, so the regex allows it there.
+        m = re.search(r'<div class="pay-box">.*?<div class="pay-row">.*?</div>\s*'
+                      r'(?:<figure class="pay-qr">.*?</figure>\s*)?</div>',
                       audit, re.S)
         self.assertLess(m.group(0).index('<p><strong>Email first</strong>'),
                         m.group(0).index('Pay in <span class="chip">USDC</span>'))
@@ -4531,6 +4534,90 @@ class TestChecker(unittest.TestCase):
         self.assertLess(audit.index('href="#audit-order"'),
                         audit.index('<h2 id="scope">Scope</h2>'))
         self.assertIn("a.cta{display:inline-block", build.CSS)
+
+    def test_verdict271_pay_qr_code(self):
+        # Checker-improvement #271 (2026-11-26, visual verdict #268
+        # item 3): /audit/ payment was a manual transfer to a bare 0x
+        # address -- copy the address, paste it in a wallet, type the
+        # amount. A QR code beside the address encodes the ERC-681
+        # payment request, so a phone wallet scans and confirms instead.
+        # The token contract is money-critical: native USDC on Base was
+        # verified first-hand on-chain (eth_getCode + name()/symbol()/
+        # decimals() = "USD Coin"/"USDC"/6) before it was pinned -- an
+        # earlier draft from memory ended ...b54bd029029, which has no
+        # code on Base and is NOT USDC (real ending ...b54bdA02913).
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        import qrcodegen
+        # The pinned facts: native USDC on Base, chain 8453, 50 USDC.
+        self.assertEqual(build.USDC_BASE,
+                         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
+        self.assertEqual(build.PAY_CHAIN_ID, 8453)
+        self.assertEqual(build.PAY_AMOUNT_USDC, 50)
+        self.assertEqual(build.PAY_URI,
+                         "ethereum:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                         "@8453/transfer?address=0xD07C76fa47C99C70917b6Db2E9215844f0b9dC64"
+                         "&uint256=50000000")
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        # One figure, inside the pay-box after the address row.
+        self.assertEqual(audit.count('<figure class="pay-qr">'), 1)
+        self.assertLess(audit.index('<div class="pay-row">'),
+                        audit.index('<figure class="pay-qr">'))
+        self.assertLess(audit.index('<figure class="pay-qr">'),
+                        audit.index('<h2 id="what-you-get">What you get</h2>'))
+        # The SVG: 49-module symbol + 4-module quiet zone, aria-labelled,
+        # title carries the URI with & escaped; the raw & never appears.
+        self.assertIn("viewBox='0 0 57 57'", audit)
+        self.assertIn("role='img' aria-label='QR code: pay 50 USDC on Base to "
+                      + build.PAY_ADDR + "'", audit)
+        self.assertIn("<title>" + build.PAY_URI.replace("&", "&amp;")
+                      + "</title>", audit)
+        self.assertNotIn(build.PAY_URI, audit)
+        # The near-miss address from memory must appear nowhere on the page.
+        self.assertNotIn("b54bd029029", audit)
+        self.assertNotIn("0x833589fCD6eDb6E08f4c7C32D4f71b54bd029029", audit)
+        # Caption states the human facts and the check.
+        self.assertIn("Scan with your wallet to pay <strong>50 USDC</strong> on Base",
+                      audit)
+        self.assertIn("check the amount and the address match before you confirm",
+                      audit)
+        # The rendered path round-trips to the encoder's own matrix: parse
+        # the 1x1 squares back into a grid and compare cell for cell.
+        d = re.search(r"<path d='([^']*)' fill='#111827'/>", audit).group(1)
+        cells = {(int(x), int(y))
+                 for x, y in re.findall(r"M(\d+) (\d+)h1v1h-1z", d)}
+        qr = qrcodegen.QrCode.encode_text(build.PAY_URI,
+                                          qrcodegen.QrCode.Ecc.MEDIUM)
+        self.assertEqual(qr.get_version(), 8)
+        self.assertEqual(qr.get_size(), 49)
+        grid = {(x + 4, y + 4) for y in range(qr.get_size())
+                for x in range(qr.get_size()) if qr.get_module(x, y)}
+        self.assertEqual(cells, grid)
+        self.assertEqual(len(cells), 1230)
+        # CSS: 160px square beside the caption, stacked under 640px.
+        self.assertIn(".pay-qr{display:flex;gap:1em;align-items:center;",
+                      build.CSS)
+        self.assertIn(".pay-qr svg{flex:0 0 auto;width:160px;height:160px;",
+                      build.CSS)
+        self.assertIn(".pay-qr figcaption{font-size:.95em;color:#374151}",
+                      build.CSS)
+        self.assertIn("@media (max-width:640px){.pay-qr{flex-direction:column;",
+                      build.CSS)
+        # No QR anywhere else: the home and checker pages keep no
+        # payment symbol.
+        self.assertNotIn('<figure class="pay-qr">', pages["/"])
+        self.assertNotIn('<figure class="pay-qr">', pages["/checker/"])
+        # The address row itself is untouched: full address, copy,
+        # BaseScan, note.
+        self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
+                      audit)
+        self.assertIn(">Copy address</button>", audit)
+        self.assertIn("https://basescan.org/address/" + build.PAY_ADDR, audit)
+        self.assertIn("Double-check the address before sending", audit)
 
     def test_verdict214_email_first_sits_above_payment_details(self):
         # Visual verdict #214 (2026-11-25): in both pay-boxes the
