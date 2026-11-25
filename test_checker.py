@@ -10712,6 +10712,54 @@ class TestChecker(unittest.TestCase):
                       build.CSS)
         self.assertIn(".pay-box code{background:#fff}", build.CSS)
 
+    def test_verdict258_global_text_wrap_is_mixed(self):
+        # Visual verdict #258 (2026-11-26, checker-improvement): the
+        # global text-wrap rollout #254's browser suggested. pretty was
+        # already scoped to .hero-top p (#62), .audit-page (#192) and
+        # .research-page (#200); the homepage body, /checker/, /guides/
+        # and /patterns/ had no text-wrap rule. probe-textwrap-global.py
+        # measured 9 sample pages at 1919px and 360px (main p, main li,
+        # footer p, >=2 lines): neither value wins everywhere. At 1919
+        # balance kills short last lines (uncovered pages 177 -> 64)
+        # while pretty only kills strict one-word orphans (57 -> 5);
+        # at 360 pretty wins (strict 116 -> 15, short 154 -> 97) and
+        # balance barely moves (strict 116 -> 104). So each width gets
+        # the value that wins there: balance >=641px, pretty <=640px.
+        # Combined (MIXED): strict 173 -> 37, short 331 -> 161, severe
+        # 178 -> 58 across both widths; paired improved 491, worsened
+        # 2 (both mild frac drops, neither a new strict orphan); page
+        # heights move <= +4px, no overflow. The audit/research pages
+        # keep their own pretty rules — .audit-page p / .research-page
+        # p are (0,1,1) and beat this (0,0,2) rule at both widths, by
+        # design: those pages were already measured good (#192/#200).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        balance = ("@media (min-width:641px){main p,main li,"
+                   "footer p{text-wrap:balance}}")
+        pretty = ("@media (max-width:640px){main p,main li,"
+                  "footer p{text-wrap:pretty}}")
+        self.assertEqual(build.CSS.count(balance), 1)
+        self.assertEqual(build.CSS.count(pretty), 1)
+        # The scoped pretty rules survive: audit/research keep pretty
+        # at both widths, they are not re-decided by this rollout.
+        self.assertIn(".audit-page p,.audit-page li,.audit-page .track-lead,"
+                      ".audit-page .track-detail{text-wrap:pretty}", build.CSS)
+        self.assertIn(".research-page p,.research-page li{text-wrap:pretty}",
+                      build.CSS)
+        self.assertIn(".hero-top p{text-wrap:pretty}", build.CSS)
+        # No unscoped global text-wrap rule: balance occurs exactly
+        # twice (the h1 heading rule plus this media query) and pretty
+        # exactly four times (hero-top, audit, research, this query).
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 2)
+        self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(balance, worker)
+        self.assertIn(pretty, worker)
+
+
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
         # the email-notes paragraph ended with the last line just
