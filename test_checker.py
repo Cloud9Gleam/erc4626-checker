@@ -5030,7 +5030,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("99.99 ether with zero delay", page)  # 144 split drain
         self.assertIn("10.89 ether", page)  # 144 tier straddle
         self.assertIn("confirmations read 3", page)  # 145 stale vote counts
-        self.assertIn("down to one live signer with two stale&nbsp;votes", page)  # 145, #259 tail bound
+        self.assertIn("down to one live&nbsp;signer&nbsp;with&nbsp;two&nbsp;stale&nbsp;votes", page)  # 145, #262 tail extended
         self.assertNotIn("lists all 135 headings", page)
         self.assertNotIn("135 pattern entries", page)
 
@@ -5115,7 +5115,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("79228162514264337593543950336", page)  # 158 sqrtPrice 2^96
         self.assertIn("currency1-membership test", page)  # 158 gate
         self.assertIn("bob\u2019s balance is 100 ether immediately", page)  # 159 auto-mint
-        self.assertIn("the review window is destroyed, not just&nbsp;skipped", page)  # 159, #259 tail bound
+        self.assertIn("the review window is&nbsp;destroyed,&nbsp;not&nbsp;just&nbsp;skipped", page)  # 159, #262 tail extended
         self.assertIn("Transaction(bob, 0)", page)  # 160 zero mint files zero
         self.assertIn("1000 \u2192 900 ether", page)  # 160 burn stays final
         self.assertIn("total supply 1900 ether", page)  # 161 two burns, one mint
@@ -5411,7 +5411,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("17.884 ETH", page)  # 204 ledger still reads
         self.assertIn("500 shares", page)  # 204 no-phantom control
         self.assertIn("Insufficient payment for sale!!!", page)  # 204 fixed
-        self.assertIn("Full suite 27/27&nbsp;PASS", page)  # 204, #259 tail bound
+        self.assertIn("works.&nbsp;Full&nbsp;suite&nbsp;27/27&nbsp;PASS", page)  # 204, #262 tail extended
         self.assertIn("ownerOf(account) == attacker", page)  # 208 bypass
         self.assertIn("UntrustedBootstrap(attackerBootstrap)", page)  # 208 fixed
         self.assertIn("InsufficientAttestations", page)  # 208 honest path
@@ -10903,7 +10903,7 @@ class TestChecker(unittest.TestCase):
             ('/patterns/', 'total&nbsp;staked.', 'total staked.', 'total staked.'),
             ('/patterns/', 'slots.&nbsp;Full&nbsp;suite&nbsp;11/11&nbsp;PASS.', 'slots. Full suite 11/11 PASS.', 'slots. Full suite 11/11 PASS.'),
             ('/patterns/', 'H-01&nbsp;duplicate.', 'H-01 duplicate.', 'H-01 duplicate.'),
-            ('/patterns/', 'no-keeper-path&nbsp;defect.', 'no-keeper-path defect.', 'no-keeper-path defect.'),
+            ('/patterns/', 'no&#8209;keeper&#8209;path&nbsp;defect.', 'no-keeper-path defect.', 'no-keeper-path defect.'),
             ('/patterns/', 'shares&nbsp;behind.', 'shares behind.', 'shares behind.'),
             ('/patterns/', 'stale&nbsp;votes.', 'stale votes.', 'stale votes.'),
             ('/patterns/', 'permanently&nbsp;undeliverable.', 'permanently undeliverable.', 'permanently undeliverable.'),
@@ -10930,7 +10930,82 @@ class TestChecker(unittest.TestCase):
                 self.assertEqual(worker.count(old), 0)
                 self.assertIn(bound, pages[page])
                 self.assertNotIn(old, pages[page])
-                decoded = pages[page].replace("&nbsp;", " ")
+                decoded = pages[page].replace("&nbsp;", " ").replace("&#8209;", "-")
+                self.assertIn(plain, decoded)
+    def test_verdict262_severe_short_tails_are_bound(self):
+        # Visual verdict #262 (2026-11-26, checker-improvement):
+        # #259 cleared the strict one-word last lines, but
+        # the #258/#259 probe re-run (probe-textwrap-global.py,
+        # current worker) still counts 52 SEVERE short last
+        # lines at 1919px (frac < 0.20): patterns 32, audit 8,
+        # guides-index 5, research-index 5, plus 2 strict at
+        # 360px (both guides-index long-number tails, a
+        # measurement artifact — the number alone is ~0.5
+        # frac, not a short line). This round binds the
+        # worst 20 minus 2: the two research "(Nov 2026)."
+        # items need a 6-word / ~360px tail to be unique,
+        # which would split mid-word in the ~287px mobile
+        # column, so they stay queued. The 18 tails here
+        # are width-targeted (est1919 >= 220px, est360 <=
+        # 270px), unlike #259's shortest-unique picks: a
+        # 2-word last line bound with one extra word is
+        # still severe, so each tail pulls enough words to
+        # land ~0.25-0.35 frac at desktop and still fit the
+        # narrow column at mobile. Seven of the 18 extend
+        # a #259 binding (the bound pair itself was the
+        # short last line). Wording is unchanged: the new
+        # build.py with &nbsp; read as spaces is
+        # byte-identical to the pre-change one. Two tails
+        # occur twice (same sentence on the detail page),
+        # so those bind only the index occurrence via the
+        # </li> anchor; the detail-page sentence stays
+        # plain. The (k-1)/k tail's minus is U+2212,
+        # JSON-escaped (\\u2212) in worker.js, so the
+        # worker count uses the escaped form; the page
+        # body holds the literal minus. Three tails carry a
+        # non-breaking hyphen (&#8209;, the #260 fix) inside a
+        # compound word that still split at its hyphen —
+        # "no-keeper-path", "pre-existing", and "admin-fee"
+        # (the last sits just before its tail) — so the
+        # decoded-plain check reads &#8209; as a hyphen.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pairs = [
+            ('/patterns/', 'exactly&nbsp;this&nbsp;(playbook&nbsp;step&nbsp;5b).', 'exactly this (playbook step 5b).', 'exactly this (playbook step 5b).'),
+            ('/patterns/', 'same&nbsp;as&nbsp;one&nbsp;in&nbsp;the&nbsp;main&nbsp;file.', 'same as one in the main file.', 'same as one in the main file.'),
+            ('/research/', 'phrase&nbsp;was&nbsp;the&nbsp;line&nbsp;that&nbsp;held.</li>', 'phrase was the line that held.</li>', 'phrase was the line that held.'),
+            ('/patterns/', 'days,&nbsp;recovering&nbsp;only&nbsp;at&nbsp;day&nbsp;30.', 'days, recovering only at&nbsp;day&nbsp;30.', 'days, recovering only at day 30.'),
+            ('/patterns/', 'and&nbsp;inherits&nbsp;all&nbsp;of&nbsp;the&nbsp;above.', 'and inherits all of the above.', 'and inherits all of the above.'),
+            ('/audit/', 'the&nbsp;live-balance&nbsp;dusting&nbsp;grief.', 'the live-balance dusting grief.', 'the live-balance dusting grief.'),
+            ('/guides/', 'of&nbsp;154,782.608692&nbsp;at&nbsp;offset&nbsp;0.</li>', 'of 154,782.608692 at&nbsp;offset&nbsp;0.</li>', 'of 154,782.608692 at offset 0.'),
+            ('/patterns/', 'live&nbsp;signer&nbsp;with&nbsp;two&nbsp;stale&nbsp;votes.', 'live signer with two stale&nbsp;votes.', 'live signer with two stale votes.'),
+            ('/patterns/', 'the&nbsp;entry,&nbsp;not&nbsp;in&nbsp;the&nbsp;pricing.', 'the entry, not in the&nbsp;pricing.', 'the entry, not in the pricing.'),
+            ('/patterns/', 'works.&nbsp;Full&nbsp;suite&nbsp;27/27&nbsp;PASS.', 'works. Full suite 27/27&nbsp;PASS.', 'works. Full suite 27/27 PASS.'),
+            ('/patterns/', 'pre&#8209;existing&nbsp;tests:&nbsp;21/21&nbsp;PASS.', 'pre-existing tests: 21/21 PASS.', 'pre-existing tests: 21/21 PASS.'),
+            ('/patterns/', 'replay&nbsp;is&nbsp;a&nbsp;no&#8209;keeper&#8209;path&nbsp;defect.', 'replay is a no-keeper-path&nbsp;defect.', 'replay is a no-keeper-path defect.'),
+            ('/patterns/', 'exactly&nbsp;(k−1)/k&nbsp;of&nbsp;total&nbsp;staked.', 'exactly (k−1)/k of total&nbsp;staked.', 'exactly (k−1)/k of total staked.'),
+            ('/patterns/', '9.5,&nbsp;next&nbsp;fee&nbsp;11.0,&nbsp;credited&nbsp;9.5.', '9.5, next fee 11.0, credited 9.5.', '9.5, next fee 11.0, credited 9.5.'),
+            ('/patterns/', 'is&nbsp;destroyed,&nbsp;not&nbsp;just&nbsp;skipped.', 'is destroyed, not just&nbsp;skipped.', 'is destroyed, not just skipped.'),
+            ('/patterns/', 'honest&nbsp;executor&nbsp;is&nbsp;still&nbsp;rejected.', 'honest executor is still&nbsp;rejected.', 'honest executor is still rejected.'),
+            ('/audit/', 'admin&#8209;fee share&nbsp;follows&nbsp;the&nbsp;wrong&nbsp;knob.', 'share follows the wrong knob.', 'admin-fee share follows the wrong knob.'),
+            ('/patterns/', 'itself&nbsp;evidence&nbsp;the&nbsp;defect&nbsp;is&nbsp;real.', 'itself evidence the defect is real.', 'itself evidence the defect is real.'),
+        ]
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        self.assertEqual(len(pairs), 18)
+        for page, bound, old, plain in pairs:
+            with self.subTest(page=page, bound=bound):
+                # worker.js JSON-escapes non-ASCII, so the
+                # U+2212 minus tail is counted escaped.
+                wbound = bound.replace("\u2212", "\\u2212")
+                wold = old.replace("\u2212", "\\u2212")
+                self.assertEqual(worker.count(wbound), 1)
+                self.assertEqual(worker.count(wold), 0)
+                self.assertIn(bound, pages[page])
+                self.assertNotIn(old, pages[page])
+                decoded = pages[page].replace("&nbsp;", " ").replace("&#8209;", "-")
                 self.assertIn(plain, decoded)
     def test_verdict256_email_notes_tail_is_bound(self):
         # Visual verdict #256 (2026-11-25, checker-improvement):
