@@ -13116,6 +13116,47 @@ class TestChecker(unittest.TestCase):
             ".back-to-top{margin:1.2em 0 0;text-align:right;font-size:.9em}",
             build.CSS)
 
+    def test_verdict273_long_index_pages_have_back_to_top(self):
+        # Visual verdict #272 item 5 (2026-11-26): /patterns/ is a
+        # 121,531px page at 1919px (199 sections), /guides/ 26,325px,
+        # /research/ 4,662px — and none of them had a way back to the
+        # top, while /audit/ (4,690px, same length class as /research/)
+        # has had one since #195. The same one-line paragraph the
+        # audit page uses now closes each index page, after its filter
+        # script, jumping to body id="top" (which every page carries).
+        # No CSS change: the .back-to-top rule already exists. The
+        # /audit/ form-imbalance claim from the same verdict (#272
+        # item 4) did NOT reproduce headless — desktop inputs are
+        # 896px against a 778px intro, so no layout change there.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        btt = ('<p class="back-to-top"><a href="#top">'
+               'Back to top &uarr;</a></p>')
+        filters = {"/patterns/": 'filterPatterns("");',
+                   "/guides/": "filterGuides('');",
+                   "/research/": "filterResearch('');"}
+        for path, filt in filters.items():
+            body = pages[path]
+            self.assertEqual(body.count(btt), 1, path)
+            # Last element of the page content, after the filter script.
+            self.assertTrue(body.rstrip().endswith(btt), path)
+            self.assertGreater(body.index(btt), body.index(filt), path)
+            self.assertIn(filt, body)
+            page = build.page("T", "D", "K", "<p>x</p>", path)
+            self.assertIn('<body id="top">', page)
+        # /audit/ keeps its single back-to-top (see
+        # test_audit_toc_and_back_to_top); the deployed worker carries
+        # exactly four copies of the paragraph — the three new pages
+        # plus /audit/ — in escaped form.
+        self.assertEqual(pages["/audit/"].count(btt), 1)
+        worker = build.worker_js(pages)
+        self.assertEqual(worker.count(
+            '<p class=\\"back-to-top\\"><a href=\\"#top\\">'
+            'Back to top &uarr;</a></p>'), 4)
+
     def test_verdict208_limits_sit_with_purchase_terms(self):
         # Visual verdict #208 (2026-11-24): "What you do not get"
         # sat below the 41-review track record — h2 at y=4609 of a
