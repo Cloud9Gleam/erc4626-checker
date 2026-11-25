@@ -4930,6 +4930,54 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Pattern 207 has no entry here", page)
         self.assertNotIn('<section id="pattern-207">', page)
 
+    def test_verdict272_patterns_numbering_gaps_explained(self):
+        # Visual verdict #272: the index shows number jumps (37 -> 40,
+        # 185 -> 187) and 37 twice, with the only explanation ~20 screens
+        # down in Count and provenance. The Browse-the-library intro now
+        # states the gaps up front, in the same words as the provenance
+        # paragraph, so a reader never has to scroll to learn the jumps
+        # are deliberate. The gap list must equal the source file's
+        # missing numbers, recomputed here (same method as
+        # test_patterns_gaps_match_source_file). The sentence's tail is
+        # bound (for&nbsp;the&nbsp;full&nbsp;accounting.) so the longer
+        # paragraph does not end on a lone word.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        page = pages["/patterns/"]
+        start = page.find("<h2>Browse the library</h2>")
+        intro = page[start:page.find("</ul>", start)]
+        self.assertIn("199 pattern entries, grouped by source", intro)
+        self.assertIn("Numbers run 1\u2013208, with gaps: 39, 186, 195, "
+                      "198\u2013200, 203, 205 and 206 do not exist in the source",
+                      intro)
+        self.assertIn("37 is used twice for two different entries", intro)
+        self.assertIn("207 has no entry \u2014 it is a title-only clean negative",
+                      intro)
+        self.assertIn("See Count and provenance below "
+                      "for&nbsp;the&nbsp;full&nbsp;accounting.", intro)
+        self.assertNotIn("for the full accounting.", intro)
+        pb = (Path.home() / "workspace/taskmarket/codehawks-prep"
+              / "common-patterns.md").read_text()
+        have = set(int(n) for n in re.findall(r"^## Pattern (\d+)", pb, re.M))
+        missing = set(n for n in range(1, 209) if n not in have)
+        m = re.search(r"with gaps: (.+?) do not exist in the source", intro)
+        self.assertIsNotNone(m, "gaps sentence missing from intro")
+        listed = set()
+        for part in re.split(r",\s*|\s+and\s+", m.group(1)):
+            part = part.strip()
+            if not part:
+                continue
+            if "\u2013" in part or "-" in part:
+                lo, hi = re.split(r"[\u2013-]", part)
+                listed.update(range(int(lo), int(hi) + 1))
+            else:
+                listed.add(int(part))
+        self.assertEqual(listed, missing)
+
     def test_patterns_page_covers_97_to_106(self):
         # 2026-11-22 sync slice: the playbook grew to 199 numbered
         # patterns (1-208 with gaps) while the page still said 96 and
