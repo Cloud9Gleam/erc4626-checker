@@ -5915,6 +5915,63 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".guide-topics{", guides)
         self.assertIn(".guide-topics button[type=button]{", guides)
 
+    def test_verdict227_guide_titles_are_unique(self):
+        # Visual verdict #226 follow-up (2026-11-25): /guides/ carried
+        # two guides under the byte-identical title "ERC-4626 pausable
+        # vaults — the pause stops the exits, not the losses" — the
+        # pausable-vault guide and the pause-vault guide. A visitor
+        # scanning the index could not tell them apart from the title.
+        # Each guide now carries the hook its own body states, and no
+        # two guides in the library share a title.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        guides = [(p, t) for p, t, d, k, b in build.PAGES
+                  if p.startswith("/guides/") and p != "/guides/"]
+        self.assertEqual(len(guides), build.GUIDE_COUNT)
+        titles = [t for _, t in guides]
+        self.assertEqual(len(set(titles)), len(titles))
+        by_path = dict(guides)
+        self.assertEqual(
+            by_path["/guides/erc4626-pausable-vault/"],
+            "ERC-4626 pausable vaults — the frozen price is a stale number")
+        self.assertEqual(
+            by_path["/guides/erc4626-pause-vault/"],
+            "ERC-4626 pausable vaults — the same donation, opposite outcome")
+        self.assertNotIn("ERC-4626 pausable vaults — the pause stops the "
+                         "exits, not the losses", titles)
+        # Both hooks are verbatim lines from their own guide bodies.
+        bodies = dict((p, b) for p, t, d, k, b in build.PAGES)
+        self.assertIn("A frozen price is a stale number",
+                      bodies["/guides/erc4626-pausable-vault/"])
+        self.assertIn("Same donation, same size, opposite outcome",
+                      bodies["/guides/erc4626-pause-vault/"])
+        # The index lists each guide once, in its hardcoded guide-list
+        # item — the list is a literal in the index body, not generated
+        # from the add() data (the add() title feeds the guide's own
+        # page), so the title had to change in both places — and nowhere
+        # under the old title; the guide pages themselves carry the new
+        # title.
+        pages = build.render_all()
+        index = pages["/guides/"]
+        for title in ("ERC-4626 pausable vaults — the frozen price is a "
+                      "stale number",
+                      "ERC-4626 pausable vaults — the same donation, "
+                      "opposite outcome"):
+            self.assertEqual(index.count(title), 1)
+        self.assertNotIn("the pause stops the exits, not the losses", index)
+        for path, title in (
+                ("/guides/erc4626-pausable-vault/",
+                 "ERC-4626 pausable vaults — the frozen price is a stale "
+                 "number"),
+                ("/guides/erc4626-pause-vault/",
+                 "ERC-4626 pausable vaults — the same donation, opposite "
+                 "outcome")):
+            self.assertIn(title, pages[path])
+            self.assertNotIn("the pause stops the exits, not the losses",
+                             pages[path])
+
     def test_thunder_loan_canonical_counts_reconcile(self):
         # Visual verdict #146 (2026-11-21): the /audit/ line said "4
         # findings" and then "6 of 7 canonical High+Medium findings
@@ -8654,8 +8711,8 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(1 * USDC * (0 + 10 ** 6) // 1, 10 ** 12)
 
     def test_pausable_vault_guide_numbers(self):
-        # Guide #52: pausable vault -- the pause stops the exits, not
-        # the losses. Vault 1,000,000 USDC / 1,000,000 shares, price
+        # Guide #52: pausable vault -- the frozen price is a stale
+        # number. Vault 1,000,000 USDC / 1,000,000 shares, price
         # 1.00; Alice holds 100,000 shares. Re-derived here with plain
         # integer / Fraction arithmetic, independent of the model file
         # (site/pause-vault-model.py).
