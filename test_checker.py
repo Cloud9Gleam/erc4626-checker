@@ -8925,6 +8925,72 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(worker.count(bound.replace('"', '\\"')), 2)
         self.assertEqual(worker.count(plain), 0)
 
+    def test_verdict291_table_short_codes_are_one_chip(self):
+        # Visual verdict #287 item 1, table batch (2026-11-26,
+        # checker-improvement): the #291 census found 40 multi-rect
+        # <code> chips in the /research/patterns/ full-index table
+        # (10 at 1919px, 40 at 360px, of 133 codes, all in the Smell
+        # column). Only 6 fit the column at both viewports -- whole-
+        # code width <= ~200px at 360px against a 204px column, and
+        # <= ~210px at 1919px against a 520px column -- so only
+        # those 6 are nowrap. The other 34 are long expressions
+        # (24-77 chars, up to 714px whole-code width) that would
+        # widen the table if made nowrap; they keep wrapping, which
+        # is legitimate typography for long code. The census numbers
+        # live in measure-verdict291.py; the 34 are NOT a defect.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        research = pages["/research/patterns/"]
+        # (pattern number, code text, worker escaped-bound count,
+        #  worker plain count) -- the worker counts pin the
+        # composition: plain occurrences live in /patterns/ prose
+        # and research articles, deliberately untouched here.
+        targets = [
+            (46, "require(!verify(...))", 1, 1),
+            (51, "_disableInitializers()", 1, 4),
+            (52, "tx.origin == owner", 3, 0),
+            (57, "IERC20 usdc", 1, 1),
+            (60, "approveAndCall", 1, 1),
+            (66, "EnumerableSet.remove()", 1, 1),
+        ]
+        worker = build.worker_js(pages)
+        for row, text, wbound, wplain in targets:
+            bound = '<code class="nowrap">%s</code>' % text
+            plain = "<code>%s</code>" % text
+            # The table row is bound, once, with the sentence intact.
+            self.assertEqual(research.count(bound), 1, text)
+            self.assertNotIn(plain, research, text)
+            self.assertIn("<tr><td>%d</td>" % row, research)
+            # Worker (memory build): JSON-escaped bound forms, and
+            # the plain count is exactly the untouched prose count.
+            self.assertEqual(
+                worker.count(bound.replace('"', '\\"')), wbound, text)
+            self.assertEqual(worker.count(plain), wplain, text)
+        # Row sentences intact around the bound chips.
+        self.assertIn(
+            "<td>Mechanism: a claim gate wraps a library verification "
+            "call with a negation (<code class=\"nowrap\">"
+            "require(!verify(...))</code>).</td>", research)
+        self.assertIn(
+            "on <code class=\"nowrap\">tx.origin == owner</code> (",
+            research)
+        # The Pattern 5 chip stays bound (#288/#290), and the table
+        # still has 77 data rows in its scrolling wrapper.
+        self.assertEqual(
+            research.count(
+                '<code class="nowrap">delete s_...[token]</code>'), 1)
+        self.assertEqual(research.count("<tr><td>"), 77)
+        self.assertIn(".twrap{overflow-x:auto", build.CSS)
+        # The long codes that must keep wrapping are still plain:
+        # a 77-char expression must not have been swept into nowrap.
+        self.assertIn(
+            "<code>MESSAGE_TYPEHASH = keccak256(&quot;", research)
+        self.assertNotIn(
+            '<code class="nowrap">MESSAGE_TYPEHASH', research)
+
     def test_verdict289_short_code_chips_are_nowrap(self):
         # Visual verdict #287 item 1, batch (2026-11-26,
         # checker-improvement): #288 fixed one short code chip
