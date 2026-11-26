@@ -9180,9 +9180,9 @@ class TestChecker(unittest.TestCase):
         # link fails here.
         from pathlib import Path
         guide_count = len([d for d in (Path.home() / "workspace/taskmarket/site" / "guides").iterdir() if d.is_dir()])
-        for fact in (f'<a href="/guides/"><strong>{guide_count}<span class="hero-stat-arrow" aria-hidden="true">&nearr;</span></strong> <span class="hero-stat-label">guides</span></a>',
-                     '<a href="/checker/"><strong>6<span class="hero-stat-arrow" aria-hidden="true">&nearr;</span></strong> <span class="hero-stat-label">checks per run</span></a>',
-                     '<a href="/checker/"><strong>$0<span class="hero-stat-arrow" aria-hidden="true">&nearr;</span></strong> <span class="hero-stat-label">to run the checker</span></a>'):
+        for fact in (f'<a href="/guides/"><strong>{guide_count}<span class="hero-stat-arrow" aria-hidden="true">&rarr;</span></strong> <span class="hero-stat-label">guides</span></a>',
+                     '<a href="/checker/"><strong>6<span class="hero-stat-arrow" aria-hidden="true">&rarr;</span></strong> <span class="hero-stat-label">checks per run</span></a>',
+                     '<a href="/checker/"><strong>$0<span class="hero-stat-arrow" aria-hidden="true">&rarr;</span></strong> <span class="hero-stat-label">to run the checker</span></a>'):
             self.assertIn(fact, hero)
 
     def test_hero_guide_count_is_derived_at_build_time(self):
@@ -9207,7 +9207,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(build.GUIDE_COUNT, len(guide_pages))
         home = pages["/"]
         self.assertIn(
-            f'<a href="/guides/"><strong>{build.GUIDE_COUNT}<span class="hero-stat-arrow" aria-hidden="true">&nearr;</span></strong> <span class="hero-stat-label">guides</span></a>',
+            f'<a href="/guides/"><strong>{build.GUIDE_COUNT}<span class="hero-stat-arrow" aria-hidden="true">&rarr;</span></strong> <span class="hero-stat-label">guides</span></a>',
             home)
         self.assertNotIn("exact-integer worked examples</a>", home)
         index = pages["/guides/"]
@@ -9235,11 +9235,11 @@ class TestChecker(unittest.TestCase):
         strip = home[start:end]
         self.assertEqual(strip.count("<a href="), 3)
         guides = strip.index('<a href="/guides/">')
-        checks = strip.index('<a href="/checker/"><strong>6<span class="hero-stat-arrow" aria-hidden="true">&nearr;</span></strong>')
-        free = strip.index('<a href="/checker/"><strong>$0<span class="hero-stat-arrow" aria-hidden="true">&nearr;</span></strong>')
+        checks = strip.index('<a href="/checker/"><strong>6<span class="hero-stat-arrow" aria-hidden="true">&rarr;</span></strong>')
+        free = strip.index('<a href="/checker/"><strong>$0<span class="hero-stat-arrow" aria-hidden="true">&rarr;</span></strong>')
         self.assertLess(guides, checks)
         self.assertLess(checks, free)
-        self.assertIn(f'<strong>{build.GUIDE_COUNT}<span class="hero-stat-arrow" aria-hidden="true">&nearr;</span></strong> <span class="hero-stat-label">guides</span></a>',
+        self.assertIn(f'<strong>{build.GUIDE_COUNT}<span class="hero-stat-arrow" aria-hidden="true">&rarr;</span></strong> <span class="hero-stat-label">guides</span></a>',
                       strip)
         # The CTA above the strip keeps its own button rule — the
         # underline rule is scoped to .hero-stats .hero-stat-label.
@@ -9275,7 +9275,7 @@ class TestChecker(unittest.TestCase):
                            ("6", "checks per run"),
                            ("$0", "to run the checker")):
             self.assertIn(
-                f"<strong>{num}<span class=\"hero-stat-arrow\" aria-hidden=\"true\">&nearr;</span></strong> "
+                f"<strong>{num}<span class=\"hero-stat-arrow\" aria-hidden=\"true\">&rarr;</span></strong> "
                 f'<span class="hero-stat-label">{label}</span></a>',
                 strip)
 
@@ -9326,7 +9326,7 @@ class TestChecker(unittest.TestCase):
                            ("6", "checks per run"),
                            ("$0", "to run the checker")):
             self.assertIn(
-                f"<strong>{num}<span class=\"hero-stat-arrow\" aria-hidden=\"true\">&nearr;</span></strong> "
+                f"<strong>{num}<span class=\"hero-stat-arrow\" aria-hidden=\"true\">&rarr;</span></strong> "
                 f'<span class="hero-stat-label">{label}</span></a>',
                 home)
 
@@ -9340,13 +9340,20 @@ class TestChecker(unittest.TestCase):
         # the always-on underline so the strip reads as a scoreboard
         # (#278), and #202 needs the strip to read as links — the
         # synthesis is a third signal, not a rollback of either: a
-        # small muted arrow (U+2197) tucked after each number, inside
+        # small muted arrow (U+2192, right arrow) tucked after each
+        # number, inside
         # the strong so it rides the number line (strong is
         # display:block; a sibling span would drop to the label
         # line). No underline is added anywhere — the #239 number
         # invariant and the #281 label invariant both stand — and
         # the arrow is aria-hidden, so the link text is still just
-        # number + label.
+        # number + label. #314 (2026-11-27, visual verdict): the
+        # arrow was U+2197 (NE arrow), which reads as an external
+        # link — the site's only external-link glyph — while all
+        # three links are internal. It is now U+2192, the same
+        # glyph the nav CTA, hero CTA and card links use for
+        # internal links, so the strip reads as internal
+        # navigation. Glyph only; the #202/#281 synthesis stands.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -9363,22 +9370,47 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("text-decoration", label_rule)
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertEqual(home.count('class="hero-stat-arrow"'), 3)
-        self.assertEqual(home.count("&nearr;"), 3)
         start = home.index('<p class="hero-stats">')
         end = home.index("</p>", start)
         strip = home[start:end]
-        self.assertEqual(strip.count('aria-hidden="true">&nearr;</span></strong>'), 3)
+        # #314: &rarr; is also the hero CTA / card-link glyph, so the
+        # count is scoped to the strip, not the whole home page.
+        self.assertEqual(strip.count("&rarr;"), 3)
+        self.assertEqual(strip.count("&nearr;"), 0)
+        self.assertEqual(strip.count('aria-hidden="true">&rarr;</span></strong>'), 3)
         for num, label in ((str(build.GUIDE_COUNT), "guides"),
                            ("6", "checks per run"),
                            ("$0", "to run the checker")):
             self.assertIn(
-                f"<strong>{num}<span class=\"hero-stat-arrow\" aria-hidden=\"true\">&nearr;</span></strong> "
+                f"<strong>{num}<span class=\"hero-stat-arrow\" aria-hidden=\"true\">&rarr;</span></strong> "
                 f'<span class="hero-stat-label">{label}</span></a>',
                 strip)
         self.assertLess(strip.index("guides</span></a>"),
                         strip.index("checks per run</span></a>"))
         self.assertLess(strip.index("checks per run</span></a>"),
                         strip.index("to run the checker</span></a>"))
+
+    def test_verdict314_hero_stat_arrow_points_right_not_out(self):
+        # Visual verdict #314 (2026-11-27, checker-improvement):
+        # the #305 NE arrow (U+2197) read as an external link while
+        # all three stat links are internal. The arrow is now U+2192
+        # (right arrow) — the same entity the nav CTA, hero CTA and
+        # card links use for internal links. Pin the direction, pin
+        # that no NE arrow survives anywhere on the home strip, and
+        # pin that the strip arrow matches the hero CTA's glyph, so
+        # the two can never drift apart again.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        start = home.index('<p class="hero-stats">')
+        end = home.index("</p>", start)
+        strip = home[start:end]
+        self.assertEqual(strip.count("&rarr;"), 3)
+        self.assertEqual(strip.count("&nearr;"), 0)
+        self.assertIn('Run the free checker &rarr;', home)
+        self.assertIn('Run the checker &rarr;', home)
 
     def test_verdict282_pattern84_exponent_renders_literally(self):
         # Visual verdict #282 item 1 (2026-11-26, checker-improvement):
@@ -31069,7 +31101,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #202: the guide-count stat links to /guides/.
         # Visual verdict #305 (2026-11-26): the number now carries
         # the link arrow inside the strong.
-        self.assertIn(f'<a href="/guides/"><strong>{guide_count}<span class="hero-stat-arrow" aria-hidden="true">&nearr;</span></strong> <span class="hero-stat-label">guides</span></a>',
+        self.assertIn(f'<a href="/guides/"><strong>{guide_count}<span class="hero-stat-arrow" aria-hidden="true">&rarr;</span></strong> <span class="hero-stat-label">guides</span></a>',
                       home)
         for num in ("5,000.000000", "40,000.000000", "3,333,333,333",
                     "2,500.000000", "9,999,999,999", "10,000 USDC"):
