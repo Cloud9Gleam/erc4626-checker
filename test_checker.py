@@ -1342,7 +1342,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #119 item 2 (2026-11-19): the result banner
         # sits below the form, so a visitor arriving on
         # /checker/?preset=noprot sees the form first and must scroll
-        # to learn the verdict. A one-line strip above the form must
+        # to learn the verdict. A two-line strip above the form must
         # carry the same verdict and link down to the full results.
         # The Worker JS renderer carries the same strip; it is verified
         # by the verdict-strip node harness, not by this suite.
@@ -1379,7 +1379,7 @@ class TestChecker(unittest.TestCase):
         # "1,000,000 USDC donation" across lines, so the donation phrase
         # rides in a nowrap span (same span in the JS lossSentenceShort).
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
-                      "victim loses 0.909091 USDC", failed)
+                      "victim loses <strong>0.909091</strong> USDC", failed)
         custom = build.verdict_strip_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
                     victim_deposit=1_000_000_000), vic=1_000_000_000)
@@ -1388,7 +1388,7 @@ class TestChecker(unittest.TestCase):
         # lives in the Parameters line, and the banner no longer
         # re-words it either (visual verdict #159 (c), 2026-11-23).
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
-                      "victim loses 0.999001 USDC", custom)
+                      "victim loses <strong>0.999001</strong> USDC", custom)
         self.assertNotIn("1,000 USDC deposit loses", custom)
         # Visual verdict #167 (2026-11-24): the FAIL sentence uses the
         # same six-decimal form as the table — a worst loss of 99,890
@@ -1396,7 +1396,7 @@ class TestChecker(unittest.TestCase):
         synthetic = [{"name": "donation_inflation", "pass": False,
                       "detail": [{"donation": 1_000_000_000_000,
                                   "victim_loss": 99890}]}]
-        self.assertIn("victim loses 0.099890 USDC",
+        self.assertIn("victim loses <strong>0.099890</strong> USDC",
                       build.verdict_strip_html(synthetic))
         # Visual verdict #124 (g) (2026-11-20): a bare "&darr;" at the
         # end read as expand / decoration / jump-to-the-failed-item.
@@ -1470,7 +1470,7 @@ class TestChecker(unittest.TestCase):
         # so a first-time visitor need not scroll to the donation
         # card to learn why 0.000900 passes.
         self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
-                      "worst loss 0.000900 of 0.001 USDC", passed)
+                      "worst loss <strong>0.000900</strong> of 0.001 USDC", passed)
         self.assertNotIn("victim loses", passed)
         # Visual verdict #284 (2026-11-26): a zero-loss run used to
         # stay bare — offset 18 loses nothing on any donation row, so
@@ -1485,10 +1485,24 @@ class TestChecker(unittest.TestCase):
         zero = build.verdict_strip_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
-        self.assertIn("Result: ALL PASS", zero)
+        self.assertIn('<span class="verdict-strip__verdict">✓ ALL PASS</span>', zero)
         self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
-                      "worst loss 0.000000 of 0.001 USDC", zero)
+                      "worst loss <strong>0.000000</strong> of 0.001 USDC", zero)
         self.assertNotIn("victim loses", zero)
+        # Visual verdict #320 (2026-11-27): the strip is two lines
+        # now — line 1 the verdict alone at 1.65em with an icon,
+        # line 2 the detail sentence with the worst-loss number in
+        # <strong>. "Result:" is gone; the verdict line is the
+        # result. The FAIL strip has the same shape.
+        self.assertIn('<span class="verdict-strip__verdict">✓ ALL PASS</span>',
+                      passed)
+        self.assertIn('<span class="verdict-strip__detail">', passed)
+        self.assertLess(passed.index("verdict-strip__verdict"),
+                        passed.index("verdict-strip__detail"))
+        self.assertNotIn("Result: ALL PASS", passed)
+        self.assertNotIn("Result: SOME FAILED", failed)
+        self.assertIn('<span class="verdict-strip__verdict">✕ SOME FAILED</span>',
+                      failed)
 
     def test_verdict284_zero_loss_strip_carries_measured_zero(self):
         # Visual verdict #284 (2026-11-26): the offset-18 strip was
@@ -1550,10 +1564,11 @@ class TestChecker(unittest.TestCase):
                                          1_000_000_000_000_000)]}]
         self.assertIn(
             "<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
-            "worst loss 0.000000 of 0.001 USDC",
+            "worst loss <strong>0.000000</strong> of 0.001 USDC",
             build.verdict_strip_html(allzero))
         bare = build.verdict_strip_html(errored)
-        self.assertIn("Result: ALL PASS", bare)
+        self.assertIn('<span class="verdict-strip__verdict">✓ ALL PASS</span>',
+                      bare)
         self.assertNotIn("worst loss", bare)
         self.assertNotIn("donation:", bare)
 
@@ -1582,12 +1597,12 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)))
         self.assertIn(
             "<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
-            "worst loss 0.000900 of 0.001 USDC", passed)
+            "worst loss <strong>0.000900</strong> of 0.001 USDC", passed)
         self.assertNotIn("victim loses", passed)
         zero = build.verdict_strip_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
-        self.assertIn("worst loss 0.000000 of 0.001 USDC", zero)
+        self.assertIn("worst loss <strong>0.000000</strong> of 0.001 USDC", zero)
         # A tiny victim binds the relative bound instead: a 0.5 USDC
         # victim's 0.1% is 0.0005 USDC, below the 0.001 absolute.
         allzero = [{"name": "donation_inflation", "pass": True,
@@ -1595,16 +1610,16 @@ class TestChecker(unittest.TestCase):
                                for d in (1_000_000, 1_000_000_000,
                                          1_000_000_000_000,
                                          1_000_000_000_000_000)]}]
-        self.assertIn("worst loss 0.000000 of 0.0005 USDC",
+        self.assertIn("worst loss <strong>0.000000</strong> of 0.0005 USDC",
                       build.verdict_strip_html(allzero, vic=500_000))
         # A 1 USDC victim sits exactly on the switch: 0.1% is 0.001.
-        self.assertIn("worst loss 0.000000 of 0.001 USDC",
+        self.assertIn("worst loss <strong>0.000000</strong> of 0.001 USDC",
                       build.verdict_strip_html(allzero, vic=1_000_000))
         # The FAIL strip carries no bound.
         failed = build.verdict_strip_html(
             run_all(Vault(decimals_offset=0, min_deposit=1_000_000,
                           perf_fee_bps=0)))
-        self.assertIn("victim loses 0.909091 USDC", failed)
+        self.assertIn("victim loses <strong>0.909091</strong> USDC", failed)
         self.assertNotIn("of 0.001", failed)
         # The Worker JS renderer computes the same effective bound.
         worker = build.worker_js(
@@ -1636,7 +1651,9 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("loses", failed)
         self.assertNotIn("donation:", failed)
         body = build.checker_body()
-        self.assertEqual(body.count("verdict-strip"), 1)
+        # The verdict and detail spans share the "verdict-strip"
+        # prefix, so count the strip element itself, not the substring.
+        self.assertEqual(body.count('<p class="verdict-strip '), 1)
         self.assertLess(body.index("verdict-strip"),
                         body.index('<form id="checker-form"'))
         self.assertIn("ALL PASS", body)
@@ -1665,9 +1682,10 @@ class TestChecker(unittest.TestCase):
         # Measured loss: strip is verdict + short loss sentence only
         # (no victim-deposit clause — the deposit size lives in the
         # Parameters line).
-        self.assertIn("Result: SOME FAILED", strip)
+        self.assertIn('<span class="verdict-strip__verdict">✕ SOME FAILED</span>',
+                      strip)
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
-                      "victim loses 0.909091 USDC", strip)
+                      "victim loses <strong>0.909091</strong> USDC", strip)
         self.assertNotIn("100,000 USDC deposit loses", strip)
         self.assertNotIn("1 of 6 failed", strip)
         self.assertNotIn("Donation inflation", strip)
@@ -1690,7 +1708,8 @@ class TestChecker(unittest.TestCase):
         errored = run_all(Vault(decimals_offset=0, min_deposit=10**15,
                                 perf_fee_bps=0))
         estrip = build.verdict_strip_html(errored)
-        self.assertIn("Result: SOME FAILED", estrip)
+        self.assertIn('<span class="verdict-strip__verdict">✕ SOME FAILED</span>',
+                      estrip)
         self.assertIn("2 of 6 failed: Donation inflation, Minimum viable "
                       "deposit", estrip)
         self.assertNotIn("loses", estrip)
@@ -1700,7 +1719,8 @@ class TestChecker(unittest.TestCase):
         passed = run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                                perf_fee_bps=1000))
         pstrip = build.verdict_strip_html(passed)
-        self.assertIn("Result: ALL PASS", pstrip)
+        self.assertIn('<span class="verdict-strip__verdict">✓ ALL PASS</span>',
+                      pstrip)
         self.assertNotIn("6 of 6 checks passed", pstrip)
         phtml = build.results_html(passed, vic=100_000_000_000,
                                    off=6, mn=1_000_000, fee=1000)
@@ -1728,7 +1748,7 @@ class TestChecker(unittest.TestCase):
         results = run_all(Vault(decimals_offset=0, min_deposit=0,
                                 perf_fee_bps=0))
         strip = build.verdict_strip_html(results)
-        self.assertIn("victim loses 0.909091 USDC", strip)
+        self.assertIn("victim loses <strong>0.909091</strong> USDC", strip)
         self.assertNotIn("deposit loses", strip)
         html = build.results_html(results, vic=100_000_000_000,
                                   off=0, mn=0, fee=0)
@@ -1738,7 +1758,7 @@ class TestChecker(unittest.TestCase):
         # in the banner: the banner is a heading now.
         self.assertIn("1,000,000 USDC donation", strip)
         self.assertNotIn("1,000,000 USDC donation", banner)
-        self.assertIn("0.909091 USDC", strip)
+        self.assertIn("0.909091</strong> USDC", strip)
         self.assertNotIn("0.909091 USDC", banner)
 
     def test_results_banner_no_longer_carries_loss_sentence(self):
@@ -1783,7 +1803,7 @@ class TestChecker(unittest.TestCase):
         strip = build.verdict_strip_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
-                      "victim loses 0.909091 USDC", strip)
+                      "victim loses <strong>0.909091</strong> USDC", strip)
         self.assertNotIn("100,000 USDC deposit loses", strip)
         self.assertIn("0.909091", failed)
         # A custom victim deposit no longer re-words the banner —
@@ -2036,7 +2056,7 @@ class TestChecker(unittest.TestCase):
     def test_result_notice_does_not_restate_verdict(self):
         # Visual verdict 17:07 follow-up (2026-11-22,
         # checker-improvement): on the live checker page the verdict
-        # was stated three times — strip ("Result: SOME FAILED."),
+        # was stated three times — strip ("✕ SOME FAILED"),
         # banner ("Result: SOME FAILED — 1 of 6 failed ..."), and the
         # "What to do next" notice ("A check failed." / "This preset
         # passes the model."). The strip has a pinned reason to stay
@@ -2972,9 +2992,21 @@ class TestChecker(unittest.TestCase):
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
+        # Visual verdict #320 (2026-11-27): the base is no longer
+        # bold — the verdict span and the <strong> number carry the
+        # weight. The strip is two lines: the verdict at 1.65em
+        # (~28px) on its own line, the detail at body size below.
         self.assertIn(
-            ".verdict-strip{font-weight:700;border-radius:8px;"
+            ".verdict-strip{border-radius:8px;"
             "padding:.6em 1em;margin:0 0 1em;max-width:none}",
+            build.CSS)
+        self.assertIn(
+            ".verdict-strip__verdict{display:block;font-size:1.65em;"
+            "font-weight:700;line-height:1.25}",
+            build.CSS)
+        self.assertIn(
+            ".verdict-strip__detail{display:block;margin-top:.35em;"
+            "font-weight:400}",
             build.CSS)
         self.assertIn("main p{max-width:80ch}", build.CSS)
 
