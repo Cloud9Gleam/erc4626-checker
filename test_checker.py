@@ -5075,10 +5075,15 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn('Then pay to the address below', box)
         # The Start form repeats the three steps at its top, before
         # the first field, in the same order and amounts.
+        # Checker-improvement #319 (2026-11-27, visual verdict #318
+        # item 2): step 2 now signposts the address -- it sits in the
+        # form's own "After you pay" block below, so a visitor filling
+        # the form is never asked for a hash before seeing where to pay.
         self.assertIn(
             '<p class="audit-steps">How it works: <strong>1.</strong> '
             'Email first to confirm the scope fits. <strong>2.</strong> '
-            'Pay 50 USDC on Base. <strong>3.</strong> Paste the payment '
+            'Pay 50 USDC on Base (address below, under '
+            "'After you pay'). <strong>3.</strong> Paste the payment "
             'transaction hash below. The 72-hour clock starts when the '
             'payment is confirmed.</p>',
             build.AUDIT_FORM)
@@ -5160,11 +5165,14 @@ class TestChecker(unittest.TestCase):
         self.assertIn('0xD07C76fa47C99C70917b6Db2E9215844f0b9dC64', box)
         self.assertIn('Double-check the address before sending', box)
         self.assertIn('<figure class="pay-qr">', audit)
-        # The form's own repeat is unchanged and still first in the form.
+        # The form's own repeat is still first in the form; only its
+        # step 2 changed (#319: it now signposts the address in the
+        # form's "After you pay" block below).
         self.assertIn(
             '<p class="audit-steps">How it works: <strong>1.</strong> '
             'Email first to confirm the scope fits. <strong>2.</strong> '
-            'Pay 50 USDC on Base. <strong>3.</strong> Paste the payment '
+            'Pay 50 USDC on Base (address below, under '
+            "'After you pay'). <strong>3.</strong> Paste the payment "
             'transaction hash below. The 72-hour clock starts when the '
             'payment is confirmed.</p>',
             build.AUDIT_FORM)
@@ -5181,6 +5189,80 @@ class TestChecker(unittest.TestCase):
                         worker.index('class=\\"pay-box\\"'))
         self.assertIn('Start form above', worker)
         self.assertNotIn('Start form below', worker)
+
+    def test_verdict319_audit_after_pay_block(self):
+        # Checker-improvement #319 (2026-11-27, visual verdict #318
+        # item 2): the Start form asked for the payment transaction
+        # hash before the visitor had seen the payment address -- the
+        # address lived only in the pay-box ~600px below the form
+        # (baseline measure-verdict319.py: 1919px gap 593.8px, 360px
+        # 713.7px). The form now carries its own "After you pay"
+        # block directly above the hash field, with the full address,
+        # a Copy button, and a link to the full payment details.
+        # The order is NOT flipped back (#299 stands: the form still
+        # precedes the pay-box, Email first still reads first).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        form = build.AUDIT_FORM
+        # The block sits between the email field and the hash field.
+        self.assertIn('<p class="audit-after-pay"><strong>After you pay</strong>',
+                      form)
+        self.assertLess(form.index('id="audit-email"'),
+                        form.index('class="audit-after-pay"'))
+        self.assertLess(form.index('class="audit-after-pay"'),
+                        form.index('id="audit-txhash"'))
+        # The address is a placeholder in the form source and the full
+        # address in the built page -- same PAY_ADDR constant as the
+        # pay-box, so the two can never drift; no placeholder leaks.
+        self.assertIn('{PAY_ADDR}', form)
+        self.assertNotIn('{PAY_ADDR}', audit)
+        block = audit[audit.index('class="audit-after-pay"'):]
+        block = block[:block.index('</p>')]
+        self.assertIn(build.PAY_ADDR, block)
+        self.assertNotIn(build.PAY_ADDR_SHORT, block)
+        # Copy button reuses copyPayAddr; the status span is the form's
+        # own; the link points at the full payment details below.
+        self.assertIn('onclick="copyPayAddr(this)">Copy address</button>', block)
+        self.assertIn('<span id="audit-pay-copy-status" role="status"></span>',
+                      block)
+        self.assertIn('<a href="#price">Price and payment</a>', block)
+        self.assertIn('50 USDC on Base', block)
+        # The form's address is the full 42 chars, never shortened
+        # (#230: no shortened display anywhere on the page).
+        self.assertIn('<code id="audit-pay-addr">' + build.PAY_ADDR + '</code>',
+                      block)
+        # copyPayAddr reports into both status spans.
+        self.assertIn(
+            "var m2=document.getElementById('audit-pay-copy-status');", audit)
+        self.assertIn(
+            "var setPayStatus=function(t){if(m)m.textContent=t;"
+            "if(m2)m2.textContent=t;};", audit)
+        self.assertIn(
+            "var done=function(){setPayStatus('Payment address copied.');};",
+            audit)
+        # The pay-box is untouched: still one address row, QR, note.
+        self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
+                      audit)
+        self.assertEqual(audit.count('<figure class="pay-qr">'), 1)
+        # CSS: green callout like .audit-steps; the button override
+        # beats "#audit-order button" (display:block;width:100%).
+        self.assertIn('.audit-after-pay{background:#f0fdf4;border:1px solid #bbe0c6',
+                      build.CSS)
+        self.assertIn('#audit-order .audit-after-pay button{display:inline-block;width:auto;',
+                      build.CSS)
+        self.assertIn('#audit-order .audit-after-pay button:hover{background:#086623}',
+                      build.CSS)
+        # Worker copy: block, placeholder substituted, dual status.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('class=\\"audit-after-pay\\"', worker)
+        self.assertIn(build.PAY_ADDR, worker)
+        self.assertNotIn('{PAY_ADDR}', worker)
+        self.assertIn('audit-pay-copy-status', worker)
 
     def test_audit_pay_address_shown_in_full_by_default(self):
         # Visual verdict #110 (2026-11-19): the 42-char address was
