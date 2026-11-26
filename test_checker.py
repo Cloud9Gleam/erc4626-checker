@@ -11310,12 +11310,43 @@ class TestChecker(unittest.TestCase):
         import build
         self.assertIn(
             "code{background:#f3f4f6;padding:.1em .25em;"
-            "border-radius:5px;font-size:.9em;overflow-wrap:anywhere}",
+            "border-radius:5px;font-size:.9em;overflow-wrap:anywhere;"
+            "-webkit-box-decoration-break:clone;box-decoration-break:clone}",
             build.CSS)
         self.assertNotIn("padding:.15em .4em", build.CSS)
         self.assertIn("pre code{background:none;color:inherit;padding:0}",
                       build.CSS)
         self.assertIn(".pay-box code{background:#fff}", build.CSS)
+
+
+    def test_verdict283_code_chips_clone_on_wrap(self):
+        # Visual verdict #283 (2026-11-26, checker-improvement): #282
+        # measured 57 inline <code> spans wrapping to 2+ lines at
+        # 1919px (140 at 360px), all box-decoration-break:slice -- the
+        # grey chip tore mid-phrase, continuation fragments losing both
+        # side paddings. clone gives every fragment its own full
+        # padding + radius, so a split reads as two tidy chips; wrapping
+        # itself is unchanged (same line breaks, same text). Pixel proof
+        # in hidden_files/measure-verdict283.py (continuation-fragment
+        # left edge sits one side-padding left of its text, 1919 + 360).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        rule = ("code{background:#f3f4f6;padding:.1em .25em;"
+                "border-radius:5px;font-size:.9em;overflow-wrap:anywhere;"
+                "-webkit-box-decoration-break:clone;box-decoration-break:clone}")
+        self.assertIn(rule, build.CSS)
+        # Exactly one grey-fill chip rule: the `pre code` (background:none)
+        # and `.pay-box code` (background:#fff) overrides share the
+        # "code{background:" prefix, so count the fill, not the prefix.
+        self.assertEqual(build.CSS.count("code{background:#f3f4f6"), 1)
+        # The prefixed form comes first so the standard form wins.
+        self.assertLess(rule.index("-webkit-box-decoration-break"),
+                        rule.index("box-decoration-break:clone}"))
+        # pre code still strips its own background/padding (unaffected).
+        self.assertIn("pre code{background:none;color:inherit;padding:0}",
+                      build.CSS)
 
     def test_verdict258_global_text_wrap_is_mixed(self):
         # Visual verdict #258 (2026-11-26, checker-improvement): the
