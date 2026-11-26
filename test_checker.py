@@ -27006,7 +27006,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             '<li>No guaranteed findings.</li>', build_text)
         self.assertIn(
-            '<li>Findings, or a clean negative.</li>', build_text)
+            '<li>Every review ends with findings, or a clean '
+            'negative.</li>', build_text)
+        self.assertNotIn('<li>Findings, or a clean negative.</li>',
+                         build_text)
         # Visual verdict #181 (2026-11-24, checker-improvement):
         # the two 4-line first bullets are trimmed to 3 lines each
         # (Paid drops "the request is composed for you" — the
@@ -27026,9 +27029,18 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             'Six checks run on your parameters — the donation '
             'check shows the next depositor\'s&nbsp;loss.', build_text)
+        # Visual verdict #301 (2026-11-26, checker-improvement):
+        # the Research card's last bullet was a fragment, so it is
+        # now a complete sentence; bullet 1 is trimmed one line in
+        # the same round to keep the #181 14/14/14 balance (see
+        # test_verdict301_research_card_last_bullet_is_a_sentence
+        # below). "The attacks" are the ones the checks defend
+        # against, per the card and the linked guides index.
         self.assertIn(
-            'Guides</a> explain the attacks these checks defend '
-            'against, with exact numbers.', build_text)
+            'Guides</a> explain the attacks, with exact numbers.',
+            build_text)
+        self.assertNotIn('explain the attacks these checks defend '
+                         'against, with exact numbers.', build_text)
         self.assertNotIn('See a sample report on the audit page first',
                          build_text)
         self.assertIn(
@@ -27040,6 +27052,52 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             '<p class="card-link"><a href="/research/">'
             'Browse the research &rarr;</a></p>', build_text)
+
+    def test_verdict301_research_card_last_bullet_is_a_sentence(self):
+        # Visual verdict #299 item 5 (2026-11-24, real browser;
+        # fixed 2026-11-26, checker-improvement): the home Research
+        # card's last bullet was a fragment — "Findings, or a clean
+        # negative." — with no subject and no verb. It now reads
+        # "Every review ends with findings, or a clean negative.",
+        # a complete sentence that restates the page's own copy
+        # ("A clean negative is reported as a clean negative.").
+        # The replacement renders as 2 lines at 1919px where the
+        # fragment was 1 (probe: hidden_files/
+        # probe-verdict301-candidates.py — even the shortest honest
+        # sentence, 35 chars, wraps, because the card's line
+        # capacity is ~30 chars), so bullet 1 is trimmed one line
+        # in the same round to keep the #181 balance: "Guides
+        # explain the attacks these checks defend against, with
+        # exact numbers." (3 lines) -> "Guides explain the attacks,
+        # with exact numbers." (2 lines, still a complete
+        # sentence). Measured after (hidden_files/
+        # measure-verdict301.py): Research stays 14 lines at
+        # 1919px and 13 at 360px, all three cards 550.4px with
+        # link tops spread 0.0; the P3 pairing (trim bullet 3 by
+        # dropping "the") did not save a line and was rejected.
+        # Layout is pinned by measure-verdict301.py and the
+        # verdict301-research-bullet harness; this test pins the
+        # strings in build.py.
+        from pathlib import Path
+        build_text = (Path.home() / "workspace/taskmarket/site"
+                      / "build.py").read_text()
+        self.assertIn(
+            '<li>Every review ends with findings, or a clean '
+            'negative.</li>', build_text)
+        self.assertNotIn('<li>Findings, or a clean negative.</li>',
+                         build_text)
+        self.assertIn(
+            'Guides</a> explain the attacks, with exact numbers.',
+            build_text)
+        self.assertNotIn('explain the attacks these checks defend '
+                         'against, with exact numbers.', build_text)
+        # All four Research bullets are complete sentences now:
+        # each ends with a period and carries a verb.
+        self.assertIn('New here? The <a href="/guides/'
+                      'how-to-use-the-erc4626-checker/">how-to guide'
+                      '</a> walks through a run.', build_text)
+        self.assertIn('<li>New guides appear as the research grows.'
+                      '</li>', build_text)
 
     def test_verdict183_orphan_words_are_kept_together(self):
         # Visual verdict #183 (2026-11-24, checker-improvement):
