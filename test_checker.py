@@ -8789,6 +8789,33 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(page.count("<strong>Smell:</strong>"), 199)
         self.assertEqual(page.count("<strong>Check:</strong>"), 199)
 
+    def test_verdict287_pattern3_slot_k_is_bound(self):
+        # Visual verdict #286 item 2 (2026-11-26, checker-improvement):
+        # Pattern 3's Check text ended a line with the single letter
+        # "k" ("... at slot k / shifts ...") -- a real-browser
+        # measurement put k at the line end with only 33-38px of
+        # column left. Headless does NOT reproduce it (narrower font
+        # metrics leave k mid-line, 163px gap), so the line-end
+        # judgement rests on the real browser, not on this test.
+        # The fix binds the two-word unit with nbsp so "slot k" can
+        # only ever move as one piece; the sentence is otherwise
+        # untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        page = dict((p, b) for p, t, d, k, b in build.PAGES)["/patterns/"]
+        self.assertIn("at slot&nbsp;k shifts every later variable "
+                      "down by one slot", page)
+        self.assertEqual(page.count("at slot&nbsp;k shifts"), 1)
+        self.assertNotIn("at slot k shifts", page)
+        # No unbound "slot k" anywhere on the page.
+        self.assertEqual(page.count("slot k"), 0)
+        # Section intact: title and the rest of the sentence survive.
+        self.assertIn("Pattern 3 — UUPS/storage collision on upgrade",
+                      page)
+        self.assertIn("<code>uint256</code> at slot&nbsp;k", page)
+
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
         # ("0.909091 USDC of a 100,000 USDC deposit") while steps 1-2
