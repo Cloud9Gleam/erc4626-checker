@@ -8413,6 +8413,44 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".nav-inner .brand{flex:none}", build.CSS)
 
+    def test_verdict312_nav_has_run_checker_cta(self):
+        # Visual verdict #312 item 4 (2026-11-27): the header nav
+        # had no call to action — a first-time visitor had to scroll
+        # to the hero button (~330px down at 1919px) to start, so the
+        # funnel's first step was invisible above the fold. One white
+        # pill, flush right via margin-left:auto, vertically centred
+        # against the baseline-aligned row. Hidden below 640px: the
+        # hero CTA is already on the first screen at mobile, and a
+        # fifth header item would crowd the #118 one-row scrollable
+        # nav. Measured with hidden_files/measure-verdict312b.py:
+        # 1919px CTA right edge ~1465 (content column edge), header
+        # ~62px; 360px header stays ~59px, no CTA, no overflow.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertEqual(build.NAV.count('class="nav-cta"'), 1)
+        self.assertIn(
+            '<a class="nav-cta" href="/checker/">Run the checker '
+            '&rarr;</a>', build.NAV)
+        # Sibling of <nav>, not a fifth link inside it: the CTA is a
+        # button-shaped action, flush right, not part of the link row.
+        self.assertLess(build.NAV.index("</nav>"),
+                        build.NAV.index('class="nav-cta"'))
+        self.assertIn(
+            ".nav-cta{margin-left:auto;align-self:center;flex:none;"
+            "background:#fff;color:#0a7d2c;font-weight:700;",
+            build.CSS)
+        self.assertIn(
+            ".nav-cta:hover{background:#d1fae5;color:#0a7d2c;",
+            build.CSS)
+        self.assertIn(
+            "@media (max-width:640px){.nav-cta{display:none}}",
+            build.CSS)
+        self.assertIn(
+            "@media (max-width:640px){.nav-inner{flex-wrap:nowrap;",
+            build.CSS)
+
     def test_desk_background_treatment(self):
         # Visual verdict #124 (h) / #125 (g) (2026-11-20): at 1919px
         # the main card still sits in ~440px of margin on each side,
