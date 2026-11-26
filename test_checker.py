@@ -1254,7 +1254,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(
             failed.count("<section class='check-card", 0, notice_at), 6)
         self.assertIn("/audit/?result=failed", failed)
-        self.assertIn("offset 6</a>", failed)
+        self.assertIn("offset&nbsp;6</a>", failed)
         self.assertIn("/guides/erc4626-slippage-bounds/", failed)
         passed = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
@@ -1707,7 +1707,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<h3>What to do next</h3>", failed)
         self.assertIn("class='notice-actions'", failed)
         self.assertIn("Get the vault micro-audit</a>", failed)
-        self.assertIn("Run the same checks with offset 6</a>", failed)
+        self.assertIn("Run the same checks&nbsp;with&nbsp;offset&nbsp;6</a>", failed)
         self.assertIn("/audit/?result=failed", failed)
         # The action box trails all six cards — see
         # test_results_notice_trails_all_cards (visual verdict #162:
@@ -1720,7 +1720,7 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
         self.assertIn("<h3>What to do next</h3>", passed)
         self.assertIn("Get the vault micro-audit</a>", passed)
-        self.assertIn("See what a failing vault looks like</a>", passed)
+        self.assertIn("See what a failing&nbsp;vault&nbsp;looks&nbsp;like</a>", passed)
         self.assertIn("/audit/?result=passed", passed)
         last_close = passed.rindex("</section>")
         self.assertLess(last_close, passed.index("What to do next"))
@@ -1735,7 +1735,7 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=6, mn=10**15, fee=0)
         self.assertIn("What to do next", nofix)
         self.assertIn("Get the vault micro-audit</a>", nofix)
-        self.assertNotIn("Run the same checks with offset 6</a>", nofix)
+        self.assertNotIn("Run the same checks&nbsp;with&nbsp;offset&nbsp;6</a>", nofix)
 
     def test_verdict186_notice_secondary_cta(self):
         # Visual verdict #186 (2026-11-24, checker-improvement): the
@@ -1823,7 +1823,7 @@ class TestChecker(unittest.TestCase):
                       "Minimum viable deposit", half)
         self.assertNotIn("Result: SOME FAILED", half)
         self.assertIn("incomplete vault state", half)
-        self.assertNotIn("Run the same checks with offset 6</a>", half)
+        self.assertNotIn("Run the same checks&nbsp;with&nbsp;offset&nbsp;6</a>", half)
         self.assertNotIn("see whether a decimals offset fixes it", half)
         self.assertIn("Get the vault micro-audit</a>", half)
         self.assertIn("/guides/erc4626-slippage-bounds/", half)
@@ -1834,7 +1834,7 @@ class TestChecker(unittest.TestCase):
                     vault_assets=0, vault_supply=1_000_000_000),
             vic=100_000_000_000, off=0, mn=0, fee=0,
             vassets=0, vshares=1_000_000)
-        self.assertNotIn("Run the same checks with offset 6</a>", half2)
+        self.assertNotIn("Run the same checks&nbsp;with&nbsp;offset&nbsp;6</a>", half2)
         # Control: a giant minimum deposit also fails at offset 0, but
         # its rows carry a different error ("below minimum deposit"),
         # so the offset-6 link stays — only the incomplete-state
@@ -1843,7 +1843,7 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=10**15,
                           perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=10**15, fee=0)
-        self.assertIn("Run the same checks with offset 6</a>", giant)
+        self.assertIn("Run the same checks&nbsp;with&nbsp;offset&nbsp;6</a>", giant)
         self.assertIn("see whether a decimals offset fixes it", giant)
         # Worker JS renderer: the same guard, in both gates.
         js = build.checker_results_html_js()
@@ -1926,7 +1926,7 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("SOME FAILED", failed)
         self.assertIn("1 of 6 failed: Donation inflation", failed)
         self.assertIn("/audit/?result=failed", failed)
-        self.assertIn("offset 6</a>", failed)
+        self.assertIn("offset&nbsp;6</a>", failed)
         self.assertIn("/guides/erc4626-slippage-bounds/", failed)
         passed = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
@@ -2128,6 +2128,16 @@ class TestChecker(unittest.TestCase):
         # into one unbreakable unit, making the last line
         # deterministically the full phrase in both renderers; at
         # 360px the unit is ~175px < 309.8px column, so it fits.
+        # Extended 2026-11-26 (#274, visual verdict #274 item 2):
+        # the live browser still measured the last line at 209px of
+        # 675px (frac 0.31, "say so before any payment.") — the
+        # four-word unit only moved "say" down with it. The bind is
+        # now six words, "we say so before any payment."
+        # (~244px, frac ~0.36 in real Chrome). A seven-word try
+        # ("Solidity), we say so before any payment.") broke at
+        # 360px (lone "payment.", frac 0.064 — the unit exceeds the
+        # column, overflow-wrap breaks it), so six words is the
+        # largest fitting unit; headless @1919 stays 0.91.
         # The two other "before any payment" wordings are different
         # sentences and deliberately untouched: the form JS status
         # ("we will say so before any payment.", on /audit/) and the
@@ -2139,12 +2149,78 @@ class TestChecker(unittest.TestCase):
         import build
         pages = dict((p, b) for p, t, d, k, b in build.PAGES)
         audit = pages["/audit/"]
-        self.assertIn("we say so&nbsp;before&nbsp;any&nbsp;payment.</p>",
+        self.assertIn("we&nbsp;say&nbsp;so&nbsp;before&nbsp;any&nbsp;payment.</p>",
                       audit)
         self.assertNotIn("we say so before any payment.</p>", audit)
         self.assertIn("we will say so before any payment.", audit)
         self.assertIn("and say so before any payment.</li>",
                       pages["/poc-packaging/"])
+
+    def test_verdict274_five_tails_are_bound(self):
+        # Checker-improvement 2026-11-26 (#274, visual verdict #274
+        # item 2): five short last lines, each verified by pixel
+        # geometry before binding — the /audit/ Start intro in the
+        # live browser (209px/675px = 0.31, "say so before any
+        # payment."; headless did not reproduce it, same font-metric
+        # gap as #253), the other four in headless @360px.
+        # A. Start intro seven-word tail (extends #253; the test
+        # above pins the same paragraph). Retracted to six words
+        # after the seven-word try broke at 360px (see that test).
+        # B. Pass-bound paragraph, @360 last line "breach it."
+        # frac 0.260 — bind the five-word tail, Python + JS.
+        # C. Default notice secondary CTA, @360 last line "looks
+        # like" frac 0.288 — bind inside the anchor only; the <p>
+        # sentence "See what a failing vault looks like — run ..."
+        # is a different element and stays plain.
+        # D. Fail notice offset-6 CTA, @360 last line "offset 6"
+        # frac 0.228 — bind inside the anchor only; the <p>
+        # sentence "run the same checks with offset 6 (your other
+        # parameters unchanged)" stays plain.
+        # E. Donation-chart legend Scale line, @360 last line
+        # "50%, 75%." frac 0.277 — bind the shared suffix in all
+        # four Python branches and both JS branches.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        js = build.checker_results_html_js()
+        # B. Pass bound: bound tail in, plain tail out, both renderers.
+        for label, run in (
+                ("default", run_all(Vault(decimals_offset=6,
+                                          min_deposit=1_000_000,
+                                          perf_fee_bps=1000))),
+                ("noprot", run_all(Vault(decimals_offset=0, min_deposit=0,
+                                         perf_fee_bps=0)))):
+            html = build.results_html(
+                run, vic=100_000_000_000, off=6 if label == "default" else 0,
+                mn=1_000_000 if label == "default" else 0,
+                fee=1000 if label == "default" else 0)
+            self.assertIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.", html)
+            self.assertNotIn("values in red breach it.", html)
+        self.assertIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.", js)
+        self.assertNotIn("values in red breach it.", js)
+        # C + D. Notice CTA anchors, bound in, plain out, both renderers.
+        self.assertIn("See what a failing&nbsp;vault&nbsp;looks&nbsp;like</a>",
+                      js)
+        self.assertNotIn("See what a failing vault looks like</a>", js)
+        self.assertIn("Run the same checks&nbsp;with&nbsp;offset&nbsp;6</a>",
+                      js)
+        self.assertNotIn("Run the same checks with offset 6</a>", js)
+        # The <p> sentences that share the words stay plain.
+        self.assertIn("See what a failing vault looks like \u2014 run the "
+                      "same checks with no protection", js)
+        self.assertIn("run the same checks with offset 6 (your other "
+                      "parameters&nbsp;unchanged)", js)
+        # E. Legend suffix, bound in, plain out, both renderers.
+        self.assertEqual(js.count("gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%."),
+                         4)
+        self.assertNotIn("gridlines at 25%, 50%, 75%.", js)
+        html_noprot = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.",
+                      html_noprot)
+        self.assertNotIn("gridlines at 25%, 50%, 75%.", html_noprot)
 
     def test_verdict248_notice_tails_are_bound(self):
         # Checker-improvement 2026-11-25 (#248, visual verdict #248
@@ -9545,7 +9621,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #116 new finding (c): the legend is a list
         # now — one line per idea, each with a bold label — not one
         # paragraph of four sentences.
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows under 0.5% of the worst row (1 USDC, 1,000 USDC) — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at 25%, 50%, 75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows under 0.5% of the worst row (1 USDC, 1,000 USDC) — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertNotIn("<p class='loss-head'>", html)
         self.assertLess(html.index("loss-title"), html.index("loss-row"))
         self.assertLess(html.index("loss-axis"), html.index("loss-head"))
@@ -9618,7 +9694,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("width:90.9%", html)
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows under 0.5% of the worst row (1,000 USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at 25%, 50%, 75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows under 0.5% of the worst row (1,000 USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("too little to draw", html)
         self.assertNotIn("<p class='loss-note'>", html)
@@ -9636,7 +9712,7 @@ class TestChecker(unittest.TestCase):
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows under 0.5% of the worst row (1 USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at 25%, 50%, 75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> Rows under 0.5% of the worst row (1 USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         # Visual verdict #139 (2026-11-21): the legend follows the
         # axis now — title, bars, axis, then the key.
         self.assertLess(html.index("loss-title"), html.index("loss-row"))
@@ -9919,13 +9995,13 @@ class TestChecker(unittest.TestCase):
         # The legend Scale line says what the lines mark — the axis
         # maximum on a breaching chart (visual verdict #136), the
         # pass bound on a bound-scaled one.
-        self.assertIn("gridlines at 25%, 50%, 75%.",
+        self.assertIn("gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.",
                       html)
         # Worker-side template carries both sentences (one per scale
         # branch).
-        self.assertIn("gridlines at 25%, 50%, 75%.",
+        self.assertIn("gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.",
                       build.checker_results_html_js())
-        self.assertIn("gridlines at 25%, 50%, 75%.",
+        self.assertIn("gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.",
                       build.checker_results_html_js())
         # Guide charts (plain .loss-chart) get no gridlines: the rule
         # is scoped to --bare only.
@@ -12158,8 +12234,8 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("Breaches bound"), 2)
         self.assertEqual(
             html.count("<td class='ok' title='Within pass bound'>\u2713</td>"), 2)
-        self.assertIn("\u2713 means within the pass bound; values in red "
-                      "breach it.", html)
+        self.assertIn("\u2713 means within the pass bound; values&nbsp;in&nbsp;red&nbsp;"
+                      "breach&nbsp;it.", html)
         # Default preset: all four rows clean, four checkmarks, no
         # breach wording at all.
         html_default = build.results_html(
@@ -12181,8 +12257,8 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("Breaches pass bound", js)
         self.assertIn("\\u2713", js)
         self.assertIn("class='ok' title='Within pass bound'", js)
-        self.assertIn("\\u2713 means within the pass bound; values in "
-                      "red breach it.", js)
+        self.assertIn("\\u2713 means within the pass bound; values&nbsp;in&nbsp;"
+                      "red&nbsp;breach&nbsp;it.", js)
         self.assertIn(".ok{color:#0a7d2c;font-weight:700}", build.CSS)
 
     def test_donation_note_column_is_capped(self):
