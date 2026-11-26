@@ -7898,7 +7898,7 @@ class TestChecker(unittest.TestCase):
                  '<span class="hero-compare-note">same deposit, same donation</span></div>')
         cell3 = ('<div class="hero-compare-cell"><span class="hero-compare-label">'
                  'Offset 6 · 1B donation</span><strong>0.000900&nbsp;USDC</strong>'
-                 '<span class="hero-compare-note">1,000× the donation — under the 0.001 USDC pass bound</span></div>')
+                 '<span class="hero-compare-note">under the 0.001 USDC pass bound</span></div>')
         self.assertIn(cell1, hero)
         self.assertIn(cell2, hero)
         self.assertIn(cell3, hero)
@@ -8127,6 +8127,40 @@ class TestChecker(unittest.TestCase):
                 ".hero-compare-label{min-height:0}",
                 "@media (max-width:700px){.hero-compare{flex-direction:column;gap:.5em}.hero-compare-label{min-height:0}}"):
             self.assertIn(rule, build.CSS)
+
+    def test_verdict303_hero_compare_third_note_is_one_line(self):
+        # Checker-improvement #303 (visual verdict #299 item 10):
+        # the third compare cell's note wrapped to two lines at
+        # 1919/1024/901/360px, orphaning "USDC pass bound" (1919:
+        # line 1 "1,000x the donation - under the 0.001", line 2
+        # "USDC pass bound"; 901: line 2 "0.001 USDC pass bound")
+        # while the other two notes are one line — and the wrap
+        # made the whole strip a note-line taller (136.7px vs
+        # 116.4px, measured headless, measure-verdict303.py). No
+        # wording keeping all three (the 1,000x, the 0.001 number,
+        # the term "pass bound") fits one line: every probed
+        # keeper orphans a single word ("bound" / "USDC") at
+        # 1919px (probe-verdict303-candidates.py). So the note now
+        # carries the judgment that needs the number and the term
+        # — "under the 0.001 USDC pass bound" — and the 1,000x
+        # contrast stays visible in the labels (1M vs 1B donation)
+        # and in the numbers. The old note must not survive
+        # anywhere on the page.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index('<p>This site is one independent researcher')
+        hero = home[hero_start:hero_end]
+        strip_start = hero.index('<div class="hero-compare">')
+        strip = hero[strip_start:hero.index('class="hero-stats"')]
+        self.assertIn('<span class="hero-compare-note">under the 0.001 USDC pass bound</span>', strip)
+        self.assertNotIn('1,000\u00d7 the donation \u2014 under the 0.001 USDC pass bound', hero)
+        self.assertEqual(strip.count('1M donation'), 2)
+        self.assertEqual(strip.count('1B donation'), 1)
+        self.assertIn('0.000900', strip)
 
     def test_verdict298_hero_proof_line(self):
         # Checker-improvement #298 (visual verdict #293 item 4,
