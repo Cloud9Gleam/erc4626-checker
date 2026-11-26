@@ -8991,6 +8991,69 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(
             '<code class="nowrap">MESSAGE_TYPEHASH', research)
 
+    def test_verdict292_row52_some_trusted_address_is_one_chip(self):
+        # Visual verdict #291 follow-up (2026-11-26,
+        # checker-improvement): the real browser re-check
+        # (browser-task:0a3edd7f) saw row 52's second chip
+        # `tx.origin == someTrustedAddress` wrap at 1919px --
+        # "tx.origin" at the end of line 1, "== someTrustedAddress"
+        # at the start of line 2 -- where headless twice measured
+        # 1 rect; real browser wins per the #286/#287 lesson. The
+        # same sentence repeats verbatim in the /patterns/ Pattern
+        # 52 article, where headless measures 1 rect at 1919 but
+        # only 2px from the column edge (chip ends x=1022 of a
+        # 1024px column) and 2 rects at 360. One code token, one
+        # defect class, two renderings -- both bound. Geometry
+        # (probe-verdict292-row52.py / probe-verdict292-prose.py):
+        # whole-code width 292px at 1919 (Smell column 524px) and
+        # 275px at 360; the table column grows ~215 -> ~275px at
+        # 360 but stays inside the .twrap horizontal scroll, so
+        # docScrollW stays 345. This 31-char token is NOT one of
+        # the #291 long expressions (24-77 chars) that must keep
+        # wrapping.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        bound = ('<code class="nowrap">tx.origin == '
+                 'someTrustedAddress</code>')
+        plain = "<code>tx.origin == someTrustedAddress</code>"
+        research = pages["/research/patterns/"]
+        patterns = pages["/patterns/"]
+        # Research table row 52: bound once, sentence intact.
+        self.assertEqual(research.count(bound), 1)
+        self.assertNotIn(plain, research)
+        self.assertIn(
+            "<tr><td>52</td><td><code>tx.origin</code> used for "
+            "authentication: phishing via any intermediate contract "
+            "(public finding literature, 2026-10-14)</td><td>a "
+            "contract gates a privileged action \u2014 withdrawal, "
+            "role grant, admin function, fund release \u2014 on "
+            '<code class="nowrap">tx.origin == owner</code> (or '
+            + bound + ") instead of <code>msg.sender</code>.</td>",
+            research)
+        # /patterns/ Pattern 52 article: same sentence, bound once.
+        self.assertEqual(patterns.count(bound), 1)
+        self.assertNotIn(plain, patterns)
+        self.assertIn(
+            'on <code class="nowrap">tx.origin == owner</code> (or '
+            + bound + ") instead of <code>msg.sender</code>.",
+            patterns)
+        # Worker (memory build): both occurrences bound, none plain.
+        worker = build.worker_js(pages)
+        self.assertEqual(worker.count(bound.replace('"', '\\"')), 2)
+        self.assertEqual(worker.count(plain), 0)
+        # The sibling chip stays bound, the table still has 77 rows
+        # in its scrolling wrapper, and the long codes still wrap.
+        self.assertEqual(
+            research.count(
+                '<code class="nowrap">tx.origin == owner</code>'), 1)
+        self.assertEqual(research.count("<tr><td>"), 77)
+        self.assertIn(".twrap{overflow-x:auto", build.CSS)
+        self.assertIn(
+            "<code>MESSAGE_TYPEHASH = keccak256(&quot;", research)
+
     def test_verdict289_short_code_chips_are_nowrap(self):
         # Visual verdict #287 item 1, batch (2026-11-26,
         # checker-improvement): #288 fixed one short code chip
@@ -9130,8 +9193,9 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(
             page.count('<code class="nowrap">1 wei</code>'), 1)
         self.assertIn("Pattern 84", page)
-        # Total: 114 new chips + the Pattern 5 chip from #288.
-        self.assertEqual(page.count('<code class="nowrap">'), 115)
+        # Total: 114 new chips + the Pattern 5 chip from #288 + the
+        # `tx.origin == someTrustedAddress` prose chip from #292.
+        self.assertEqual(page.count('<code class="nowrap">'), 116)
         # .nowrap exists and means white-space:nowrap.
         self.assertIn(".nowrap{white-space:nowrap}", build.CSS)
         # Worker (memory build): the bound "1 wei" arrives once,
