@@ -4725,13 +4725,19 @@ class TestChecker(unittest.TestCase):
         # with a bold lead -- the reading order is email first, pay second.
         # Checker-improvement #271 (2026-11-26): the QR figure sits between
         # the address row and the box close, so the regex allows it there.
+        # Checker-improvement #296 (2026-11-26, visual verdict #293
+        # item 2): the email-first paragraph becomes a numbered 1-2-3
+        # list -- the first step is still directly under the price,
+        # before "Pay in USDC on Base to:", so the reading order stays
+        # email first, pay second.
         m = re.search(r'<div class="pay-box">.*?<div class="pay-row">.*?</div>\s*'
                       r'(?:<figure class="pay-qr">.*?</figure>\s*)?</div>',
                       audit, re.S)
-        self.assertLess(m.group(0).index('<p><strong>Email first</strong>'),
+        self.assertLess(m.group(0).index('<li><strong>Email first</strong>'),
                         m.group(0).index('Pay in <span class="chip">USDC</span>'))
-        self.assertLess(m.group(0).index('<p><strong>Email first</strong>'),
+        self.assertLess(m.group(0).index('<li><strong>Email first</strong>'),
                         m.group(0).index('<div class="pay-row">'))
+        self.assertIn('<ol class="pay-steps">', m.group(0))
         self.assertIsNotNone(m)
         self.assertIn(build.PAY_ADDR, m.group(0))
         self.assertIn(">Copy address</button>", m.group(0))
@@ -4902,6 +4908,12 @@ class TestChecker(unittest.TestCase):
         # link to the Start form and the box states the hash step,
         # so "get the payment instructions" is no longer promised
         # there. The PoC box keeps the "(below)" wording.
+        # Checker-improvement #296 (2026-11-26, visual verdict #293
+        # item 2): the audit box's email-first paragraph becomes a
+        # numbered 1-2-3 list, so the sequence is scannable and a
+        # payer cannot pay first and forget the hash step. The PoC
+        # box keeps its paragraph -- its flow is different (no
+        # on-page address, instructions arrive by email).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -4917,20 +4929,20 @@ class TestChecker(unittest.TestCase):
             self.assertIn('<p class="price-big">' + price + '</p>', page)
             box = page[page.index('<div class="pay-box">'):]
             box = box[:box.index('</div>') + len('</div>')]
-            self.assertLess(box.index('<p><strong>Email first</strong>'),
+            self.assertLess(box.index('<strong>Email first</strong>'),
                             box.index('Pay in <span class="chip">USDC</span>'))
             self.assertIn(clock, box)
         # The audit box keeps the address row after the instruction;
         # the PoC box keeps its one-PoC-per-finding sentence.
-        self.assertLess(audit.index('<p><strong>Email first</strong>'),
+        self.assertLess(audit.index('<strong>Email first</strong>'),
                         audit.index('<div class="pay-row">'))
         self.assertIn('One PoC per finding', poc)
         # The PoC box keeps the "(below)" wording; the audit box
         # links the Start form and states the hash step instead.
         self.assertIn('<p><strong>Email first</strong> (below)', poc)
         self.assertIn(
-            '<p><strong>Email first</strong> \u2014 use the '
-            '<a href="#start">Start form below</a> \u2014',
+            '<li><strong>Email first</strong> \u2014 use the '
+            '<a href="#start">Start form below</a> to confirm the scope fits.</li>',
             audit)
         self.assertNotIn('to confirm scope and get the payment', audit)
         self.assertNotIn('<p>Email first', audit)
@@ -4956,9 +4968,16 @@ class TestChecker(unittest.TestCase):
         box = audit[audit.index('<div class="pay-box">'):]
         box = box[:box.index('<div class="pay-row">')]
         self.assertIn('to confirm the scope fits', box)
-        self.assertIn('paste the payment', box)
+        # Checker-improvement #296 (2026-11-26, visual verdict #293
+        # item 2): the sequence is now a numbered list, so the hash
+        # step starts its item -- "Paste" is capitalised at the
+        # start of the third step.
+        self.assertIn('Paste the payment', box)
         self.assertIn('transaction hash in the form', box)
-        self.assertIn('matched to your order', box)
+        # Checker-improvement #296 trims step 3 so it fits one line:
+        # "to match it to your order" (the field hint below still
+        # spells out "so the payment can be matched to your order").
+        self.assertIn('to match it to your order', box)
         self.assertIn('<a href="#start">Start form below</a>', box)
         self.assertIn('The 72-hour clock starts when the payment is confirmed',
                       box)
@@ -4996,6 +5015,87 @@ class TestChecker(unittest.TestCase):
         self.assertIn('Payment transaction hash', worker)
         self.assertIn('Start form below', worker)
         self.assertNotIn('send the payment instructions', worker)
+
+    def test_verdict296_audit_pay_steps(self):
+        # Visual verdict #293 (2026-11-26, this run) item 2: the
+        # /audit/ payment flow lived in one paragraph -- email first,
+        # pay, paste the hash -- so a visitor could pay first and
+        # never paste the hash, leaving the payment unmatched. The
+        # pay-box now carries the sequence as a numbered 1-2-3 list,
+        # and the Start form repeats the three steps in one compact
+        # line at its top. The 72-hour clock sentence stays its own
+        # line after the list: the clock starts when the payment is
+        # confirmed (step 2), not when the hash is pasted (step 3).
+        # The /poc-packaging/ box is untouched -- its flow is
+        # genuinely different (no on-page address, instructions
+        # arrive by email).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        poc = pages["/poc-packaging/"]
+        box = audit[audit.index('<div class="pay-box">'):]
+        box = box[:box.index('<div class="pay-row">')]
+        # One ordered list, three steps, in order, exact wording.
+        self.assertEqual(box.count('<ol class="pay-steps">'), 1)
+        steps = [
+            '<li><strong>Email first</strong> \u2014 use the '
+            '<a href="#start">Start form below</a> to confirm the scope fits.</li>',
+            '<li><strong>Pay 50 USDC</strong> to the address below.</li>',
+            '<li><strong>Paste the payment transaction hash in the form</strong> '
+            'to match it to your order.</li>',
+        ]
+        for step in steps:
+            self.assertIn(step, box)
+        self.assertLess(box.index(steps[0]), box.index(steps[1]))
+        self.assertLess(box.index(steps[1]), box.index(steps[2]))
+        # The clock sentence is its own line after the list, before
+        # the address line -- not attached to the hash step.
+        self.assertIn(
+            '<p>The 72-hour clock starts when the payment is confirmed.</p>',
+            box)
+        self.assertLess(box.index('</ol>'),
+                        box.index('The 72-hour clock starts when the payment is confirmed'))
+        self.assertLess(
+            box.index('The 72-hour clock starts when the payment is confirmed'),
+            box.index('Pay in <span class="chip">USDC</span>'))
+        # The old single-paragraph form is gone from the audit box.
+        self.assertNotIn('<p><strong>Email first</strong>', box)
+        self.assertNotIn('Then pay to the address below', box)
+        # The Start form repeats the three steps at its top, before
+        # the first field, in the same order and amounts.
+        self.assertIn(
+            '<p class="audit-steps">How it works: <strong>1.</strong> '
+            'Email first to confirm the scope fits. <strong>2.</strong> '
+            'Pay 50 USDC on Base. <strong>3.</strong> Paste the payment '
+            'transaction hash below. The 72-hour clock starts when the '
+            'payment is confirmed.</p>',
+            build.AUDIT_FORM)
+        self.assertLess(build.AUDIT_FORM.index('class="audit-steps"'),
+                        build.AUDIT_FORM.index('id="audit-repo"'))
+        # CSS for both: numbered markers bold green; the form repeat
+        # reads as a green callout, same palette as the pay-box.
+        self.assertIn('.pay-steps{margin:.2em 0 .6em;padding-left:1.5em}',
+                      build.CSS)
+        self.assertIn('.pay-steps li::marker{font-weight:700;color:#0a7d2c}',
+                      build.CSS)
+        self.assertIn('.audit-steps{background:#f0fdf4;border:1px solid #bbe0c6',
+                      build.CSS)
+        # The PoC box is untouched: still a paragraph, no steps list.
+        # (The shared stylesheet inlines .pay-steps/.audit-steps into
+        # every page, so the PoC assertions pin the HTML forms only.)
+        self.assertIn('<p><strong>Email first</strong> (below)', poc)
+        self.assertNotIn('<ol class="pay-steps">', poc)
+        self.assertNotIn('<p class="audit-steps">', poc)
+        # Worker copy: the list, the repeat, and the marker rule.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('class=\\"pay-steps\\"', worker)
+        self.assertIn('class=\\"audit-steps\\"', worker)
+        self.assertIn('.pay-steps li::marker{font-weight:700;color:#0a7d2c}',
+                      worker)
 
     def test_audit_pay_address_shown_in_full_by_default(self):
         # Visual verdict #110 (2026-11-19): the 42-char address was
