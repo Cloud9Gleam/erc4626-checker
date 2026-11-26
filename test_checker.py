@@ -11059,18 +11059,21 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-fill fail"), 2)
         self.assertEqual(html.count("loss-fill pass"), 0)
         # The two small rows (0 and 0.000006 USDC) would draw a 0.0%
-        # fill, so they draw no bar — they render as dashed
-        # placeholder slots instead (checker-improvement #308,
-        # visual verdict #307 item 2: a chart of bars alone read
-        # as a chart that failed to load). The legend names them
-        # as "Dashed rows", and the table above still lists both
-        # with exact figures. The .loss-track--empty rule already
-        # existed for the bare chart; the slots are its first use. Checker-improvement #310 (visual verdict #310 item 3) reversed the #308 grey fill — it read as a full-width grey bar (verdict #72's misread) — so each slot is transparent with only the dashed frame, and carries its own words ("too small to draw", verdict #87's wording).
-        self.assertEqual(html.count("loss-track--empty"), 2)
-        self.assertEqual(html.count("loss-too-small"), 2)
+        # fill, so they draw no bar — they are folded out of the
+        # chart entirely (checker-improvement #313, visual verdict
+        # #312 item 1: #308's dashed slots still read as a chart
+        # that failed to load — a dashed empty box is the visual
+        # language of a loading skeleton — so #94's fold rule is
+        # restored). The legend names them as "Not drawn", and the
+        # table above still lists both with exact figures. The
+        # bare chart emits no empty slot any more (the generic
+        # .loss-track--empty / .loss-too-small rules stay for the
+        # guide charts' static rows).
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
         self.assertEqual(html.count("loss-track--tiny"), 0)
-        self.assertEqual(html.count("too small to draw"), 2)
-        self.assertIn("<strong>Dashed rows:</strong> under 0.5% of the worst row (1, 1K USDC) — see the table.", html)
+        self.assertEqual(html.count("too small to draw"), 0)
+        self.assertIn("<strong>Not drawn:</strong> under 0.5% of the worst row (1, 1K USDC) — see the table.", html)
         # Visual verdict #114 new finding (d): the chart legend lived
         # in two places — the omitted-rows header above the bars and
         # the scale/red footnote below them. It is now one block.
@@ -11081,7 +11084,7 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #116 new finding (c): the legend is a list
         # now — one line per idea, each with a bold label — not one
         # paragraph of four sentences.
-        self.assertIn("<ul class='loss-head'><li><strong>Dashed rows:</strong> under 0.5% of the worst row (1, 1K USDC) — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the worst row (1, 1K USDC) — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertNotIn("<p class='loss-head'>", html)
         self.assertLess(html.index("loss-title"), html.index("loss-row"))
         self.assertLess(html.index("loss-axis"), html.index("loss-head"))
@@ -11102,11 +11105,12 @@ class TestChecker(unittest.TestCase):
         # conditionally now (visual verdict #130): the reference is
         # the pass bound on a bound-scaled chart, the worst row
         # otherwise — both branches must be present in the template.
-        self.assertIn("<strong>Dashed rows:</strong> under 0.5% of \"+(boundScale?"
+        self.assertIn("<strong>Not drawn:</strong> under 0.5% of \"+(boundScale?"
                       "\"the pass bound\":\"the worst row\")+\" (",
                       build.checker_results_html_js())
         self.assertIn("loss-head", build.checker_results_html_js())
-        self.assertIn("too small to draw", build.checker_results_html_js())
+        self.assertNotIn("too small to draw", build.checker_results_html_js())
+        self.assertNotIn("loss-track--empty", build.checker_results_html_js())
         self.assertNotIn("loss-track--tiny", build.checker_results_html_js())
         # Visual verdict #136 (2026-11-21): bars are drawn against
         # the 0–1 USDC axis now — worst bar 90.9%, 1B bar 10.0%.
@@ -11149,10 +11153,10 @@ class TestChecker(unittest.TestCase):
         # 2026-11-20): the default ALL PASS preset's sentence-only
         # form read as a missing chart, a blank area after the table.
         # The one bar shows the peak at its true linear scale (100% =
-        # worst row); the tiny row renders as a dashed slot and is
+        # worst row); the tiny row is folded out of the chart and
         # named in the legend, the error row is named in it and
         # explained in the table's Note column (checker-improvement
-        # #308).
+        # #313).
         mixed = [{"name": "donation_inflation", "pass": False, "detail": [
             {"donation": 1_000_000_000, "victim_loss": 6,
              "attacker_net": -1},
@@ -11163,11 +11167,11 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(mixed, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertEqual(html.count("loss-fill fail"), 1)
-        self.assertEqual(html.count("loss-row"), 2)
+        self.assertEqual(html.count("loss-row"), 1)
         self.assertIn("width:90.9%", html)
-        self.assertEqual(html.count("loss-track--empty"), 1)
-        self.assertEqual(html.count("loss-too-small"), 1)
-        self.assertIn("<ul class='loss-head'><li><strong>Dashed rows:</strong> under 0.5% of the worst row (1K USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the worst row (1K USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertNotIn("too little to draw", html)
         self.assertNotIn("<p class='loss-note'>", html)
@@ -11185,7 +11189,7 @@ class TestChecker(unittest.TestCase):
              "attacker_net": None, "error": "below minimum deposit"}]}]
         html = build.results_html(mixed2, vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Dashed rows:</strong> under 0.5% of the worst row (1 USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the worst row (1 USDC) — see the table.</li><li><strong>No figure:</strong> Rows with no loss figure are not drawn either — see the table.</li><li><strong>Scale:</strong> Axis 0–1 USDC (worst row 0.909091 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li><li><strong>Red bars:</strong> breach the pass bound.</li></ul>", html)
         # Visual verdict #139 (2026-11-21): the legend follows the
         # axis now — title, bars, axis, then the key.
         self.assertLess(html.index("loss-title"), html.index("loss-row"))
@@ -11226,18 +11230,17 @@ class TestChecker(unittest.TestCase):
                       build.CSS)
         self.assertIn(".loss-value{flex:0 0 5.5em;color:#111827}",
                       build.CSS)
-        # Noprot: exactly two drawable rows plus two dashed slots —
-        # the worst one carries the class, the other bar does not;
-        # the class sits on the row whose value is 0.909091.
-        # (Checker-improvement #308: the two tiny rows render as
-        # dashed slots now, so the plain-row count is three, not
-        # one — the slots carry no worst class either, since the
-        # worst row is always drawable.)
+        # Noprot: exactly two drawable rows — the worst one carries
+        # the class, the other bar does not; the class sits on the
+        # row whose value is 0.909091. (Checker-improvement #313:
+        # the two tiny rows are folded out of the chart now, so the
+        # plain-row count is one — the folded rows carry no worst
+        # class either, since the worst row is always drawable.)
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertEqual(html.count("class='loss-row worst'"), 1)
-        self.assertEqual(html.count("class='loss-row'>"), 3)
+        self.assertEqual(html.count("class='loss-row'>"), 1)
         worst = html.index("class='loss-row worst'")
         plain = html.index("class='loss-row'>", worst + 1)
         self.assertLess(worst, html.index(
@@ -11247,14 +11250,14 @@ class TestChecker(unittest.TestCase):
         self.assertIn("0.099890 USDC &middot; 99.9&times; the bound", html)
         # Default: the worst row passes, so no worst class — the
         # value stays bold black, never red on a green bar. One bar
-        # plus three dashed slots (checker-improvement #308), so the
-        # plain-row count is four.
+        # only (checker-improvement #313: the three tiny rows are
+        # folded out), so the plain-row count is one.
         html = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
         self.assertEqual(html.count("class='loss-row worst'"), 0)
-        self.assertEqual(html.count("class='loss-row'>"), 4)
+        self.assertEqual(html.count("class='loss-row'>"), 1)
         self.assertIn("0.000900 USDC &middot; 90% of the bound", html)
         # The Worker-side template renders the same rule: the class
         # is conditional on the row being the worst AND breaching.
@@ -11441,11 +11444,11 @@ class TestChecker(unittest.TestCase):
                       "0.000900 USDC &middot; 90% of the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill pass' "
                       "style='width:90.0%'></span></span></div>", html)
-        self.assertEqual(html.count("loss-row"), 4)
+        self.assertEqual(html.count("loss-row"), 1)
         self.assertEqual(html.count("loss-fill pass"), 1)
         self.assertEqual(html.count("loss-fill fail"), 0)
-        self.assertEqual(html.count("loss-track--empty"), 3)
-        self.assertIn("<ul class='loss-head'><li><strong>Dashed rows:</strong> under 0.5% of the pass bound (1, 1K, 1M USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the pass bound (1, 1K, 1M USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
         self.assertIn("<span style='left:100%'>0.001</span>", html)
         self.assertNotIn("Within the bound:", html)
         self.assertNotIn("Red bars:", html)
@@ -11469,7 +11472,7 @@ class TestChecker(unittest.TestCase):
                       "style='width:0.9%'></span></span></div>", html)
         self.assertIn("0.100000 USDC &middot; 100&times; the bound", html)
         # Noprot: breaching multiples intact, no bound share anywhere
-        # (the two tiny passing rows are dashed slots now).
+        # (the two tiny passing rows are folded out of the chart now).
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
@@ -11519,13 +11522,13 @@ class TestChecker(unittest.TestCase):
                  "attacker_net": -1},
                 {"donation": 1_000_000_000_000_000, "victim_loss": worst,
                  "attacker_net": -1}]}]
-        # At the threshold: one green bar at 25% of the bound, three
-        # dashed slots beside it (checker-improvement #308).
+        # At the threshold: one green bar at 25% of the bound, the
+        # three tiny rows folded out (checker-improvement #313).
         html = build.results_html(_synthetic(250), vic=100_000_000_000,
                                   off=6, mn=1_000_000, fee=1000)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertEqual(html.count("loss-row"), 4)
-        self.assertEqual(html.count("loss-track--empty"), 3)
+        self.assertEqual(html.count("loss-row"), 1)
+        self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertIn("0.000250 USDC &middot; 25% of the bound", html)
         self.assertIn("width:25.0%", html)
         self.assertIn("Bars are scaled to the pass bound (0.001 USDC)", html)
@@ -11999,31 +12002,23 @@ class TestChecker(unittest.TestCase):
         self.assertIn("sc/4n", js)
         self.assertIn("3n*sc/4n", js)
 
-    def test_loss_chart_dashes_tiny_rows_and_charts_single_bar(self):
+    def test_loss_chart_folds_tiny_rows_and_charts_single_bar(self):
         # Visual verdict #123 (2026-11-20): a single drawable bar IS
         # a chart now — the sentence-only form read as a missing
         # chart in the default ALL PASS view.
-        # Checker-improvement #308 (visual verdict #307 item 2,
-        # 2026-11-27): the tiny rows are no longer omitted from the
-        # chart — one bar plus three legend lines about rows not
-        # drawn still read as a chart that failed to load, so the
-        # rows under 0.5% of the scale now render as dashed
-        # placeholder slots (.loss-track--empty, transparent + dashed
-        # #6b7280 frame — the rule already existed for the bare
-        # chart), each carrying its exact loss value in the key
-        # column, named in the legend as "Dashed rows" with the
-        # 0.5% threshold. This is not a return of verdict #94's
-        # placeholder chip: #94's slots were the whole chart (four
-        # empty rows, zero bars); here at most three slots accompany
-        # a real bar. Errored rows (no figure) still render nothing.
-        # Checker-improvement #310 (visual verdict #310 item 3):
-        # the #308 grey fill revived verdict #72's misread — a slot
-        # read as a full-width grey bar — so the slot is transparent
-        # with only the dashed frame, and carries its own words
-        # ("too small to draw", verdict #87's wording) so it reads
-        # as a labelled placeholder, not a missing bar (#51) and
-        # not a bar (#72). The label sits above the gridlines
-        # (z-index:3 over the ::after's 2).
+        # Checker-improvement #313 (visual verdict #312 item 1,
+        # 2026-11-27): #308's dashed slots are retired — the live
+        # browser read the chart as unloaded even with labelled
+        # transparent slots ("mostly empty dashed rows, ~250px
+        # tall, looks unloaded"), and #310's transparency only
+        # cured the #72 misread. A dashed empty box is the visual
+        # language of a loading skeleton, so the rows under 0.5%
+        # of the scale are folded out of the chart again (#94's
+        # rule, restored): the chart shows only drawable bars,
+        # the table above still lists every row with its exact
+        # figure, and the legend names the folded rows as
+        # "Not drawn" with the 0.5% threshold. Errored rows (no
+        # figure) still render nothing.
         # On a passing vault far below the bound there is still no
         # chart at all (visual verdict #295 keeps that case
         # sentence-only: the bound-scale chart needs worst >= 25%
@@ -12032,23 +12027,24 @@ class TestChecker(unittest.TestCase):
         # footnote.
         # The .loss-track--tiny rule stays in the shared stylesheet
         # (dead but harmless — removing it would churn every page's
-        # CSS for no visible gain); .loss-too-small is now emitted
-        # by both renderers inside bare-chart slots (the guide
-        # charts already emitted it statically in their own rows).
+        # CSS for no visible gain); .loss-too-small is emitted by
+        # neither renderer in the bare chart any more (the guide
+        # charts still emit it statically in their own rows).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         # noprot: the two small rows (0 and 0.000006 USDC) draw no
-        # bar — they render as dashed slots; the two real bars are
-        # drawn against the 0–1 USDC axis now (visual verdict #136).
+        # bar — they are folded out of the chart; the two real bars
+        # are drawn against the 0–1 USDC axis now (visual verdict
+        # #136).
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertEqual(html.count("loss-row"), 4)
+        self.assertEqual(html.count("loss-row"), 2)
         self.assertEqual(html.count("loss-track--tiny"), 0)
-        self.assertEqual(html.count("loss-track--empty"), 2)
-        self.assertEqual(html.count("loss-too-small"), 2)
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
         # Visual verdict #136 (2026-11-21): bars are drawn against
         # the 0–1 USDC axis now — worst bar 90.9%, 1B bar 10.0%.
         self.assertIn("width:90.9%", html)
@@ -12058,19 +12054,19 @@ class TestChecker(unittest.TestCase):
         # so the bound-scaled chart is drawn again (visual verdict
         # #295, 2026-11-26, overturning #137 for this case): the
         # one-bar chart (#123) returns with the bound as its scale
-        # (#130) — one green bar at 90%, the three tiny rows as
-        # dashed slots named in the legend, no Red line. The
-        # sentence is retired on this branch.
+        # (#130) — one green bar at 90%, the three tiny rows folded
+        # out and named in the legend, no Red line. The sentence is
+        # retired on this branch.
         html = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertEqual(html.count("loss-row"), 4)
-        self.assertEqual(html.count("loss-track--empty"), 3)
-        self.assertEqual(html.count("loss-too-small"), 3)
+        self.assertEqual(html.count("loss-row"), 1)
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
         self.assertIn("width:90.0%", html)
         self.assertIn("0.000900 USDC &middot; 90% of the bound", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Dashed rows:</strong> under 0.5% of the pass bound (1, 1K, 1M USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the pass bound (1, 1K, 1M USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
         self.assertNotIn("Within the bound:", html)
         self.assertNotIn("Red bars:", html)
         # Bound scale with more than one drawable row: losses
@@ -12078,7 +12074,7 @@ class TestChecker(unittest.TestCase):
         # breaches, but the worst loss is 90% of the bound, so the
         # bound-scaled chart is drawn (visual verdict #295,
         # 2026-11-26): two green bars at 40% and 90% of the bound,
-        # the 2-unit row as a dashed slot named in the legend, no
+        # the 2-unit row folded out and named in the legend, no
         # Red line.
         bound_multi = [{"name": "donation_inflation", "pass": True, "detail": [
             {"donation": 1_000_000, "victim_loss": 2,
@@ -12090,14 +12086,14 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(bound_multi, vic=100_000_000_000, off=6,
                                   mn=1_000_000, fee=1000)
         self.assertIn("loss-chart loss-chart--bare", html)
-        self.assertEqual(html.count("loss-row"), 3)
-        self.assertEqual(html.count("loss-track--empty"), 1)
-        self.assertEqual(html.count("loss-too-small"), 1)
+        self.assertEqual(html.count("loss-row"), 2)
+        self.assertEqual(html.count("loss-track--empty"), 0)
+        self.assertEqual(html.count("loss-too-small"), 0)
         self.assertIn("width:40.0%", html)
         self.assertIn("width:90.0%", html)
         self.assertIn("0.000400 USDC &middot; 40% of the bound", html)
         self.assertIn("0.000900 USDC &middot; 90% of the bound", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Dashed rows:</strong> under 0.5% of the pass bound (1 USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the pass bound (1 USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
         self.assertNotIn("Within the bound:", html)
         self.assertNotIn("Red bars breach the pass bound", html)
         self.assertNotIn("Victim loss peaks at", html)
@@ -12114,12 +12110,12 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-too-small"), 0)
         self.assertIn("<ul class='loss-head'><li><strong>No loss:</strong> No donation loses anything, so there is no chart to draw — every victim loss is 0.000000 USDC.</li></ul>", html)
         self.assertNotIn("<p class='loss-note'>", html)
-        # The Worker-side template renders the same dashed-rows note and
+        # The Worker-side template renders the same not-drawn note and
         # single-bar chart. The Peak/Others
         # sentence form is retired (verdict #123) — the JS carries no
         # Peak line any more.
         js = build.checker_results_html_js()
-        self.assertIn("<strong>Dashed rows:</strong> under 0.5% of \"+(boundScale?"
+        self.assertIn("<strong>Not drawn:</strong> under 0.5% of \"+(boundScale?"
                       "\"the pass bound\":\"the worst row\")+\" (", js)
         # Visual verdict #137 (2026-11-21): the Worker template
         # carries the same sentence for the passing case.
@@ -12132,8 +12128,9 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<strong>No loss:</strong> No donation loses anything", js)
         self.assertIn("No donation loses anything, so there is no chart to draw — every victim loss is ", js)
         self.assertNotIn("loss-track--tiny", js)
-        self.assertIn("loss-too-small", js)
-        self.assertIn("too small to draw", js)
+        self.assertNotIn("loss-track--empty", js)
+        self.assertNotIn("loss-too-small", js)
+        self.assertNotIn("too small to draw", js)
 
     def test_check_detail_lines_share_one_block_per_card(self):
         # Visual verdict #89: the non-donation detail lines were bare
@@ -15485,23 +15482,15 @@ class TestChecker(unittest.TestCase):
         # chart read as broken — four ~11px hairline bars in a ~140px
         # box, the two near-zero rows nearly invisible 1px frames. Bars
         # are now 1.7em tall (~25px at the .92em row size) with rows at
-        # .25em margins, and near-zero rows draw no bar — they render
-        # as dashed placeholder slots, named in the legend instead
-        # (checker-improvement #308; verdict #94's blanket ban was
-        # on a chart of nothing but slots). The slot frame
-        # (verdict #72: the earlier grey fill
-        # read as a full-length loss bar; verdict #73: the light
-        # #9ca3af frame read as a missing piece on a quick scan, so the
-        # empty slot's frame went darker; verdict #74: the filled rows
-        # kept the old light frame, reading as a third, paler empty
-        # slot — so every bare track now shares the one #6b7280 frame
-        # and the empty-slot override is gone). Checker-improvement
-        # #310 (visual verdict #310 item 3) brings the override back
-        # transparent — the #308 grey fill revived #72's misread, a
-        # slot reading as a full-width grey bar — with the dashed
-        # frame and an in-slot label above the gridlines
-        # (z-index:3 over the ::after's 2). Widths, numbers, and
-        # the linear scale are unchanged (pinned by
+        # .25em margins, and near-zero rows draw no bar — they are
+        # folded out of the chart, named in the legend instead
+        # (checker-improvement #313 restores verdict #94's fold rule:
+        # #308's dashed slots still read as a chart that failed to
+        # load, and #310's transparent slot only cured the #72
+        # misread). The bare chart's empty-slot CSS is deleted with
+        # the slots; the generic .loss-track--empty / .loss-too-small
+        # rules stay for the guide charts' static rows. Widths,
+        # numbers, and the linear scale are unchanged (pinned by
         # test_donation_loss_chart).
         import re
         import sys
@@ -15520,15 +15509,16 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(".loss-chart--bare .loss-track--empty{background:transparent;"
                          "border-color:",
                          build.CSS)
-        self.assertIn(".loss-chart--bare .loss-track--empty{background:transparent;border:1px dashed #6b7280}", build.CSS)
-        self.assertNotIn(".loss-chart--bare .loss-track--empty{background:#f3f4f6;", build.CSS)
-        self.assertIn(".loss-chart--bare .loss-too-small{position:relative;z-index:3}", build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-track--empty", build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-too-small", build.CSS)
+        self.assertIn(".loss-track--empty{background:transparent}", build.CSS)
+        self.assertIn(".loss-too-small{font-size:.8em;color:#6b7280;", build.CSS)
         self.assertNotIn("An empty frame means the row lost too little",
                          build.CSS + str(build.PAGES))
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("<strong>Dashed rows:</strong> under 0.5% of the worst row (1, 1K USDC) — see the table.",
+        self.assertIn("<strong>Not drawn:</strong> under 0.5% of the worst row (1, 1K USDC) — see the table.",
                       html)
         self.assertIn("0.909091", html)
 
