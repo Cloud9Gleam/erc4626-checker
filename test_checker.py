@@ -1465,8 +1465,12 @@ class TestChecker(unittest.TestCase):
         # number on the same page. The strip now uses the table's
         # six-decimal form, so the headline number matches the evidence
         # exactly; the FAIL sentence does the same.
+        # Visual verdict #293 (2026-11-26): the passing strip now
+        # names the bound the loss passed against ("of 0.001 USDC"),
+        # so a first-time visitor need not scroll to the donation
+        # card to learn why 0.000900 passes.
         self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
-                      "worst loss 0.000900 USDC", passed)
+                      "worst loss 0.000900 of 0.001 USDC", passed)
         self.assertNotIn("victim loses", passed)
         # Visual verdict #284 (2026-11-26): a zero-loss run used to
         # stay bare — offset 18 loses nothing on any donation row, so
@@ -1483,7 +1487,7 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)))
         self.assertIn("Result: ALL PASS", zero)
         self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
-                      "worst loss 0.000000 USDC", zero)
+                      "worst loss 0.000000 of 0.001 USDC", zero)
         self.assertNotIn("victim loses", zero)
 
     def test_verdict284_zero_loss_strip_carries_measured_zero(self):
@@ -1546,12 +1550,67 @@ class TestChecker(unittest.TestCase):
                                          1_000_000_000_000_000)]}]
         self.assertIn(
             "<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
-            "worst loss 0.000000 USDC",
+            "worst loss 0.000000 of 0.001 USDC",
             build.verdict_strip_html(allzero))
         bare = build.verdict_strip_html(errored)
         self.assertIn("Result: ALL PASS", bare)
         self.assertNotIn("worst loss", bare)
         self.assertNotIn("donation:", bare)
+
+    def test_verdict293_pass_strip_names_the_bound(self):
+        # Visual verdict #293 (2026-11-26, visual verdict #291 item 5):
+        # the passing strip named the worst loss but never the bound it
+        # passed against — a first-time visitor had to scroll to the
+        # donation card to learn why 0.000900 passes. The bound now
+        # rides with the number: "worst loss 0.000900 of 0.001 USDC".
+        # The effective bound is min(0.001 USDC, 0.1% of the victim
+        # deposit), the same min() the donation card's pass_bound
+        # uses; in every passing run it is 0.001 USDC, because a
+        # passing victim is at least the 1 USDC minimum deposit.
+        # The FAIL strip keeps its "victim loses" form — the bound
+        # there would push it over one desktop line, and a red SOME
+        # FAILED needs no bound to read as a failure. The Worker JS
+        # renderer mirrors the strip; its behaviour is verified by
+        # the verdict293 node harness, not by this suite — this test
+        # pins the shared source expression only.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        passed = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertIn(
+            "<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
+            "worst loss 0.000900 of 0.001 USDC", passed)
+        self.assertNotIn("victim loses", passed)
+        zero = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertIn("worst loss 0.000000 of 0.001 USDC", zero)
+        # A tiny victim binds the relative bound instead: a 0.5 USDC
+        # victim's 0.1% is 0.0005 USDC, below the 0.001 absolute.
+        allzero = [{"name": "donation_inflation", "pass": True,
+                    "detail": [{"donation": d, "victim_loss": 0}
+                               for d in (1_000_000, 1_000_000_000,
+                                         1_000_000_000_000,
+                                         1_000_000_000_000_000)]}]
+        self.assertIn("worst loss 0.000000 of 0.0005 USDC",
+                      build.verdict_strip_html(allzero, vic=500_000))
+        # A 1 USDC victim sits exactly on the switch: 0.1% is 0.001.
+        self.assertIn("worst loss 0.000000 of 0.001 USDC",
+                      build.verdict_strip_html(allzero, vic=1_000_000))
+        # The FAIL strip carries no bound.
+        failed = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=0, min_deposit=1_000_000,
+                          perf_fee_bps=0)))
+        self.assertIn("victim loses 0.909091 USDC", failed)
+        self.assertNotIn("of 0.001", failed)
+        # The Worker JS renderer computes the same effective bound.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn("Math.min(1000, Math.floor(vic/1000))", worker)
+        self.assertIn('of "+usdcTrim(BigInt(bound))+" USDC', worker)
 
     def test_verdict_strip_no_number_when_no_measured_loss(self):
         # Visual verdict #146 (2026-11-21): a donation failure with no
