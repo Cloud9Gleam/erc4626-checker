@@ -6139,7 +6139,7 @@ class TestChecker(unittest.TestCase):
                       '<summary>Reference (1)'
                       '<span class="track-toggle"><span class="when-closed">Show reference</span>'
                       '<span class="when-open">Hide</span><span class="tri"></span></span>'
-                      '<span class="track-preview">77 recurring vulnerability patterns, '
+                      '<span class="track-preview">77 recurring vulnerability patterns as reviewed Oct\u2013Nov 2026, '
                       'each proven by a real finding</span></summary>', track)
         self.assertIn('<details class="track-group" open>\n'
                       '<summary>Live finding (1)'
@@ -6435,7 +6435,7 @@ class TestChecker(unittest.TestCase):
                       track)
         self.assertIn('<span class="track-detail">Full index table + '
                       '11 deep dives with measured PoC numbers, workflow '
-                      'order, and the lessons that became rules.</span>',
+                      'order, and the lessons that became rules. The library has since grown to 199 patterns.</span>',
                       track)
         self.assertNotIn('<span class="track-detail">six Lows reproduced',
                          track)
@@ -31755,6 +31755,90 @@ class TestChecker(unittest.TestCase):
             '<a href="/guides/erc4626-airdrop-snapshot-capture/">',
             build)
 
+    def test_verdict285_playbook_count_is_date_qualified(self):
+        # Visual verdict #284 item 4 (2026-11-26): the /audit/ Reference
+        # entry said "77 recurring vulnerability patterns (76 distinct
+        # numbers; two numbered 37, no 39)" while /patterns/ lists 199 --
+        # a live contradiction for a reader comparing the two pages.
+        # First-hand check this round: the 77 is TRUE for its own page.
+        # /research/patterns/ really holds 77 entries (76 table rows
+        # numbered 1-77 excl. 39, with 37 twice as 37 and 37-dagger),
+        # and the /patterns/ library's first five groups are exactly
+        # those 77 (7+31+8+18+13, second 37 now 37b) plus 122 re-derived
+        # entries = 199. So the fix date-qualifies the 77 and cross-links
+        # to the current 199 -- it does NOT rewrite 77 to 199, which
+        # would falsify the Oct-Nov 2026 review record. The numbering
+        # note stays as reviewed: on the linked playbook page the second
+        # 37 is still marked 37-dagger (the 37b label lives on /patterns/).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        # Preview + lead carry the review date now; the unqualified
+        # forms are gone.
+        self.assertIn(
+            '<span class="track-preview">77 recurring vulnerability patterns as reviewed Oct\u2013Nov 2026, '
+            'each proven by a real finding</span>', audit)
+        self.assertNotIn(
+            '<span class="track-preview">77 recurring vulnerability patterns, '
+            'each proven by a real finding</span>', audit)
+        self.assertIn(
+            '<span class="track-lead">77 recurring vulnerability patterns (76 distinct numbers; '
+            'two numbered 37, no 39) as reviewed Oct\u2013Nov 2026, each proven by a real finding. </span>',
+            audit)
+        self.assertNotIn(
+            'no 39), each proven by a real finding. </span>', audit)
+        # Detail keeps its capitalised first word (#252) and gains the
+        # growth sentence in plain text -- no link: the lead/detail
+        # tiers assert [^<]* (split test), so an <a> here would fail.
+        self.assertIn(
+            '<span class="track-detail">Full index table + 11 deep dives with measured PoC numbers, '
+            'workflow order, and the lessons that became rules. The library has since grown to 199 patterns.</span>',
+            audit)
+        self.assertNotIn(
+            'and the lessons that became rules.</span>', audit)
+        # The snapshot page itself: its own 77 counts stand (they
+        # describe its 77-row table), and the intro now points onward.
+        playbook = pages["/research/patterns/"]
+        self.assertIn(
+            'The full working notes are the playbook file behind this page. '
+            'The library has since grown to 199 patterns \u2014 see '
+            '<a href="/patterns/">the current pattern index</a>.', playbook)
+        self.assertIn("77 entries, 76 distinct numbers", playbook)
+        self.assertIn("Tally: 77 pattern entries", playbook)
+        self.assertIn("77 patterns from real findings",
+                      dict((p, t) for p, t, d, k, b in build.PAGES)["/research/patterns/"])
+        # The library page states the growth the other way round.
+        library = pages["/patterns/"]
+        self.assertIn(
+            'the original 77-entry playbook distilled Oct\u2013Nov 2026, plus 122 re-derived entries',
+            library)
+        self.assertIn("now holds 199 numbered patterns", library)
+        # The /research/ index line was already date-qualified
+        # ("distilled Oct-Nov 2026"): untouched.
+        self.assertIn(
+            'distilled Oct\u2013Nov 2026 from 10 First Flight practice reviews',
+            pages["/research/"])
+        # Worker (in-memory) carries the same forms, JSON-escaped:
+        # en/em dashes as \u2013/\u2014, quotes as \".
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+
+        def _json(s):
+            return (s.replace("\u2013", "\\u2013")
+                     .replace("\u2014", "\\u2014")
+                     .replace('"', '\\"'))
+
+        self.assertEqual(worker.count(_json(
+            '77 recurring vulnerability patterns as reviewed Oct\u2013Nov 2026, each proven by a real finding')), 1)
+        self.assertEqual(worker.count(_json(
+            'The library has since grown to 199 patterns \u2014 see <a href="/patterns/">the current pattern index</a>')), 1)
+        self.assertEqual(worker.count(_json(
+            'the original 77-entry playbook distilled Oct\u2013Nov 2026, plus 122 re-derived entries')), 1)
+        self.assertEqual(worker.count('as reviewed Oct\\u2013Nov 2026'), 2)
+        self.assertNotIn('77 recurring vulnerability patterns, each proven', worker)
 
 if __name__ == "__main__":
     unittest.main()
