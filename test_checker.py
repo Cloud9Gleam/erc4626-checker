@@ -8454,15 +8454,24 @@ class TestChecker(unittest.TestCase):
         # used to propagate onto the block-level strong's number
         # (pixel-verified 38px white run under "179"), reading as a
         # spellcheck mark under the big figure.
+        # Visual verdict #281 (2026-11-26): the always-on label
+        # underline read as a body link, not a stat — verdict #278
+        # item 5. The label is now a small-caps stat label (uppercase,
+        # letterspaced, muted mint) and the underline is hover/focus
+        # only, so the strip reads as a scoreboard at rest while the
+        # #202 clickability survives.
         self.assertIn(
             ".hero-stats a{color:#fff;text-decoration:none}",
             build.CSS)
         self.assertIn(
-            ".hero-stats .hero-stat-label{text-decoration:underline;"
-            "text-underline-offset:2px}",
+            ".hero-stats .hero-stat-label{text-transform:uppercase;"
+            "letter-spacing:.06em;font-size:.8em;color:#cfe8d6}",
             build.CSS)
-        self.assertIn(".hero-stats a:hover .hero-stat-label"
-                      "{text-decoration-thickness:2px}",
+        self.assertIn(".hero-stats a:hover .hero-stat-label,"
+                      ".hero-stats a:focus-visible .hero-stat-label"
+                      "{text-decoration:underline;"
+                      "text-underline-offset:2px;"
+                      "text-decoration-thickness:2px}",
                       build.CSS)
         start = home.index('<div class="hero">')
         end = home.index("This site is one independent researcher", start)
@@ -8586,6 +8595,57 @@ class TestChecker(unittest.TestCase):
                 f"<strong>{num}</strong> "
                 f'<span class="hero-stat-label">{label}</span></a>',
                 strip)
+
+    def test_verdict281_hero_stat_labels_read_as_stats(self):
+        # Visual verdict #281 (2026-11-26, checker-improvement):
+        # visual verdict #278 item 5 — the three hero-stat labels
+        # ("guides", "checks per run", "to run the checker") were
+        # underlined at rest, so the strip read as three body links
+        # under big numbers instead of as stats. The label is now a
+        # small-caps stat label (uppercase, letterspaced, muted mint
+        # #cfe8d6 on the dark-green gradient) with no underline at
+        # rest; the underline returns on hover and keyboard focus, so
+        # the #202 link affordance survives without dressing the
+        # strip as prose. The numbers stay clean (the #239
+        # invariant) and the three hrefs stay (the #202 invariant).
+        # The #278 item 5 second half — a "0.000001USDC" missing
+        # space on the first screen — is disproven, not fixed: the
+        # no-space form occurs nowhere in build.py nor in the live
+        # homepage (only "0.000001&nbsp;USDC" / "0.000001 USDC").
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        start = build.CSS.index(".hero-stats .hero-stat-label{")
+        rule = build.CSS[start:build.CSS.index("}", start) + 1]
+        self.assertNotIn("text-decoration", rule)
+        self.assertIn("text-transform:uppercase", rule)
+        self.assertIn("letter-spacing:.06em", rule)
+        self.assertIn("font-size:.8em", rule)
+        self.assertIn("color:#cfe8d6", rule)
+        hover = build.CSS.index(".hero-stats a:hover .hero-stat-label,")
+        hover_rule = build.CSS[hover:build.CSS.index("}", hover) + 1]
+        self.assertIn("a:focus-visible .hero-stat-label", hover_rule)
+        self.assertIn("text-decoration:underline", hover_rule)
+        self.assertIn("text-underline-offset:2px", hover_rule)
+        self.assertIn("text-decoration-thickness:2px", hover_rule)
+        # No underline anywhere else on the strip at rest: the anchor
+        # carries none (else it would propagate onto the block-level
+        # numbers, #239) and the numbers carry none.
+        self.assertIn(".hero-stats a{color:#fff;text-decoration:none}",
+                      build.CSS)
+        self.assertNotIn(".hero-stats a{color:#fff;text-decoration:underline",
+                         build.CSS)
+        self.assertNotIn(".hero-stats strong{text-decoration", build.CSS)
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        self.assertEqual(home.count('class="hero-stat-label"'), 3)
+        for num, label in ((str(build.GUIDE_COUNT), "guides"),
+                           ("6", "checks per run"),
+                           ("$0", "to run the checker")):
+            self.assertIn(
+                f"<strong>{num}</strong> "
+                f'<span class="hero-stat-label">{label}</span></a>',
+                home)
 
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
