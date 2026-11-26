@@ -5147,9 +5147,12 @@ class TestChecker(unittest.TestCase):
         self.assertIn('Start form above', audit)
         self.assertNotIn('Start form below', audit)
         # The rest of the pay-box is untouched: price, steps 2-3,
-        # clock sentence, address row, QR, double-check note.
+        # clock sentence, address row, QR, double-check note. The slice
+        # runs through the figure close, not the first </div> (that is
+        # the pay-row's close): #309 moves the note into the QR
+        # figure, so a row-close slice would miss it.
         box = audit[audit.index('<div class="pay-box">'):]
-        box = box[:box.index('</div>') + len('</div>')]
+        box = box[:box.index('</figure>') + len('</figure>')]
         self.assertIn('<p class="price-big">50 USDC</p>', box)
         self.assertIn('<li><strong>Pay 50 USDC</strong> to the address below.</li>', box)
         self.assertIn('<li><strong>Paste the payment transaction hash in the form</strong> to match it to your order.</li>', box)
@@ -6176,13 +6179,20 @@ class TestChecker(unittest.TestCase):
                       build.CSS)
         self.assertIn(".pay-row a.basescan-link:hover{background:#eef7f0;"
                       "text-decoration:none}", build.CSS)
-        # Inside the pay-row, after the copy button, before the note.
+        # Inside the pay-row: copy button, then BaseScan link. The note
+        # used to follow them in the row; #309 moves it into the QR
+        # figure below, so the row-to-figure order is checked on the
+        # whole page instead.
         row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
         self.assertIsNotNone(row, "pay-row not found")
         self.assertLess(row.group(0).index("Copy address"),
                         row.group(0).index("View on BaseScan"))
-        self.assertLess(row.group(0).index("View on BaseScan"),
-                        row.group(0).index("pay-note"))
+        self.assertNotIn("pay-note", row.group(0))
+        self.assertLess(audit.index("View on BaseScan"),
+                        audit.index("pay-note"))
+        fig = re.search(r'<figure class="pay-qr">.*?</figure>', audit, re.S)
+        self.assertIsNotNone(fig, "pay-qr figure not found")
+        self.assertIn("pay-note", fig.group(0))
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(".pay-row a.basescan-link{flex-shrink:0;", worker)
@@ -6197,10 +6207,13 @@ class TestChecker(unittest.TestCase):
         # warning is about, so the toggle, its wrapper, its rules,
         # and the 1em right margin #217 put on the BaseScan link to
         # separate it from the toggle are all gone. The row is now
-        # address, copy button, BaseScan link, note -- and the
+        # address, copy button, BaseScan link -- and the
         # Copy-to-BaseScan gap is untouched (the empty
         # pay-copy-status span doubles the flex gap there, so a
         # row-level gap change would overshoot it to ~51px).
+        # Checker-improvement #309 (2026-11-27) moves the note out of
+        # the row into the QR figure; the row assertions below check
+        # the note is gone from the row and present in the figure.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -6215,7 +6228,9 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(rule, worker)
         # The row itself is untouched: same flex gap, same wrap, same
-        # control order (copy, BaseScan, note).
+        # control order (copy, BaseScan). The note left the row in
+        # #309 -- it now sits in the QR figure below, so the row
+        # slice must not contain it and the figure must.
         self.assertIn(".pay-row{display:flex;align-items:center;"
                       "gap:.6em;flex-wrap:wrap", build.CSS)
         self.assertNotIn(".pay-row .addr-toggle-wrap", build.CSS)
@@ -6227,8 +6242,12 @@ class TestChecker(unittest.TestCase):
                         row.index("pay-copy-status"))
         self.assertLess(row.index("pay-copy-status"),
                         row.index("View on BaseScan"))
-        self.assertLess(row.index("View on BaseScan"),
-                        row.index("pay-note"))
+        self.assertNotIn("pay-note", row)
+        fig = audit[audit.index('<figure class="pay-qr">'):]
+        fig = fig[:fig.index("</figure>")]
+        self.assertIn("pay-note", fig)
+        self.assertLess(audit.index("View on BaseScan"),
+                        audit.index("pay-note"))
         self.assertNotIn("togglePayAddr", row)
         self.assertNotIn("addr-toggle", row)
 
@@ -10059,7 +10078,8 @@ class TestChecker(unittest.TestCase):
         # Checker-improvement #230 (2026-11-25, visual verdict #230
         # item 1) retires the toggle that collapsed the address, so
         # the shortened display is gone for good and the row holds
-        # only copy, BaseScan, and the note.
+        # only address, copy, and BaseScan; #309 moves the note
+        # into the QR figure below the row.
         import re
         import sys
         from pathlib import Path
@@ -10084,7 +10104,7 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("togglePayAddr", audit)
         self.assertIn(">Copy address</button>", audit)
 
-    def test_audit_pay_row_note_attached(self):
+    def test_verdict309_pay_note_attached_to_qr_figure(self):
         # Visual verdict #67 put a payment-safety note in the
         # pay-row's right side, pushed to the far edge by
         # margin-left:auto to fill ~650px of empty light green.
@@ -10123,7 +10143,7 @@ class TestChecker(unittest.TestCase):
         # regular -- the #214 "Email first" bold-lead pattern.
         # The plain sentence survives only after de-tagging, so the
         # assertions below check the strong form in the markup and
-        # the plain sentence in the de-tagged row text.
+        # the plain sentence in the de-tagged figure text.
         note = ("Double-check the address before sending — USDC sent "
                 "to the wrong address cannot be recovered.")
         strong = ("<strong>Double-check the address before sending"
@@ -10133,19 +10153,34 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(
             '<span class="pay-note">Double-check the address before '
             'sending —', audit)
-        # The note sits inside the pay-row, after the copy button, so
-        # it reads as attached to the address controls.
+        # Checker-improvement #309 (2026-11-27, visual verdict #307
+        # item 4): the note leaves the pay-row for the QR figure --
+        # it warns about the address the QR encodes, and the caption
+        # column beside the 200px QR had ~73px of empty green above
+        # and below its 2 lines. The note now sits under the scan
+        # text inside the figcaption; the row keeps address + Copy +
+        # BaseScan only.
         row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
         self.assertIsNotNone(row, "pay-row not found")
-        self.assertIn(strong, row.group(0))
-        self.assertIn(note, re.sub(r"<[^>]+>", "", row.group(0)))
-        self.assertLess(row.group(0).index("Copy address"),
-                        row.group(0).index(strong))
-        m = re.search(r"\.pay-row \.pay-note\{[^}]*\}", build.CSS)
-        self.assertIsNotNone(m, ".pay-row .pay-note rule not found")
+        self.assertNotIn("pay-note", row.group(0))
+        fig = re.search(r'<figure class="pay-qr">.*?</figure>', audit, re.S)
+        self.assertIsNotNone(fig, "pay-qr figure not found")
+        self.assertIn(strong, fig.group(0))
+        self.assertIn(note, re.sub(r"<[^>]+>", "", fig.group(0)))
+        self.assertLess(audit.index("Copy address"),
+                        audit.index(strong))
+        self.assertLess(audit.index('<figure class="pay-qr">'),
+                        audit.index(strong))
+        m = re.search(r"\.pay-qr figcaption \.pay-note\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, ".pay-qr figcaption .pay-note rule not found")
+        self.assertIn("display:block", m.group(0))
+        self.assertIn("margin-top:.6em", m.group(0))
+        self.assertIn("font-size:1em", m.group(0))
+        self.assertIn("background:#dcfce7", m.group(0))
         self.assertNotIn("margin-left:auto", m.group(0))
-        self.assertIn("flex:0 0 100%", m.group(0))
+        self.assertNotIn("flex:0 0 100%", m.group(0))
         self.assertNotIn("max-width:26em", m.group(0))
+        self.assertNotIn("font-weight", m.group(0))
         # The address box is now the full-width field from 2026-11-23.
         m2 = re.search(r"\.pay-row code\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m2)
@@ -10174,10 +10209,11 @@ class TestChecker(unittest.TestCase):
         # the sentence follow the closing </strong> tag.
         self.assertIn("</strong> — USDC sent to the wrong address "
                       "cannot be recovered.", audit)
-        # The .pay-note rule is untouched (no font-weight added):
-        # the bold comes from the <strong> element alone.
-        m = re.search(r"\.pay-row \.pay-note\{[^}]*\}", build.CSS)
-        self.assertIsNotNone(m, ".pay-row .pay-note rule not found")
+        # The .pay-note rule lives in the figcaption now (#309 move);
+        # still no font-weight added: the bold comes from the
+        # <strong> element alone.
+        m = re.search(r"\.pay-qr figcaption \.pay-note\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, ".pay-qr figcaption .pay-note rule not found")
         self.assertNotIn("font-weight", m.group(0))
         # No global strong reset that would cancel the bold.
         self.assertNotIn("strong{font-weight", build.CSS)
@@ -14572,22 +14608,29 @@ class TestChecker(unittest.TestCase):
         self.assertIn('apiLink.split("&amp;").join("&amp;<wbr>")', worker)
         self.assertIn('.replace("{{API_LINK}}", apiLink)', worker)
 
-    def test_pay_note_is_full_width_strip(self):
+    def test_verdict309_pay_note_is_caption_column_box(self):
         # Visual verdict #93 leftover (2026-11-18): on /audit/ the
         # payment-safety note was a 646px text line in a ~1170px row,
-        # leaving ~525px of empty green to its right. Slightly larger
-        # text alone would still leave ~400px, so the note is now a
-        # full-width tinted strip: it spans the pay-box like the other
-        # full-width lines and the row reads as occupied end to end.
+        # leaving ~525px of empty green to its right. It became a
+        # full-width tinted strip in the pay-row; checker-improvement
+        # #309 (2026-11-27, visual verdict #307 item 4) moves the
+        # strip into the QR figcaption, under the scan text, where
+        # the caption column beside the 200px QR had ~73px of empty
+        # green above and below its 2 lines. The note is still a
+        # tinted box spanning its column end to end; only its home
+        # changed. font-size is 1em because the figcaption is
+        # already .95em.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            ".pay-row .pay-note{font-size:.95em;color:#374151;"
-            "flex:0 0 100%;background:#dcfce7;border:1px solid #bbe0c6;"
-            "border-radius:8px;padding:.55em .8em;box-sizing:border-box}",
+            ".pay-qr figcaption .pay-note{display:block;margin-top:.6em;"
+            "font-size:1em;color:#374151;background:#dcfce7;"
+            "border:1px solid #bbe0c6;border-radius:8px;"
+            "padding:.55em .8em;box-sizing:border-box}",
             build.CSS)
+        self.assertNotIn(".pay-row .pay-note{", build.CSS)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn("background:#dcfce7", worker)
