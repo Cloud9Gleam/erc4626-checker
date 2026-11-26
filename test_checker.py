@@ -8816,6 +8816,58 @@ class TestChecker(unittest.TestCase):
                       page)
         self.assertIn("<code>uint256</code> at slot&nbsp;k", page)
 
+    def test_verdict288_pattern5_code_is_one_chip(self):
+        # Visual verdict #287 item 1 (2026-11-26, checker-improvement):
+        # Pattern 5's Smell code `delete s_...[token]` broke across
+        # two lines in the real browser -- "delete s_..." on line 1,
+        # "[token]" alone on line 2 -- reading as two markers, not
+        # one snippet. #283's box-decoration-break:clone does NOT fix
+        # this: clone only gives each fragment its own full padding
+        # and radius, so the two fragments look like two complete
+        # chips (measured first-hand this round: 2 rects at 1919 and
+        # at 360, deco clone). The unit is 19 chars / ~190px, so it
+        # fits whole in the ~287px mobile column; class="nowrap"
+        # (the .nowrap rule, #260 precedent on the email subject
+        # code) keeps it one piece and the line breaker moves it
+        # whole to the next line instead.
+        # Same-round census: 30 short (<=30 chars) multi-line <code>
+        # at 1919, 68 at 360 -- Pattern 5 is one of a class, not a
+        # one-off; the rest stay queued (a batch nowrap pass would
+        # touch many pinned strings, one round = one bounded slice).
+        # The identical string also sits in the /research/patterns/
+        # "full index" table cell -- NOT touched: a <td> has
+        # different width/overflow behaviour and needs its own
+        # geometry check first.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        page = pages["/patterns/"]
+        bound = '<code class="nowrap">delete s_...[token]</code>'
+        plain = "<code>delete s_...[token]</code>"
+        self.assertEqual(page.count(bound), 1)
+        self.assertNotIn(plain, page)
+        # The sentence is otherwise untouched.
+        self.assertIn("an admin setter that deletes a token\u2192vault "
+                      "mapping (" + bound + ") without a migration path",
+                      page)
+        self.assertIn("Pattern 5 \u2014 Admin de-listing bricks user funds",
+                      page)
+        # The research playbook table cell keeps the plain form.
+        research = pages["/research/patterns/"]
+        self.assertEqual(research.count(plain), 1)
+        self.assertNotIn(bound, research)
+        # .nowrap exists and means white-space:nowrap.
+        self.assertIn(".nowrap{white-space:nowrap}", build.CSS)
+        # Worker (memory build, raw page bodies): one bound, one plain.
+        # Page bodies are JSON-embedded in worker.js, so the double
+        # quotes of class="nowrap" arrive escaped as \" (#269 lesson).
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertEqual(worker.count(bound.replace('"', '\\"')), 1)
+        self.assertEqual(worker.count(plain), 1)
+
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
         # ("0.909091 USDC of a 100,000 USDC deposit") while steps 1-2
