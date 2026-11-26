@@ -8843,9 +8843,12 @@ class TestChecker(unittest.TestCase):
         # one-off; the rest stay queued (a batch nowrap pass would
         # touch many pinned strings, one round = one bounded slice).
         # The identical string also sits in the /research/patterns/
-        # "full index" table cell -- NOT touched: a <td> has
-        # different width/overflow behaviour and needs its own
-        # geometry check first.
+        # "full index" table cell -- bound in #290, after its own
+        # geometry check (measure-verdict290.py): the code is 2
+        # rects at 1919 and at 360, whole-code width 182px/171px
+        # against a 520px/204px Smell column, and the table sits
+        # in a .twrap overflow-x:auto wrapper at 360, so nowrap
+        # cannot push page-level overflow.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -8862,19 +8865,65 @@ class TestChecker(unittest.TestCase):
                       page)
         self.assertIn("Pattern 5 \u2014 Admin de-listing bricks user funds",
                       page)
-        # The research playbook table cell keeps the plain form.
+        # The research playbook table cell is bound too, since #290
+        # (see the comment above for the geometry that licenses it).
         research = pages["/research/patterns/"]
-        self.assertEqual(research.count(plain), 1)
-        self.assertNotIn(bound, research)
+        self.assertEqual(research.count(bound), 1)
+        self.assertNotIn(plain, research)
         # .nowrap exists and means white-space:nowrap.
         self.assertIn(".nowrap{white-space:nowrap}", build.CSS)
-        # Worker (memory build, raw page bodies): one bound, one plain.
+        # Worker (memory build, raw page bodies): two bound, no plain
+        # (one on /patterns/, one in the research table, since #290).
         # Page bodies are JSON-embedded in worker.js, so the double
         # quotes of class="nowrap" arrive escaped as \" (#269 lesson).
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
-        self.assertEqual(worker.count(bound.replace('"', '\\"')), 1)
-        self.assertEqual(worker.count(plain), 1)
+        self.assertEqual(worker.count(bound.replace('"', '\\"')), 2)
+        self.assertEqual(worker.count(plain), 0)
+
+    def test_verdict290_pattern5_table_code_is_one_chip(self):
+        # Visual verdict #287 item 1, table half (2026-11-26,
+        # checker-improvement): the same `delete s_...[token]`
+        # code sits in the /research/patterns/ "full index" table
+        # cell, and the real browser saw it split there too --
+        # "( delete" at the end of line 1, "s_...[token] )" at
+        # the start of line 2. #288 bound the /patterns/ prose
+        # occurrence but deliberately left this one: a <td> has
+        # different width/overflow behaviour. Geometry first
+        # (measure-verdict290.py): the code is 2 rects at 1919
+        # and at 360, whole-code width 182px/171px, the Smell
+        # column is 520px/204px wide, and the table sits in a
+        # .twrap overflow-x:auto wrapper at 360 -- the column
+        # already exceeds the whole-code width, so nowrap cannot
+        # widen the table or push page-level overflow; the line
+        # breaker just moves the chip whole to the next line.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        bound = '<code class="nowrap">delete s_...[token]</code>'
+        plain = "<code>delete s_...[token]</code>"
+        research = pages["/research/patterns/"]
+        # The table row is bound, once, with the sentence intact.
+        self.assertEqual(research.count(bound), 1)
+        self.assertNotIn(plain, research)
+        self.assertIn("<tr><td>5</td><td>Admin de-listing bricks user "
+                      "funds</td><td>an admin setter that deletes a "
+                      "token\u2192vault mapping (" + bound + ") without "
+                      "a migration path for the deprecated vault",
+                      research)
+        # The /patterns/ prose occurrence is still bound (#288).
+        self.assertEqual(pages["/patterns/"].count(bound), 1)
+        self.assertNotIn(plain, pages["/patterns/"])
+        # The overflow safety net is present: the table wrapper
+        # scrolls horizontally instead of pushing the page wide.
+        self.assertIn(".twrap{overflow-x:auto", build.CSS)
+        # Worker (memory build): both occurrences bound, none plain.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertEqual(worker.count(bound.replace('"', '\\"')), 2)
+        self.assertEqual(worker.count(plain), 0)
 
     def test_verdict289_short_code_chips_are_nowrap(self):
         # Visual verdict #287 item 1, batch (2026-11-26,
@@ -8890,7 +8939,8 @@ class TestChecker(unittest.TestCase):
         # ~287px mobile column whole. No <pre> region exists in the
         # patterns body, so nowrap cannot collapse preformatted
         # newlines. Only the /patterns/ body is touched; the
-        # /research/patterns/ table cell keeps the plain form (#288).
+        # The /research/patterns/ table cell is bound separately
+        # in #290, after its own geometry check.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
