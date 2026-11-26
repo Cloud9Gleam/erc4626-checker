@@ -3063,7 +3063,7 @@ class TestChecker(unittest.TestCase):
         USDC = 1_000_000
         body = build.checker_body()
         self.assertIn(
-            '<pre class="api-example"><code id="api-curl">curl "https://check.n1netw3n.live/api/check?preset=alphaprimer&amp;<wbr>offset=6&amp;<wbr>min_usdc=1&amp;<wbr>fee_bps=1000&amp;<wbr>victim_usdc=100000&amp;<wbr>vault_assets_usdc=0&amp;<wbr>vault_shares=0"</code></pre>',
+            '<pre class="api-example"><code id="api-curl">curl "https://check.n1netw3n.live/api/check?preset=alphaprimer<wbr>&amp;offset=6<wbr>&amp;min_usdc=1<wbr>&amp;fee_bps=1000<wbr>&amp;victim_usdc=100000<wbr>&amp;vault_assets_usdc=0<wbr>&amp;vault_shares=0"</code></pre>',
             body)
         self.assertIn("Copy curl example", body)
         self.assertEqual(body.count("function copyCodeBlock"), 1)
@@ -3079,12 +3079,12 @@ class TestChecker(unittest.TestCase):
         link_m = re.search(r'<a href="(/api/check\?[^"]*)">JSON API', body)
         self.assertIsNotNone(link_m)
         # Visual verdict #185 item 3 (2026-11-24): the curl carries a
-        # <wbr> after every & so rendered lines break between
+        # <wbr> before every & so rendered lines break between
         # parameters, never mid-word; stripping the tags recovers the
         # exact one-line curl, and the JSON API link carries none.
         self.assertEqual(body.count("<wbr>"), 6)
         self.assertNotIn("<wbr>", link_m.group(1))
-        self.assertEqual(curl_m.group(1).replace("&amp;<wbr>", "&").replace("&amp;", "&"),
+        self.assertEqual(curl_m.group(1).replace("<wbr>&amp;", "&").replace("&amp;", "&"),
                          "https://check.n1netw3n.live"
                          + link_m.group(1).replace("&amp;", "&"))
         noprot_body = build.checker_body(off=0, mn=0, fee=0, preset="noprot")
@@ -14529,7 +14529,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn('curl "https://check.n1netw3n.live/api/check?'
                       'preset=alphaprimer', html)
         # Visual verdict #185 item 3 (2026-11-24): the curl also
-        # carries a <wbr> after every & (6 separators, 7 parameters),
+        # carries a <wbr> before every & (6 separators, 7 parameters),
         # so rendered lines break between parameters instead of
         # mid-word; the email block's lines are short key=value pairs
         # that never wrap and carry none.
@@ -14768,11 +14768,11 @@ class TestChecker(unittest.TestCase):
         self.assertIn('const apiLink = "/api/check?preset=" + preset',
                       worker)
         self.assertIn('.replace("{{API_LINK}}", apiLink)', worker)
-        self.assertIn('.replace("{{API_CURL}}", "curl \\"https://check.n1netw3n.live" + apiLink.split("&amp;").join("&amp;<wbr>") + "\\"")',
+        self.assertIn('.replace("{{API_CURL}}", "curl \\"https://check.n1netw3n.live" + apiLink.split("&amp;").join("<wbr>&amp;") + "\\"")',
                       worker)
         # The split/join applies to the curl display only — the JSON
         # API link keeps the bare apiLink (no <wbr> in an href).
-        self.assertIn('apiLink.split("&amp;").join("&amp;<wbr>")', worker)
+        self.assertIn('apiLink.split("&amp;").join("<wbr>&amp;")', worker)
         self.assertNotIn("api/check?preset=noprot", worker.split("const PRESETS")[0])
         self.assertIn("preset=noprot", worker)
 
@@ -14781,9 +14781,10 @@ class TestChecker(unittest.TestCase):
         # wrapped mid-word ("vault_shar / es" in a real browser,
         # "vault_sh / ares" headless) because overflow-wrap:anywhere
         # was the only break opportunity in a ~150-char token. A <wbr>
-        # after every & gives the browser a break point at each
-        # parameter boundary. The live line breaks are pinned by
-        # hidden_files/verdict185-curl-wbr-harness.mjs.
+        # before every & gives the browser a break point at each
+        # parameter boundary (#317, 2026-11-27: after the & the break
+        # left a dangling & at the end of the line). The live line
+        # breaks are pinned by hidden_files/verdict185-curl-wbr-harness.mjs.
         import sys, re
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -14793,13 +14794,13 @@ class TestChecker(unittest.TestCase):
             body = build.checker_body(**kwargs)
             curl_m = re.search(r'<code id="api-curl">(.*?)</code>', body)
             self.assertIsNotNone(curl_m)
-            # Six separators between seven parameters, each followed
+            # Six separators between seven parameters, each preceded
             # by a <wbr>; the copy button reads textContent, where
             # <wbr> contributes nothing, so stripping the tags
             # recovers the exact one-line curl — the same URL as the
             # JSON API link on the same page.
             self.assertEqual(curl_m.group(1).count("<wbr>"), 6)
-            self.assertEqual(curl_m.group(1).count("&amp;<wbr>"), 6)
+            self.assertEqual(curl_m.group(1).count("<wbr>&amp;"), 6)
             plain = curl_m.group(1).replace("<wbr>", "").replace("&amp;", "&")
             link_m = re.search(r'<a href="(/api/check\?[^"]*)">JSON API', body)
             self.assertIsNotNone(link_m)
@@ -14813,7 +14814,7 @@ class TestChecker(unittest.TestCase):
             self.assertNotIn("<wbr>", email_m.group(1))
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
-        self.assertIn('apiLink.split("&amp;").join("&amp;<wbr>")', worker)
+        self.assertIn('apiLink.split("&amp;").join("<wbr>&amp;")', worker)
         self.assertIn('.replace("{{API_LINK}}", apiLink)', worker)
 
     def test_verdict309_pay_note_is_caption_column_box(self):
