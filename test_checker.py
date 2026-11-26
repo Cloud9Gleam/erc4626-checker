@@ -11034,6 +11034,64 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
 
+    def test_verdict304_chart_loss_value_bold_worst_red(self):
+        # Checker-improvement #304 (visual verdict #299 item 8):
+        # the noprot chart's label loss numbers were all one weight
+        # and one colour — the worst row (0.909091) read no
+        # differently from the 0.099890 row, though its bar is 9x
+        # longer and it is the number the chart exists to show.
+        # The loss value is bold now, and the worst row's value is
+        # red — but only when that row breaches: red is the site's
+        # breach colour, and the default preset's worst row passes
+        # (green bar), so a red value there would contradict the
+        # verdict. The numbers themselves do not move: noprot worst
+        # 0.909091, default worst 0.000900.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # CSS: the bare-chart value is bold; the worst row's value
+        # is the fail red (#dc2626, same as the fail bars and the
+        # table's breach cells). Guide charts keep their own
+        # .loss-value rule — no bold leaks into them.
+        self.assertIn(".loss-chart--bare .loss-key .loss-value"
+                      "{white-space:nowrap;color:#111827;font-weight:700}",
+                      build.CSS)
+        self.assertIn(".loss-chart--bare .loss-row.worst .loss-value"
+                      "{color:#dc2626}",
+                      build.CSS)
+        self.assertIn(".loss-value{flex:0 0 5.5em;color:#111827}",
+                      build.CSS)
+        # Noprot: exactly two drawable rows — the worst one carries
+        # the class, the other does not; the class sits on the row
+        # whose value is 0.909091.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertEqual(html.count("class='loss-row worst'"), 1)
+        self.assertEqual(html.count("class='loss-row'>"), 1)
+        worst = html.index("class='loss-row worst'")
+        plain = html.index("class='loss-row'>", worst + 1)
+        self.assertLess(worst, html.index(
+            "0.909091 USDC &middot; 909&times; the bound"))
+        self.assertLess(html.index(
+            "0.909091 USDC &middot; 909&times; the bound"), plain)
+        self.assertIn("0.099890 USDC &middot; 99.9&times; the bound", html)
+        # Default: the worst row passes, so no worst class — the
+        # value stays bold black, never red on a green bar.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertEqual(html.count("class='loss-row worst'"), 0)
+        self.assertEqual(html.count("class='loss-row'>"), 1)
+        self.assertIn("0.000900 USDC &middot; 90% of the bound", html)
+        # The Worker-side template renders the same rule: the class
+        # is conditional on the row being the worst AND breaching.
+        js = build.checker_results_html_js()
+        self.assertIn("const isWorst=BigInt(row.victim_loss)===BigInt(worst)&&(atkB||vicB);", js)
+        self.assertIn('c+="<div class=\'loss-row"+(isWorst?" worst":"")', js)
+
     def test_loss_chart_values_under_label_in_key_column(self):
         # Visual verdict #110 item 2 (2026-11-19): on
         # /checker/?preset=noprot the two values sat ~660px apart in
@@ -11045,7 +11103,9 @@ class TestChecker(unittest.TestCase):
         # so the 10% bar sat beside ~400px of text. Values now sit
         # under their donation label in the key column, both lines
         # right-aligned to the same track edge: one x for every row,
-        # one colour, each adjacent to its bar's start. This is not
+        # one colour per state now (visual verdict #304: values bold,
+        # worst breaching row red), each adjacent to its bar's start.
+        # This is not
         # a return to #96's fixed right-hand column (orphaned ~630px
         # from a short bar's end); the value is adjacent to its bar.
         import sys
@@ -11055,8 +11115,10 @@ class TestChecker(unittest.TestCase):
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        # Full row: key (label over value), track — in that order,
-        # value dark.
+        # Full row: key (label over value), track — in that order.
+        # Visual verdict #304: this is the worst row, so its value
+        # is bold red now (see test_verdict304); the 1B row below
+        # stays dark.
         # Visual verdict #106 (noprot item 1): a breaching row also
         # carries how many times its loss exceeds the pass bound, so
         # the short red bar is not misread as a small loss — the worst
@@ -11064,13 +11126,14 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #123 new finding ③ (2026-11-20): the label
         # carries its unit and the multiple's referent inline, so it
         # no longer duplicates the table's bare number.
-        self.assertIn("<div class='loss-row'><span class='loss-key'>"
+        self.assertIn("<div class='loss-row worst'><span class='loss-key'>"
                       "<span class='loss-label'>"
                       "1,000,000 USDC</span><span class='loss-value'>"
                       "0.909091 USDC &middot; 909&times; the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:90.9%'></span></span></div>", html)
-        # Short bar: same value position, same colour, no --pct.
+        # Short bar: same value position, still dark — only the
+        # worst row's value is red (visual verdict #304).
         self.assertIn("<div class='loss-row'><span class='loss-key'>"
                       "<span class='loss-label'>"
                       "1,000,000,000 USDC</span><span class='loss-value'>"
@@ -11108,7 +11171,7 @@ class TestChecker(unittest.TestCase):
         # line inside the key column, dark text, never absolutely
         # positioned — and it is no longer a grid item of its own.
         self.assertIn(".loss-chart--bare .loss-key .loss-value"
-                      "{white-space:nowrap;color:#111827}",
+                      "{white-space:nowrap;color:#111827;font-weight:700}",
                       build.CSS)
         self.assertNotIn(".loss-chart--bare .loss-value{grid-column:2",
                          build.CSS)
@@ -11439,14 +11502,18 @@ class TestChecker(unittest.TestCase):
         # chart's own opening <div> precedes the first row.
         chart = html[html.index("<div class='loss-chart "
                                  "loss-chart--bare'>"):]
-        seg = chart[:chart.index("<div class='loss-row'>")]
+        # The marker drops the closing quote: the first row may
+        # carry the worst class now (visual verdict #304).
+        seg = chart[:chart.index("<div class='loss-row")]
         self.assertEqual(seg.count("<div"), 1)
         self.assertIn("<p class='loss-title'>", html)
         # Same premise in the Worker-side template: title and peak
         # are <p>, rows are <div>.
         js = build.checker_results_html_js()
         self.assertIn("c+=\"<p class='loss-title'>", js)
-        self.assertIn("c+=\"<div class='loss-row'>", js)
+        # The Worker-side row div carries the same conditional
+        # worst class (visual verdict #304).
+        self.assertIn('c+="<div class=\'loss-row"+(isWorst?" worst":"")', js)
 
     def test_verdict189_gridlines_cross_bars(self):
         # Visual verdict #189 (2026-11-24, checker-improvement):
@@ -11559,7 +11626,7 @@ class TestChecker(unittest.TestCase):
                       "{display:block;text-align:right}",
                       build.CSS)
         self.assertIn(".loss-chart--bare .loss-key .loss-value"
-                      "{white-space:nowrap;color:#111827}",
+                      "{white-space:nowrap;color:#111827;font-weight:700}",
                       build.CSS)
         self.assertNotIn(".loss-chart--bare .loss-label{grid-column:1}",
                          build.CSS)
@@ -11576,7 +11643,7 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         # Row markup: key wrapper (label over value), then track.
-        self.assertIn("<div class='loss-row'><span class='loss-key'>"
+        self.assertIn("<div class='loss-row worst'><span class='loss-key'>"
                       "<span class='loss-label'>1,000,000 USDC</span>"
                       "<span class='loss-value'>0.909091 USDC &middot; 909&times; the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill fail' style='width:90.9%'></span></span></div>",
