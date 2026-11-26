@@ -11197,18 +11197,19 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
         self.assertIn("loss-chart", html)
-        # The checker chart carries no grey fill: a partial bar used to
-        # trail a light-grey remainder — the track's presence was
-        # inconsistent, reading as a half-empty bar. Bars now sit
-        # inside the same hairline frame every row carries
-        # (verdict #51); width alone carries the scale. Verdict #95
-        # residual: that 1px #6b7280 frame made the ~89% unfilled
-        # remainder of a short bar read as an empty placeholder box,
-        # so the frame is gone too — the fill alone shows, against
-        # the white card, with the note stating the scale.
+        # Checker-improvement #318 (visual verdict #318 item 1,
+        # 2026-11-27): the bare track carries the guide charts'
+        # #f3f4f6, reversing verdicts #51/#95 — the fresh
+        # browser ranked the no-grey chart's "looks unloaded" read
+        # #1 on both presets, and side-by-side renders show the
+        # grey track reading as a finished chart. The #51 read does
+        # not return: only drawable rows are shown (folded,
+        # #94/#313), bound-scaled (default 90%, #130), with axis +
+        # gridlines + legend — the grey is a track, not a
+        # placeholder box.
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
-                      "grid-column:2;background:transparent;border:0}",
+                      "grid-column:2;background:#f3f4f6;border:0}",
                       build.CSS)
         # Visual verdict #136 (2026-11-21): the legend names the
         # axis maximum now, not the worst row as the scale — the
@@ -11359,6 +11360,43 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn("loss-chart", html)
+
+    def test_verdict318_bare_chart_tracks_carry_grey_background(self):
+        # Checker-improvement #318 (visual verdict #318 item 1,
+        # 2026-11-27): the bare chart's tracks carry the guide
+        # charts' #f3f4f6, reversing verdicts #51/#95 — the fresh
+        # browser ranked the no-grey chart's "looks unloaded" read
+        # #1 on both presets, and side-by-side renders show the
+        # grey track reading as a finished chart. The #51 read does
+        # not return: only drawable rows are shown (folded,
+        # #94/#313), bound-scaled (default 90%, #130), with axis +
+        # gridlines + legend. The generic .loss-track rule already
+        # carries #f3f4f6 (guide charts); the bare override used to
+        # clear it to transparent. .loss-track--empty (guide rows)
+        # stays transparent, and the gridline ::after + #164
+        # first-row top:0 are untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".loss-chart--bare .loss-track{position:relative;"
+                      "grid-column:2;background:#f3f4f6;border:0}",
+                      build.CSS)
+        self.assertIn(".loss-track{flex:1;height:1.7em;background:#f3f4f6;"
+                      "border-radius:3px;overflow:hidden}", build.CSS)
+        self.assertIn(".loss-track--empty{background:transparent}", build.CSS)
+        self.assertIn(".loss-chart--bare .loss-row:first-of-type "
+                      ".loss-track::after{top:0}", build.CSS)
+        # The chart still renders with the same bar widths.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<span class='loss-fill fail' style='width:90.9%'></span>", html)
+        self.assertIn("<span class='loss-fill fail' style='width:10.0%'></span>", html)
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn("<span class='loss-fill pass' style='width:90.0%'></span>", html)
 
     def test_verdict304_chart_loss_value_bold_worst_red(self):
         # Checker-improvement #304 (visual verdict #299 item 8):
@@ -11512,7 +11550,7 @@ class TestChecker(unittest.TestCase):
         # positioned value. The value stays static (asserted above);
         # the overlay is pinned by test_loss_chart_gridlines.
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
-                      "grid-column:2;background:transparent;border:0}",
+                      "grid-column:2;background:#f3f4f6;border:0}",
                       build.CSS)
         # Guide charts (plain .loss-chart, values as flex items) are
         # untouched: the new rule is scoped to --bare only.
@@ -11745,7 +11783,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
-                      "grid-column:2;background:transparent;border:0}",
+                      "grid-column:2;background:#f3f4f6;border:0}",
                       build.CSS)
         # The fill keeps its positioning (z-index:1), but the
         # gridlines now sit above it: the ::after carries
@@ -15663,7 +15701,7 @@ class TestChecker(unittest.TestCase):
         self.assertIsNotNone(m, ".loss-row rule not found")
         self.assertIn("margin:.25em 0", m.group(0))
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
-                      "grid-column:2;background:transparent;border:0}",
+                      "grid-column:2;background:#f3f4f6;border:0}",
                       build.CSS)
         self.assertNotIn(".loss-chart--bare .loss-track--empty{background:transparent;"
                          "border-color:",
