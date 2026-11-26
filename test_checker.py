@@ -6686,7 +6686,7 @@ class TestChecker(unittest.TestCase):
                       track)
         self.assertIn('<span class="track-detail">Full index table + '
                       '11 deep dives with measured PoC numbers, workflow '
-                      'order, and the lessons that became rules. The library has since grown to 199 patterns.</span>',
+                      'order, and the lessons that became rules. The library has since grown to 199 patterns (as of Nov 26, 2026).</span>',
                       track)
         self.assertNotIn('<span class="track-detail">six Lows reproduced',
                          track)
@@ -33077,7 +33077,7 @@ class TestChecker(unittest.TestCase):
         # tiers assert [^<]* (split test), so an <a> here would fail.
         self.assertIn(
             '<span class="track-detail">Full index table + 11 deep dives with measured PoC numbers, '
-            'workflow order, and the lessons that became rules. The library has since grown to 199 patterns.</span>',
+            'workflow order, and the lessons that became rules. The library has since grown to 199 patterns (as of Nov 26, 2026).</span>',
             audit)
         self.assertNotIn(
             'and the lessons that became rules.</span>', audit)
@@ -33086,7 +33086,7 @@ class TestChecker(unittest.TestCase):
         playbook = pages["/research/patterns/"]
         self.assertIn(
             'The full working notes are the playbook file behind this page. '
-            'The library has since grown to 199 patterns \u2014 see '
+            'The library has since grown to 199 patterns (as of Nov 26, 2026) \u2014 see '
             '<a href="/patterns/">the current pattern index</a>.', playbook)
         self.assertIn("77 entries, 76 distinct numbers", playbook)
         self.assertIn("Tally: 77 pattern entries", playbook)
@@ -33116,11 +33116,49 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(worker.count(_json(
             '77 recurring vulnerability patterns as reviewed Oct\u2013Nov 2026, each proven by a real finding')), 1)
         self.assertEqual(worker.count(_json(
-            'The library has since grown to 199 patterns \u2014 see <a href="/patterns/">the current pattern index</a>')), 1)
+            'The library has since grown to 199 patterns (as of Nov 26, 2026) \u2014 see <a href="/patterns/">the current pattern index</a>')), 1)
         self.assertEqual(worker.count(_json(
             'the original 77-entry playbook distilled Oct\u2013Nov 2026, plus 122 re-derived entries')), 1)
         self.assertEqual(worker.count('as reviewed Oct\\u2013Nov 2026'), 2)
         self.assertNotIn('77 recurring vulnerability patterns, each proven', worker)
+
+    def test_verdict302_pattern_count_199_carries_a_date(self):
+        # Visual verdict #299 item 7 (2026-11-26): the "199 patterns"
+        # claim had no date -- a reader could not tell when the count
+        # was true -- and, on /audit/, no link to the current index.
+        # The fix dates the claim in both places it appears undated:
+        # the /audit/ Reference card detail (plain text only -- the
+        # lead/detail tiers stay link-free per #285, so NO <a> there;
+        # the card title already links to /research/patterns/, whose
+        # intro links on to /patterns/) and the /research/patterns/
+        # intro (date added, existing link kept). The count itself is
+        # verified live: /patterns/ holds 199 sections.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        self.assertEqual(audit.count(
+            'The library has since grown to 199 patterns (as of Nov 26, 2026).</span>'), 1)
+        self.assertNotIn('grown to 199 patterns.</span>', audit)
+        self.assertNotIn('grown to 199 patterns \u2014 see', audit)
+        # No link inside any track-detail span (the #285 tier rule).
+        for m in re.finditer(r'<span class="track-detail">(.*?)</span>', audit, re.S):
+            self.assertNotIn('<a ', m.group(1))
+        playbook = pages["/research/patterns/"]
+        self.assertIn(
+            'The library has since grown to 199 patterns (as of Nov 26, 2026)', playbook)
+        self.assertIn(
+            'see <a href="/patterns/">the current pattern index</a>.', playbook)
+        self.assertNotIn('grown to 199 patterns \u2014 see', playbook)
+        library = pages["/patterns/"]
+        self.assertEqual(library.count('<section id="pattern-'), 199)
+        worker = build.worker_js(pages)
+        self.assertEqual(worker.count('grown to 199 patterns (as of Nov 26, 2026)'), 2)
+        self.assertEqual(worker.count('grown to 199 patterns.</span>'), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
