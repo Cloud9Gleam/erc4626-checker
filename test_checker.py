@@ -7411,6 +7411,12 @@ class TestChecker(unittest.TestCase):
         # The retired #159 (d) split test pinned the three-paragraph
         # shape; this test pins the condensed shape so a future edit
         # cannot silently re-inflate it.
+        # Visual verdict #299 item 4 (2026-11-26, checker-improvement
+        # #300): the intro is followed by exactly one legend line
+        # (class track-legend) stating the total, the group split, and
+        # the severity letters. That line is a key, not a second intro
+        # paragraph — the intro paragraph itself stays one, under 70
+        # words, with the same start and end.
         import re
         import sys
         from pathlib import Path
@@ -7419,9 +7425,14 @@ class TestChecker(unittest.TestCase):
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         intro = track[:track.index("<details")]
-        # Exactly one paragraph before the first group.
+        # Exactly one intro paragraph plus one legend line before the
+        # first group — no re-inflation of the intro itself.
         paras = re.findall(r"<p[^>]*>(.*?)</p>", intro, re.S)
-        self.assertEqual(len(paras), 1)
+        self.assertEqual(len(paras), 2)
+        self.assertEqual(intro.count('<p class="track-intro">'), 1)
+        self.assertEqual(intro.count('<p class="track-legend">'), 1)
+        self.assertLess(intro.index('<p class="track-intro">'),
+                        intro.index('<p class="track-legend">'))
         para = re.sub(r"\s+", " ", paras[0])
         self.assertTrue(para.startswith(
             "Every review below was reproduced from source in forge."))
@@ -7437,6 +7448,71 @@ class TestChecker(unittest.TestCase):
         # example — no dead rule left in the stylesheet.
         self.assertEqual(build.CSS.count(".track-example{"), 0)
         self.assertEqual(audit.count('class="track-example"'), 0)
+
+    def test_verdict300_track_record_legend(self):
+        # Visual verdict #299 item 4 (2026-11-26, checker-improvement
+        # #300): the Track record intro explains the pill, but a
+        # first-time buyer still had to add the five group counts
+        # (3+33+3+1+1) to reach 41 and infer H/M/L from the cards —
+        # the "41 reviews" TOC link even miscounted the shape, since
+        # the 41st entry is the pattern playbook, not a review. One
+        # legend line under the intro now states the total, the group
+        # split, and the severity letters; the TOC link reads
+        # "41 entries" to match. Counts are cross-checked against the
+        # actual <li> entries per group, not just the summary text.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
+        legend = ('<p class="track-legend">41 entries — 40 reviews plus '
+                  "the pattern playbook: 3 ended contests · 33 First "
+                  "Flight · 3 bounded slices · 1 live finding. "
+                  "H = High, M = Medium, L = Low, "
+                  "Info = informational.</p>")
+        self.assertEqual(audit.count(legend), 1)
+        # Position: after the intro, before the first group.
+        self.assertLess(audit.index('</p>\n<p class="track-legend">'),
+                        audit.index("<details"))
+        self.assertGreater(audit.index('<p class="track-legend">'),
+                           audit.index('class="track-intro"'))
+        # The group split in the legend matches the actual entries.
+        groups = track.split('<details class="track-group"')[1:]
+        self.assertEqual(len(groups), 5)
+        counts = [g.count("<li>") for g in groups]
+        self.assertEqual(counts, [3, 33, 3, 1, 1])
+        self.assertEqual(sum(counts), 41)
+        # 40 of the 41 are reviews; the 41st is the reference playbook.
+        self.assertEqual(counts[0] + counts[1] + counts[2] + counts[4], 40)
+        self.assertIn("The audit pattern playbook", groups[3])
+        # The homepage hero proof counts the same 40 reviews.
+        home = pages["/"]
+        self.assertIn("across 40&nbsp;reviews", home)
+        # TOC now says entries, not reviews — no stale "41 reviews"
+        # anywhere on the audit page.
+        toc = audit[audit.index('<nav class="audit-toc"'):
+                    audit.index('</nav>')]
+        self.assertIn("Track record — 41 entries", toc)
+        self.assertNotIn("41 reviews", audit)
+        # CSS: one muted, slightly smaller rule; the intro box rule
+        # itself is untouched.
+        self.assertEqual(build.CSS.count(
+            ".track-legend{font-size:.92em;color:#4b5563;"
+            "margin:.4em 0 0}"), 1)
+        self.assertIn(
+            ".track-intro{background:#f9fafb;border:1px solid #e5e7eb;"
+            "border-left:4px solid #0a7d2c;border-radius:8px;"
+            "padding:.6em .9em}", build.CSS)
+        # The deployed worker carries the legend and the rule
+        # (json.dumps escapes the em-dash/middots, so compare the
+        # JSON-escaped form, quotes stripped).
+        import json
+        worker = build.worker_js(pages)
+        self.assertIn(json.dumps(legend)[1:-1], worker)
+        self.assertIn(".track-legend{font-size:.92em;", worker)
 
     def test_track_summary_toggle(self):
         # Visual verdict #115 (c) residual, measured 2026-11-19: the
@@ -14530,7 +14606,9 @@ class TestChecker(unittest.TestCase):
         # all 7 sections (ids on the h2s), and a back-to-top link sits
         # under the last section, jumping to body id="top". No JS;
         # wording, prices, and the track record are untouched. The
-        # 41-review count is the group summaries' sum (3+33+3+1+1).
+        # 41-entry count is the group summaries' sum (3+33+3+1+1), 40
+        # of them reviews — the 41st is the pattern playbook (see
+        # test_verdict300_track_record_legend).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -14542,7 +14620,7 @@ class TestChecker(unittest.TestCase):
                     audit.index('</nav>')]
         # (2026-11-24 update: visual verdict #208 moves "What you do not
         # get" up beside "What you get" — the exclusion clauses sat below
-        # the 41-review track record, ~4600px down at 1919px, so a buyer
+        # the 41-entry track record, ~4600px down at 1919px, so a buyer
         # deciding whether to pay had to scroll past all the proof to
         # reach the terms. The TOC order follows the section order.)
         targets = ["#scope", "#start", "#price", "#what-you-get", "#limits",
@@ -14550,7 +14628,7 @@ class TestChecker(unittest.TestCase):
         hrefs = [t.split('href="')[1].split('"')[0]
                  for t in toc.split("<a ")[1:]]
         self.assertEqual(hrefs, targets)
-        self.assertIn("Track record — 41 reviews", toc)
+        self.assertIn("Track record — 41 entries", toc)
         self.assertLess(audit.index('<nav class="audit-toc"'),
                         audit.index('<h2 id="scope">'))
         for anchor, label in zip(
@@ -14908,7 +14986,7 @@ class TestChecker(unittest.TestCase):
         # light / right heavy (#244 measured the same ~24-28px).
         # The last item now spans both columns, so the first six
         # balance 3/3 and the longest link (Track record — 41
-        # reviews) takes its own full-width row. Geometry is pinned
+        # entries) takes its own full-width row. Geometry is pinned
         # by hidden_files/measure-verdict246.py (1919px: column
         # bottoms 466.2 / 463.7, diff 2.5px, was 28.0px; 360px
         # single-column, unchanged). Below 641px there are no
@@ -14927,7 +15005,7 @@ class TestChecker(unittest.TestCase):
         # The spanner rule is positional (:last-child), so the
         # track-record item must be the last li in the list.
         self.assertIn(
-            '<li><a href="#track-record">Track record — 41 reviews</a>'
+            '<li><a href="#track-record">Track record — 41 entries</a>'
             '</li>\n</ul>', audit)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
