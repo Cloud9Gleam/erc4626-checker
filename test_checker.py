@@ -14397,6 +14397,59 @@ class TestChecker(unittest.TestCase):
         self.assertIn("email-params", fn)
         self.assertIn("Copy email parameters", fn)
 
+    def test_verdict306_email_copy_button_pinned_to_notes_bottom(self):
+        # Visual verdict #306 (2026-11-27, checker-improvement): the
+        # two columns of the 'Prefer email?' block ended 33px apart
+        # at 1919px — the copy button stopped at y4786 while the
+        # notes ran to y4819, so the left column read as unfinished
+        # ("错层", verdict #305 item 9). The left column is a flex
+        # column now and the button paragraph takes margin-top:auto
+        # (the home-cards pin pattern from #166): the pre stays put
+        # — the #240 first-line alignment is untouched — and the
+        # button sits on the row's bottom edge. Geometry is pinned
+        # by hidden_files/verdict306-email-pin-harness.mjs and
+        # hidden_files/measure-verdict306.py.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # The pin lives on the pre column, not the grid: #240 pins
+        # the grid rule verbatim (align-items:start), so the column
+        # stretches itself.
+        self.assertIn(
+            ".email-para .email-pre-col{display:flex;"
+            "flex-direction:column;align-self:stretch}",
+            build.CSS)
+        self.assertIn(
+            ".email-para .email-pre-col p:last-child{margin-top:auto;"
+            "margin-bottom:0}",
+            build.CSS)
+        # The notes' last paragraph loses its .65em bottom margin so
+        # the row bottom is the last line of text, not 11px below it.
+        self.assertIn(
+            ".email-para .email-notes-col p:last-child{margin-bottom:0}",
+            build.CSS)
+        # The #240 first-line alignment rules are untouched.
+        self.assertIn(
+            ".email-para .email-notes-col p:first-child{margin-top:1em}",
+            build.CSS)
+        self.assertIn(
+            ".email-para pre{background:#f3f4f6;color:#111827;"
+            "border:1px solid #d1d5db;width:fit-content;max-width:100%;margin:0}",
+            build.CSS)
+        # The rules ride the shared CSS into the Worker (one copy per
+        # page), so the live renderer pins the button too.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(
+            ".email-para .email-pre-col{display:flex;"
+            "flex-direction:column;align-self:stretch}",
+            worker)
+        self.assertIn(
+            ".email-para .email-pre-col p:last-child{margin-top:auto;"
+            "margin-bottom:0}",
+            worker)
+
     def test_api_curl_follows_the_run_in_the_worker(self):
         # Visual verdict #167 item 1 (2026-11-24): the Worker serves
         # every /checker/ run from one template, so the curl example
