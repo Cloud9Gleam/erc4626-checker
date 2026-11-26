@@ -2158,9 +2158,13 @@ class TestChecker(unittest.TestCase):
         # deterministically the five-word phrase in both renderers;
         # at 360px the unit is ~264px < 287.4px column, so it fits.
         # NOT reproduce and are deliberately untouched: the Scope
-        # "only." item and the limits "keys." item are each a single
-        # line at 1919px, and the AlphaPrimer "model)." tail is a
-        # 5-word line at frac 0.37. Probe-verified
+        # "only." item is a single line at 1919px, and the
+        # AlphaPrimer "model)." tail is a 5-word line at frac 0.37.
+        # The limits "keys." item was single-line too until #277
+        # moved it into the pair's narrow right column, where it
+        # wrapped to 3 lines with a 0.197 last line -- #286 binds
+        # its tail ("never ask for keys."), so it is no longer
+        # untouched; see test_verdict286. Probe-verified
         # (measure-verdict245.py / probe-verdict245-lastline.py):
         # last lines 166.2/98.3/144.0px (frac 0.21/0.13/0.19) before,
         # 267.2/279.5/271.5px (frac 0.34/0.36/0.35) after at 1919px;
@@ -2189,7 +2193,10 @@ class TestChecker(unittest.TestCase):
         # at desktop, and the AlphaPrimer tail is already a phrase.
         self.assertIn("review and local forge\nreproduction only.",
                       audit)
-        self.assertIn("never ask\nfor keys.", audit)
+        # (#286) the limits "keys." tail is bound now; the plain
+        # two-line form is gone.
+        self.assertIn("never&nbsp;ask&nbsp;for&nbsp;keys.", audit)
+        self.assertNotIn("never ask\nfor keys.", audit)
         self.assertIn("verified against the checker model).", audit)
 
     def test_verdict253_audit_start_intro_tail_is_bound(self):
@@ -7423,11 +7430,12 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<li>A written report within <strong>72 hours</strong> "
                       "of payment confirmation.</li>", section)
         self.assertIn("<li>Every finding with severity and a reproducible "
-                      "proof-of-concept where one exists.</li>", section)
+                      "proof&#8209;of&#8209;concept&nbsp;where&nbsp;one&nbsp;exists.</li>",
+                      section)
         self.assertIn("<li>An honest clean negative for the slice if no "
                       "finding is found.</li>", section)
         self.assertIn("<li>No guaranteed findings: a clean negative is "
-                      "reported as a clean negative.</li>", section)
+                      "reported as&nbsp;a&nbsp;clean&nbsp;negative.</li>", section)
         # The old single-paragraph form must not survive anywhere.
         self.assertNotIn("of payment confirmation: every finding", audit)
 
@@ -13776,8 +13784,9 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(audit.count('<h2 id="limits">What you do not get</h2>'), 1)
         self.assertIn("No full audit of the whole codebase, no legal advice",
                       audit)
+        # (#286) the tail is bound: "never ask for keys." is one unit.
         self.assertIn("No KYC from either side. No custody: we never hold "
-                      "your funds and never ask\nfor keys.", audit)
+                      "your funds and never&nbsp;ask&nbsp;for&nbsp;keys.", audit)
         # The limits block is inside the purchase-terms block, not
         # after the track record: it precedes the report-examples h2
         # and the track record's closing paragraph still ends the page.
@@ -13853,6 +13862,74 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".audit-pair h2{margin-top:0}", worker)
         self.assertIn(".audit-page .audit-pair h2{margin-top:1.8em}", worker)
         self.assertIn(".audit-pair ul{margin-bottom:0}", worker)
+
+    def test_verdict286_audit_pair_tails_are_bound(self):
+        # Visual verdict #286 (2026-11-26): the /audit/ pair's four
+        # shortest last lines, measured on the real browser at 1920px
+        # and confirmed headless (hidden_files/measure-verdict286.py):
+        # "What you get" li2 "where one exists." 0.265 (browser 27%),
+        # li4 "clean negative." 0.229 (browser 23-24%); "What you do
+        # not get" li1 "free code." 0.232 (browser 24%) with the word
+        # "exploit-free" split across lines as "exploit- / free", li2
+        # "for keys." 0.197 (browser 23%). The right column is only
+        # ~310px wide (3fr/2fr), so each tail is bound into one unit
+        # with non-breaking spaces; the two hyphenated compounds take
+        # the non-breaking hyphen (U+2011, &#8209; -- #260/#200
+        # precedent) so the compound itself cannot split either.
+        # Wording is unchanged; only the break points move. The
+        # expected post-fix last lines (re-measured, same script):
+        # li2 "proof-of-concept where one exists." ~0.51, li4 "as a
+        # clean negative." ~0.41, right li1 "of exploit-free code."
+        # ~0.65, right li2 "never ask for keys." ~0.61, all at 1919;
+        # at 360 the four units (190-250px) still fit the ~281px
+        # column, so no overflow is introduced.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        get = audit[audit.index('<h2 id="what-you-get">What you get</h2>'):
+                    audit.index('<h2 id="limits">What you do not get</h2>')]
+        limits = audit[audit.index('<h2 id="limits">What you do not get</h2>'):
+                       audit.index('<h2 id="report-examples">')]
+        self.assertIn("proof&#8209;of&#8209;concept&nbsp;where&nbsp;one&nbsp;exists.",
+                      get)
+        self.assertIn("reported as&nbsp;a&nbsp;clean&nbsp;negative.", get)
+        self.assertIn("of&nbsp;exploit&#8209;free&nbsp;code.", limits)
+        self.assertIn("never&nbsp;ask&nbsp;for&nbsp;keys.", limits)
+        # The old unbound forms are gone from the pair (and from the
+        # whole audit page: no plain-hyphen "exploit-free" or
+        # "proof-of-concept" survives anywhere on it).
+        self.assertNotIn("proof-of-concept where one exists.", audit)
+        self.assertNotIn("reported as a clean negative.</li>", audit)
+        self.assertNotIn("exploit-free", audit)
+        self.assertNotIn("never ask\nfor keys.", audit)
+        self.assertNotIn("proof-of-concept", audit)
+        # The same sentences on the other pages keep their plain
+        # forms: the /poc-packaging/ page's own "No KYC" bullet and
+        # "funds path where one exists" were not part of this slice
+        # and must not have been touched by a global replace.
+        poc = pages["/poc-packaging/"]
+        self.assertIn("funds path where one exists", poc)
+        self.assertIn("never ask\nfor keys.", poc)
+        self.assertNotIn("exploit&#8209;free", poc)
+        # The homepage sentence that shares the words is untouched:
+        # "<p>A clean negative is reported as a clean negative." (home).
+        home = pages["/"]
+        self.assertIn("<p>A clean negative is reported as a clean "
+                      "negative.", home)
+        # The pair rides in worker.js with the page HTML.
+        worker = build.worker_js(pages)
+        self.assertIn("proof&#8209;of&#8209;concept&nbsp;where&nbsp;one&nbsp;exists.",
+                      worker)
+        self.assertIn("reported as&nbsp;a&nbsp;clean&nbsp;negative.", worker)
+        self.assertIn("of&nbsp;exploit&#8209;free&nbsp;code.", worker)
+        self.assertIn("never&nbsp;ask&nbsp;for&nbsp;keys.", worker)
+        # The footer sentence (appended at render time, so it lives
+        # in the worker, not in the PAGES body) is untouched.
+        self.assertIn("a clean negative is reported as a clean negative, "
+                      "never as a&nbsp;finding.", worker)
 
     def test_verdict198_audit_toc_is_two_column_on_desktop(self):
         # Visual verdict #198 (2026-11-24): the /audit/ table of
