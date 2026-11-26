@@ -13408,6 +13408,70 @@ class TestChecker(unittest.TestCase):
         self.assertGreater(audit.index('class="back-to-top"'),
                            audit.index('<h2 id="track-record">'))
 
+    def test_verdict277_audit_pair_is_two_column(self):
+        # Visual verdict #277 (2026-11-26): /audit/ sections were unevenly
+        # sparse — measured: "What you do not get" 61px of content between
+        # 44px gaps, "What you get" 128px, Price 595px, Track record 1399px
+        # (the gaps are a uniform 44px; the unevenness is content height).
+        # The two adjacent purchase-terms lists sit side by side on desktop
+        # (grid, 3fr/2fr, 2em gap) and stack below 641px. Copy, anchors, h2
+        # order and TOC order are unchanged.
+        # (2026-11-26, #277b) the pair is 3fr/2fr, not 1fr/1fr: at equal
+        # widths the left list wraps to 240px and the right column ends
+        # with 128px of empty space under its 117px list; 3fr/2fr lands
+        # the two lists at 184px and 173px (15px of slack). The h2s
+        # inside the pair lose their 1.8em top margin and the pair
+        # itself carries the section gap (2.6em = 44.2px at the 17px
+        # body size): the h2 margin would sit inside the grid items and
+        # stack on the pay-box's .8em bottom margin, giving a 58px gap
+        # above the pair instead of 44px. Below 641px the pair stacks
+        # and the h2s get their 1.8em back (scoped to .audit-page so
+        # the restore beats the base zeroing regardless of order —
+        # #277c: the unscoped restore lost to the later base rule).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "@media (min-width:641px){.audit-pair{display:grid;"
+            "grid-template-columns:3fr 2fr;column-gap:2em}}",
+            build.CSS)
+        self.assertIn(
+            "@media (max-width:640px){.audit-page .audit-pair{display:block;"
+            "margin-top:0}.audit-page .audit-pair h2{margin-top:1.8em}}",
+            build.CSS)
+        self.assertIn(".audit-pair{margin-top:2.6em}", build.CSS)
+        self.assertIn(".audit-pair h2{margin-top:0}", build.CSS)
+        self.assertIn(".audit-pair ul{margin-bottom:0}", build.CSS)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertEqual(audit.count('<div class="audit-pair">'), 1)
+        self.assertEqual(audit.count('<div class="audit-pair-col">'), 2)
+        self.assertLess(audit.index('<div class="audit-pair">'),
+                        audit.index('<h2 id="what-you-get">What you get</h2>'))
+        self.assertLess(audit.index('<h2 id="what-you-get">What you get</h2>'),
+                        audit.index('<h2 id="limits">What you do not get</h2>'))
+        self.assertLess(audit.index('<h2 id="limits">What you do not get</h2>'),
+                        audit.index('</div>\n</div>\n<h2 id="report-examples">'))
+        # Both lists keep their bullets verbatim.
+        section = audit[audit.index('<h2 id="what-you-get">What you get</h2>'):
+                        audit.index('<h2 id="limits">What you do not get</h2>')]
+        self.assertEqual(section.count("<li>"), 4)
+        limits = audit[audit.index('<h2 id="limits">What you do not get</h2>'):
+                       audit.index('<h2 id="report-examples">')]
+        self.assertEqual(limits.count("<li>"), 2)
+        self.assertIn("No full audit of the whole codebase, no legal advice",
+                      limits)
+        # The pair rides in worker.js with the page HTML; the CSS rules
+        # ride in every page's <style>.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('<div class=\\"audit-pair\\">', worker)
+        self.assertIn(".audit-pair{display:grid;", worker)
+        self.assertIn("grid-template-columns:3fr 2fr;", worker)
+        self.assertIn(".audit-pair h2{margin-top:0}", worker)
+        self.assertIn(".audit-page .audit-pair h2{margin-top:1.8em}", worker)
+        self.assertIn(".audit-pair ul{margin-bottom:0}", worker)
+
     def test_verdict198_audit_toc_is_two_column_on_desktop(self):
         # Visual verdict #198 (2026-11-24): the /audit/ table of
         # contents was a single column in a 946px box — the longest
