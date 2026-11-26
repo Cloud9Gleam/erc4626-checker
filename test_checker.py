@@ -6482,6 +6482,10 @@ class TestChecker(unittest.TestCase):
         # review (findings + proofs) was complete Nov 15, so Nov 15.
         # AirDropper's page states only a month ("done Oct 2026"), so
         # its entry is month-only; ranges keep the page's own range.
+        # Visual verdict #315 (2026-11-27): the 23 entries reviewed Nov 17,
+        # 2026 share one date, stated once in a divider above the run -
+        # their entries carry no date span of their own. The other 18
+        # entries keep their per-entry date, as asserted below.
         import re
         import sys
         from pathlib import Path
@@ -6533,14 +6537,40 @@ class TestChecker(unittest.TestCase):
             "dutch-clock": "Oct 26, 2026",
         }
         self.assertEqual(len(expected), 41)
-        self.assertEqual(track.count('<span class="track-date">'), 41)
+        self.assertEqual(track.count('<span class="track-date">'), 18)
+        nov17 = {slug for slug, date in expected.items()
+                 if date == "Nov 17, 2026"}
+        self.assertEqual(len(nov17), 23)
         for slug, date in expected.items():
+            if slug in nov17:
+                # Visual verdict #315 (2026-11-27): the 23 Nov 17 entries
+                # share one date, stated once in the divider above the
+                # run - their entries carry no date span of their own.
+                m = re.search(r'<li><a href="/research/%s/">.*?</li>'
+                              % re.escape(slug), track, re.S)
+                self.assertIsNotNone(m, slug)
+                self.assertNotIn('<span class="track-date">', m.group(0), slug)
+                continue
             m = re.search(r'<li><span class="track-date">Reviewed %s</span>'
                           r'<a href="/research/%s/">.*?</li>'
                           % (re.escape(date), re.escape(slug)), track, re.S)
             self.assertIsNotNone(m, slug)
             self.assertIn('<span class="track-date">Reviewed %s</span>' % date,
                           m.group(0), slug)
+        # The shared date is stated once, in a divider above the run.
+        self.assertEqual(track.count('<li class="track-date-run">Reviewed Nov 17, 2026 · 23 reviews</li>'), 1)
+        self.assertNotIn('<span class="track-date">Reviewed Nov 17, 2026</span>', track)
+        ff = track[track.index("CodeHawks First Flight"):]
+        ff = ff[:ff.index("</details>")]
+        div_at = ff.index('<li class="track-date-run">')
+        for slug in nov17:
+            m = re.search(r'<li><a href="/research/%s/">' % re.escape(slug), ff)
+            self.assertIsNotNone(m, slug)
+            self.assertGreater(m.start(), div_at, slug)
+        for slug in ("thunder-loan", "puppy-raffle", "rust-fund"):
+            m = re.search(r'<li><span class="track-date">Reviewed [^<]*</span><a href="/research/%s/">' % re.escape(slug), ff)
+            self.assertIsNotNone(m, slug)
+            self.assertLess(m.start(), div_at, slug)
         # The date is metadata, not a claim: muted grey, one size down,
         # and it never splits across lines (live render 2026-11-20
         # caught Thunder Loan wrapping as "Reviewed Nov 15," / "2026").
@@ -6551,6 +6581,41 @@ class TestChecker(unittest.TestCase):
         # (#136's own-line placement, superseded by this one).
         self.assertIn(".track-date{float:right;color:#6b7280;font-size:.9em;"
                       "white-space:nowrap;margin-left:1em}", build.CSS)
+
+    def test_verdict315_track_date_run_divider(self):
+        # Visual verdict #315 (2026-11-27): the First Flight list ends in
+        # a run of 23 entries all reviewed Nov 17, 2026 - the floated date
+        # repeated 23 times on the title row (measured: 164.8px wide per
+        # entry, wall 5850px tall expanded). The shared date is now stated
+        # once, as a plain divider above the run; the 23 entries drop
+        # their own date span. No information is lost: the divider sits
+        # directly above the run, and the filter still matches "nov 17"
+        # through the divider text. The divider is not a card: plain
+        # muted text with a bottom border, undoing the white-card rules.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
+        ff = track[track.index("CodeHawks First Flight"):]
+        ff = ff[:ff.index("</details>")]
+        self.assertIn(".track-list--long li.track-date-run{background:none;border:0;"
+                      "border-bottom:1px solid #e5e7eb;border-radius:0;"
+                      "padding:.1em 0 .55em;margin-bottom:1.5em;"
+                      "color:#6b7280;font-size:.9em}", build.CSS)
+        self.assertEqual(ff.count('<li class="track-date-run">Reviewed Nov 17, 2026 · 23 reviews</li>'), 1)
+        self.assertEqual(ff.count("<li>"), 33)
+        self.assertLess(ff.index('<li class="track-date-run">'),
+                        ff.index('/research/stratax/'))
+        self.assertIn("classList.contains('track-date-run')", ff)
+        self.assertIn("runHit", ff)
+        self.assertIn("shown===total?total+' reviews'", ff)
+        # The divider is the only date-run element on the page, and the
+        # other groups keep their per-entry dates untouched.
+        self.assertEqual(track.count('track-date-run'), 3)
+        self.assertEqual(track.count('<span class="track-date">'), 18)
 
     def test_audit_track_record_entries_split_lead_and_detail(self):
         # Visual verdict #136 item 3 (2026-11-21): Track record entries
@@ -6578,7 +6643,7 @@ class TestChecker(unittest.TestCase):
         track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
         self.assertEqual(track.count('<span class="track-lead">'), 41)
         self.assertEqual(track.count('<span class="track-detail">'), 39)
-        self.assertEqual(track.count('<span class="track-date">'), 41)
+        self.assertEqual(track.count('<span class="track-date">'), 18)
         # The two entries with no detail span (Gamma, Dutch clock)
         # still carry a lead span — only the detail line is absent.
         for slug in ("gamma", "dutch-clock"):
@@ -6592,13 +6657,15 @@ class TestChecker(unittest.TestCase):
         # (floated to the title row's right), and every split entry's
         # lead ends with '.' right before the detail span, the detail
         # ends with '.' and closes the entry.
-        for m in re.finditer(r'<li><span class="track-date">Reviewed [^<]*</span>'
-                             r'<a href="/research/[^"]+/">.*?</li>',
-                             track, re.S):
+        entries = list(re.finditer(r'<li>(?:<span class="track-date">Reviewed [^<]*</span>)?'
+                                     r'<a href="/research/[^"]+/">.*?</li>',
+                                     track, re.S))
+        self.assertEqual(len(entries), 41)
+        for m in entries:
             entry = m.group(0)
             self.assertRegex(entry,
-                             r'<li><span class="track-date">Reviewed [^<]*'
-                             r'</span><a href="/research/',
+                             r'<li>(?:<span class="track-date">Reviewed [^<]*'
+                             r'</span>)?<a href="/research/',
                              entry[:80])
             if '<span class="track-detail">' not in entry:
                 continue
