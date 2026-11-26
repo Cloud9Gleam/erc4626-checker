@@ -11121,9 +11121,9 @@ class TestChecker(unittest.TestCase):
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        balance = ("@media (min-width:641px){main p,main li,"
+        balance = ("@media (min-width:641px){main p,main li,main .notice,"
                    "footer p{text-wrap:balance}}")
-        pretty = ("@media (max-width:640px){main p,main li,"
+        pretty = ("@media (max-width:640px){main p,main li,main .notice,"
                   "footer p{text-wrap:pretty}}")
         self.assertEqual(build.CSS.count(balance), 1)
         self.assertEqual(build.CSS.count(pretty), 1)
@@ -11137,6 +11137,10 @@ class TestChecker(unittest.TestCase):
         # No unscoped global text-wrap rule: balance occurs exactly
         # twice (the h1 heading rule plus this media query) and pretty
         # exactly four times (hero-top, audit, research, this query).
+        # Verdict #278 (2026-11-26): main .notice joined both selectors — the rollout
+        # had covered only p/li, so the /patterns/ amber .notice div (direct text, not
+        # a <p>) wrapped unbalanced and its last line dangled at 0.215 in the real browser.
+        # The counts above are unchanged: the selectors grew, no new rule was added.
         self.assertEqual(build.CSS.count("text-wrap:balance"), 2)
         self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
         worker = build.worker_js(
@@ -11144,6 +11148,57 @@ class TestChecker(unittest.TestCase):
         self.assertIn(balance, worker)
         self.assertIn(pretty, worker)
 
+    def test_verdict278_patterns_notice_is_balanced(self):
+        # Visual verdict #278 (2026-11-26, checker-improvement): the
+        # #258 global text-wrap rollout covered main p / main li /
+        # footer p only. The /patterns/ amber .notice div holds direct
+        # text (not a <p>), so it wrapped unbalanced: the real browser
+        # measured its last line at 195px of ~909px inner — 0.215,
+        # `this", not "this is broken".` dangling under three ~full
+        # lines; headless had measured 0.330 (one-word font-metric
+        # shift — the browser fits `means "check` on line 3, headless
+        # drops `means` to line 4). Two-part fix, wording unchanged:
+        # (1) main .notice joins both #258 media queries, so the box
+        # balances >=641px and pretties <=640px like every paragraph;
+        # (2) the tail is nbsp-bound the #259-#270 way, so browsers
+        # without text-wrap support still get a fuller last line.
+        # The bound unit is the quoted tail only (~240px at 360px,
+        # inside the ~278px content width) — binding `means` too
+        # (~312px) would overflow the mobile box, so it stays free.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        page = pages["/patterns/"]
+        bound = ("means \u201ccheck&nbsp;this\u201d,&nbsp;not&nbsp;"
+                 "\u201cthis&nbsp;is&nbsp;broken\u201d.")
+        self.assertIn(bound, page)
+        self.assertNotIn("means \u201ccheck this\u201d, not "
+                         "\u201cthis is broken\u201d.", page)
+        # Decoded, the sentence is byte-identical to before.
+        self.assertIn("means \u201ccheck this\u201d, not "
+                      "\u201cthis is broken\u201d.",
+                      page.replace("&nbsp;", " "))
+        self.assertIn("review prompts, not findings", page)
+        # The selectors grew; no new text-wrap rule was added.
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 2)
+        self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
+        balance = ("@media (min-width:641px){main p,main li,main .notice,"
+                   "footer p{text-wrap:balance}}")
+        pretty = ("@media (max-width:640px){main p,main li,main .notice,"
+                  "footer p{text-wrap:pretty}}")
+        self.assertEqual(build.CSS.count(balance), 1)
+        self.assertEqual(build.CSS.count(pretty), 1)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(balance, worker)
+        self.assertIn(pretty, worker)
+        # worker.js JSON-escapes non-ASCII (the #269 lesson): the curly
+        # quotes ride as literal \u201c / \u201d in the JS source.
+        bound_worker = bound.replace("\u201c", "\\u201c").replace(
+            "\u201d", "\\u201d")
+        self.assertIn(bound_worker, worker)
 
     def test_verdict259_orphan_tails_are_bound(self):
         # Visual verdict #259 (2026-11-26, checker-improvement):
