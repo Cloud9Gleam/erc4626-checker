@@ -7970,6 +7970,65 @@ class TestChecker(unittest.TestCase):
                 "@media (max-width:700px){.hero-compare{flex-direction:column;gap:.5em}.hero-compare-label{min-height:0}}"):
             self.assertIn(rule, build.CSS)
 
+    def test_verdict298_hero_proof_line(self):
+        # Checker-improvement #298 (visual verdict #293 item 4,
+        # follow-up to #297): at 1919px the hero left column was h1 +
+        # lead + CTA pinned to the checks panel's foot — a 68.1px dead
+        # gap between lead and CTA (measured, measure-verdict298.py).
+        # One proof line fills it: the track-record totals, with the
+        # sample-report link the Paid card promises ("See a sample
+        # report first") but never gives. The totals are re-derived
+        # here from the site's own pills, so a stale count fails
+        # loudly instead of shipping: 40 pill-bearing reviews, 355
+        # re-verified findings (each pill's first number equals its
+        # H+M+L+Info split; the 41st track entry is the playbook,
+        # which carries no findings pill).
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        pills = re.findall(r'<span class="track-findings">([^<]+)</span>', audit)
+        self.assertEqual(len(pills), 40)
+        total = 0
+        for pill in pills:
+            n = int(re.match(r'(\d+)', pill).group(1))
+            split = sum(int(x) for x in re.findall(r'(\d+)[HML]', pill))
+            info = sum(int(x) for x in re.findall(r'(\d+) Info', pill))
+            self.assertEqual(n, split + info)
+            total += n
+        self.assertEqual(total, 355)
+        home = pages["/"]
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index('<p>This site is one independent researcher')
+        hero = home[hero_start:hero_end]
+        proof = ('<p class="hero-proof">Same research: 355&nbsp;findings '
+                 're-verified in forge across 40&nbsp;reviews. '
+                 '<a href="/research/gamma/">See&nbsp;a&nbsp;sample&nbsp;report&nbsp;&rarr;</a></p>')
+        self.assertEqual(hero.count('<p class="hero-proof">'), 1)
+        self.assertIn(proof, hero)
+        # In the left column, after the lead, before the CTA — and
+        # before the checks panel, so it is not inside the panel.
+        self.assertLess(hero.index('no&nbsp;signup.</p>'),
+                        hero.index('<p class="hero-proof">'))
+        self.assertLess(hero.index('<p class="hero-proof">'),
+                        hero.index('<p class="hero-cta">'))
+        self.assertLess(hero.index('<p class="hero-proof">'),
+                        hero.index('<aside class="hero-checks">'))
+        # CSS: muted green text on the dark band, white underlined
+        # link (unstyled it would be the body link green, invisible
+        # on dark green). It is a <p> in the left column, so the
+        # <=640px order rule (.hero-top>div>p{order:2}) already puts
+        # it with the lead, after the CTA — no new order rule.
+        for rule in (
+                ".hero-proof{margin:.6em 0 0;font-size:.95em;line-height:1.5;color:#cfe8d6}",
+                ".hero-proof a{color:#fff;text-decoration:underline;text-underline-offset:2px}",
+                ".hero-proof a:hover,.hero-proof a:focus-visible{text-decoration-thickness:2px}"):
+            self.assertIn(rule, build.CSS)
+        self.assertNotIn(".hero-proof{order", build.CSS)
+
     def test_hero_cta_first_on_mobile(self):
         # Visual verdict #108: at 320x568 the hero CTA sat below the
         # fold (bottom 582.5 > 568) because the intro and proof
