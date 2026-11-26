@@ -7722,6 +7722,65 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(track.count('class="track-list track-list--cards">'), 4)
         self.assertEqual(track.count('class="track-list">'), 0)
 
+    def test_verdict316_track_shows_first_five_with_show_all(self):
+        # Visual verdict #316 item 3 (2026-11-27): the expanded First
+        # Flight list is a ~5900px wall. The first fix attempt — a
+        # sticky filter row — is dead: a minimal repro proves
+        # position:sticky does not work inside an open <details> in
+        # Chromium. So the list itself is capped: the first 5 reviews
+        # show, the rest wait behind a "Show all 33 reviews" button.
+        # Filtering always shows every match; the count reads "5 of 33
+        # reviews" while capped so the visitor knows more exist.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        track = audit[audit.index('<h2 id="track-record">Track record</h2>'):]
+        ff = track[track.index("CodeHawks First Flight"):]
+        ff = ff[:ff.index("</details>")]
+        # The cap flag, the cap in the loop, the button, the function.
+        self.assertIn("var trackShowAll=false;", ff)
+        self.assertIn("var capped=!query&&!trackShowAll&&total>5;", ff)
+        self.assertIn("items[i].style.display=(hit&&!capped)?'':'none';", ff)
+        self.assertIn("if(hit&&!capped){shown++;if(inRun)runShown=true;}", ff)
+        self.assertIn('<button type="button" id="track-show-all" '
+                      'class="track-show-all" onclick="showAllTrack(this)">'
+                      'Show all 33 reviews</button>', ff)
+        # The button sits after the list, before the filter script.
+        self.assertLess(ff.index('</ul>'), ff.index('id="track-show-all"'))
+        self.assertLess(ff.index('id="track-show-all"'),
+                        ff.index('function filterTrack(q){'))
+        # showAllTrack lifts the cap, re-runs the current query, and
+        # hides the button; the list is capped on load, not only on
+        # typing, or the first open would show all 33.
+        self.assertIn("function showAllTrack(btn){", ff)
+        self.assertIn("trackShowAll=true;", ff)
+        self.assertIn("filterTrack(inp?inp.value:'');", ff)
+        self.assertIn("btn.style.display='none';", ff)
+        self.assertIn('filterTrack("");', ff)
+        # The button hides while a query is active and once all are
+        # shown; it returns when the query clears and the list is
+        # capped again. The b.style guard keeps the old harness stubs
+        # (bare {textContent} objects) from throwing.
+        self.assertIn("var b=document.getElementById('track-show-all');", ff)
+        self.assertIn("if(b&&b.style)b.style.display="
+                      "(!query&&!trackShowAll)?'':'none';", ff)
+        # Button styling: centered row, pill button.
+        self.assertIn(".track-more{text-align:center;margin:.2em 0 .6em}", build.CSS)
+        self.assertIn(".track-show-all{border:1px solid #d1d5db;background:#fff;"
+                      "border-radius:999px;padding:.45em 1.1em;font-size:.95em;"
+                      "color:#374151;cursor:pointer}", build.CSS)
+        # The summary toggle is untouched — the button adds a way to
+        # see the rest, it does not replace collapsing the group.
+        self.assertIn('<span class="when-open">Hide</span>', ff)
+        # No trace of the retired sticky attempt.
+        self.assertNotIn("hideTrackGroup", ff)
+        self.assertNotIn("track-hide", ff)
+        self.assertNotIn(".track-group .track-filter{position:sticky", build.CSS)
+        # The other groups are short (3 items each) and gain no button.
+        self.assertEqual(track.count('id="track-show-all"'), 1)
+
     def test_audit_long_track_list_uses_cards(self):
         # Verdict #104 item 2: the 33-item First Flight group, once
         # expanded, was a wall of text with only hairline separators.
