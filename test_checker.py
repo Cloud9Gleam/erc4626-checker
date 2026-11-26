@@ -8647,6 +8647,64 @@ class TestChecker(unittest.TestCase):
                 f'<span class="hero-stat-label">{label}</span></a>',
                 home)
 
+    def test_verdict282_pattern84_exponent_renders_literally(self):
+        # Visual verdict #282 item 1 (2026-11-26, checker-improvement):
+        # Pattern 84's formulas rendered WRONG -- the `**` exponent
+        # operator was swallowed in four places and a sentence was
+        # spuriously bolded. Root cause, verified first-hand: a naive
+        # `**` -> <strong> emphasis pass ran across code-span
+        # boundaries when the section was written, pairing the `**`
+        # inside one code span with the `**` inside a later one, so
+        # `<code>totalSupply() * 10 <strong> decimalOffset</code>`
+        # and `<code>... + 10 </strong> decimalOffset</code>` (Smell)
+        # plus `<code>10 <strong> offset</code>` and
+        # `<code>+ 10 </strong> offset</code>` (Check a) reached the
+        # page. The markdown source (common-patterns.md) is correct --
+        # the `**` sits inside backticks there -- so the fix restores
+        # the literal `**` inside each <code> in build.py only. The
+        # same scan found no other pattern with a <code> containing a
+        # strong tag (4/4 are pattern-84). Verdict #282 item 4, same
+        # entry: the h3 title's "(+ for *)" broke after `*`,
+        # orphaning "*)" at the next line's start; the parenthetical
+        # is now nbsp-bound so it stays one unit.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        page = dict((p, b) for p, t, d, k, b in build.PAGES)["/patterns/"]
+        fixed = (
+            "<code>totalSupply() * 10 ** decimalOffset</code>",
+            "<code>... + 10 ** decimalOffset</code>",
+            "<code>10 ** offset</code>",
+            "<code>+ 10 ** offset</code>",
+        )
+        for form in fixed:
+            self.assertEqual(page.count(form), 1, form)
+        mangled = (
+            "<code>totalSupply() * 10 <strong> decimalOffset</code>",
+            "<code>... + 10 </strong> decimalOffset</code>",
+            "<code>10 <strong> offset</code>",
+            "<code>+ 10 </strong> offset</code>",
+        )
+        for form in mangled:
+            self.assertNotIn(form, page)
+        # No code span anywhere on the page may contain a strong tag:
+        # the defect class, not just these four instances.
+        for m in re.finditer(r"<code>(.*?)</code>", page, re.S):
+            self.assertNotIn("<strong>", m.group(1))
+            self.assertNotIn("</strong>", m.group(1))
+        # The deliberate `+` in Check (d) keeps its literal `**` --
+        # the fix must not over-strip neighbouring code spans.
+        self.assertIn("<code>+ 10 ** decimalOffset</code>", page)
+        # Title parenthetical stays one unit (verdict #282 item 4).
+        self.assertIn("(<code>+</code>&nbsp;for&nbsp;<code>*</code>)",
+                      page)
+        self.assertNotIn("(<code>+</code> for <code>*</code>)", page)
+        # Section counts untouched.
+        self.assertEqual(page.count("<strong>Smell:</strong>"), 199)
+        self.assertEqual(page.count("<strong>Check:</strong>"), 199)
+
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
         # ("0.909091 USDC of a 100,000 USDC deposit") while steps 1-2
