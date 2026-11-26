@@ -1468,15 +1468,90 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
                       "worst loss 0.000900 USDC", passed)
         self.assertNotIn("victim loses", passed)
-        # A zero-loss run stays bare: offset 18 loses nothing on any
-        # donation row, so there is no headline number to carry and
-        # none is invented.
+        # Visual verdict #284 (2026-11-26): a zero-loss run used to
+        # stay bare — offset 18 loses nothing on any donation row, so
+        # the strip carried no number while the default and noprot
+        # strips did, and a first-time visitor had to scroll to learn
+        # the run lost nothing at all. The zero is measured, not
+        # invented: every row measures exactly 0.000000 USDC, and the
+        # donation card says so in words. The strip now names the
+        # largest donation tested, the same row the default strip
+        # names, with the measured zero in the table's six-decimal
+        # form — wording stays "worst loss", never "victim loses".
         zero = build.verdict_strip_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
         self.assertIn("Result: ALL PASS", zero)
-        self.assertNotIn("worst loss", zero)
-        self.assertNotIn("donation:", zero)
+        self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
+                      "worst loss 0.000000 USDC", zero)
+        self.assertNotIn("victim loses", zero)
+
+    def test_verdict284_zero_loss_strip_carries_measured_zero(self):
+        # Visual verdict #284 (2026-11-26): the offset-18 strip was
+        # bare while the default and noprot strips carried their
+        # worst-loss numbers. The zero is measured, not invented, so
+        # the strip's ALL PASS branch now uses the zero-inclusive
+        # lookup; the measured-only lookup is unchanged (the FAIL
+        # sentence and the #205 worst-row bolding still see no number
+        # at zero). The Worker JS renderer mirrors the strip; it is
+        # verified by the verdict284 node harness, not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Real offset-18 run: the helper names the largest donation
+        # tested, with a measured zero — not the 1 USDC row that a
+        # plain max() would return first on a four-way tie at zero.
+        # (Donations are micro units: 1,000,000,000,000,000 is the
+        # 1,000,000,000 USDC row.)
+        results18 = run_all(Vault(decimals_offset=18,
+                                  min_deposit=1_000_000,
+                                  perf_fee_bps=1000))
+        self.assertEqual(build._worst_donation_loss_including_zero(results18),
+                         (1_000_000_000_000_000, 0))
+        # The measured-only lookup still returns None at zero, so the
+        # FAIL sentence and the worst-row marking are untouched.
+        self.assertIsNone(build._worst_donation_loss_measured(results18))
+        # Tie at a positive loss breaks toward the largest donation.
+        tied = [{"name": "donation_inflation", "pass": True,
+                 "detail": [{"donation": 1_000_000, "victim_loss": 900},
+                            {"donation": 1_000_000_000_000_000,
+                             "victim_loss": 900}]}]
+        self.assertEqual(build._worst_donation_loss_including_zero(tied),
+                         (1_000_000_000_000_000, 900))
+        # Nothing measured (every row errored) or no donation check:
+        # still no number, the strip stays bare.
+        errored = [{"name": "donation_inflation", "pass": True,
+                    "detail": [{"donation": 1_000_000, "victim_loss": None},
+                               {"donation": 1_000_000_000_000_000,
+                                "victim_loss": None}]}]
+        self.assertIsNone(
+            build._worst_donation_loss_including_zero(errored))
+        self.assertIsNone(
+            build._worst_donation_loss_including_zero(
+                [{"name": "rounding", "pass": True, "detail": []}]))
+        # A negative-only run is not a worst loss worth naming.
+        negative = [{"name": "donation_inflation", "pass": True,
+                     "detail": [{"donation": 1_000_000, "victim_loss": -5},
+                                {"donation": 1_000_000_000_000_000,
+                                 "victim_loss": -1}]}]
+        self.assertIsNone(
+            build._worst_donation_loss_including_zero(negative))
+        # Strip level: an all-zero synthetic run carries the zero on
+        # the largest donation; an all-errored run stays bare.
+        allzero = [{"name": "donation_inflation", "pass": True,
+                    "detail": [{"donation": d, "victim_loss": 0}
+                               for d in (1_000_000, 1_000_000_000,
+                                         1_000_000_000_000,
+                                         1_000_000_000_000_000)]}]
+        self.assertIn(
+            "<span class=\"nowrap\">1,000,000,000 USDC donation</span>: "
+            "worst loss 0.000000 USDC",
+            build.verdict_strip_html(allzero))
+        bare = build.verdict_strip_html(errored)
+        self.assertIn("Result: ALL PASS", bare)
+        self.assertNotIn("worst loss", bare)
+        self.assertNotIn("donation:", bare)
 
     def test_verdict_strip_no_number_when_no_measured_loss(self):
         # Visual verdict #146 (2026-11-21): a donation failure with no
@@ -1560,8 +1635,9 @@ class TestChecker(unittest.TestCase):
         self.assertIn("2 of 6 failed: Donation inflation, Minimum viable "
                       "deposit", estrip)
         self.assertNotIn("loses", estrip)
-        # ALL PASS: strip is the bare verdict, the count lives in the
-        # banner only.
+        # ALL PASS: strip carries the verdict plus the worst loss
+        # (since #284, the measured zero too); the count still lives
+        # in the banner only.
         passed = run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                                perf_fee_bps=1000))
         pstrip = build.verdict_strip_html(passed)
