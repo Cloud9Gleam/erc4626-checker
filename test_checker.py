@@ -5025,7 +5025,7 @@ class TestChecker(unittest.TestCase):
         pages = dict((p, b) for p, t, d, k, b in build.PAGES)
         page = pages["/patterns/"]
         start = page.find("<h2>Browse the library</h2>")
-        intro = page[start:page.find("</ul>", start)]
+        intro = page[start:page.find('<ul class="pattern-browse">', start)]
         self.assertIn("199 pattern entries, grouped by source", intro)
         self.assertIn("Numbers run 1\u2013208, with gaps: 39, 186, 195, "
                       "198\u2013200, 203, 205 and 206 do not exist in the source",
@@ -5053,6 +5053,63 @@ class TestChecker(unittest.TestCase):
             else:
                 listed.add(int(part))
         self.assertEqual(listed, missing)
+
+    def test_verdict275_patterns_browse_is_chips(self):
+        # Visual verdict #274 item 3 (2026-11-26, checker-improvement):
+        # the Browse-the-library index was six <li> groups of
+        # comma-separated number links — at 1919 the Re-derived group
+        # alone ran 7 lines / 196px, at 360 the whole index was 842px
+        # of dense "1, 2, 3, ..." text (measure-verdict275.py
+        # baseline). Each group now keeps its label line plus a
+        # per-group count, and the numbers are a flex-wrapped grid of
+        # bordered chips in the site's .chip language (#bbe0c6 /
+        # #0a7d2c). No wording, number, href or order changes: the
+        # 199 links are identical before/after (edit-verdict275.py
+        # asserts the full link list); only the comma separators are
+        # gone, which retires the #269 ",&nbsp;" First-flight tail
+        # binding (chips have no separators to bind) — the #269 test
+        # pair and harness now assert the chip form. Geometry is
+        # pinned by hidden_files/verdict275-patterns-chips-harness.mjs
+        # and measure-verdict275.py.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        page = pages["/patterns/"]
+        start = page.find("<h2>Browse the library</h2>")
+        browse = page[start:page.find("<h2>Thunder Loan", start)]
+        self.assertEqual(browse.count('<ul class="pattern-browse">'), 1)
+        self.assertEqual(browse.count('<ul class="pattern-nums">'), 6)
+        self.assertEqual(browse.count('<li><a href="#pattern-'), 199)
+        ul = browse[browse.index('<ul class="pattern-browse">'):]
+        self.assertNotIn("</a>,", ul)
+        self.assertNotIn("&nbsp;", ul)
+        pairs = re.findall(
+            r'<li><strong>(.*?)</strong> \u2014 '
+            r'<span class="pattern-group-count">(\d+) patterns</span>', ul)
+        self.assertEqual(pairs, [
+            ("Thunder Loan \u2014 flash-loan findings", "7"),
+            ("First-flight contest reviews", "31"),
+            ("Ended-contest studies", "8"),
+            ("Public finding literature", "18"),
+            ("Own audits, field lessons &amp; live bounties", "13"),
+            ("Re-derived contest findings", "122"),
+        ])
+        for rule in (".pattern-browse{list-style:none;margin:.6em 0 0;padding:0}",
+                     ".pattern-browse>li{margin:0 0 1em}",
+                     ".pattern-group-count{font-size:.9em;color:#6b7280;white-space:nowrap}",
+                     ".pattern-nums{display:flex;flex-wrap:wrap;gap:.35em;list-style:none;margin:.4em 0 0;padding:0}",
+                     ".pattern-nums li{margin:0}",
+                     ".pattern-nums a{display:inline-block;min-width:2.2em;padding:.15em .55em;text-align:center;"
+                     "border:1px solid #bbe0c6;background:#fff;border-radius:.35em;color:#0a7d2c;font-weight:600;text-decoration:none}",
+                     ".pattern-nums a:hover{background:#f0fdf4;text-decoration:none}"):
+            self.assertIn(rule, build.CSS)
+        worker = build.worker_js(pages)
+        # worker.js JSON-escapes double quotes (the #177 precedent),
+        # so the tag is counted in escaped form.
+        self.assertEqual(worker.count('<ul class=\\"pattern-browse\\">'), 1)
 
     def test_patterns_page_covers_97_to_106(self):
         # 2026-11-22 sync slice: the playbook grew to 199 numbered
@@ -11602,12 +11659,15 @@ class TestChecker(unittest.TestCase):
         # #269 SHORTENS the run by unbinding "every deposit"
         # ("until one tops 1,000,000.000001.", ~230px), and the
         # #259 pair + #261 assertion are updated to the new form.
-        # The First-flight tail binds the last four linked numbers
-        # with ,&nbsp; separators (the list is links, not words).
-        # The L-5 tail extends the #259 dash binding backwards to
-        # "impersonation". The em dash and the multiplication sign
-        # are JSON-escaped (\\u2014 / \\u00d7) in worker.js (the
-        # #177 precedent), so the worker counts escape both bound
+        # The First-flight tail is the last four linked numbers of
+        # the Browse index: #275 turned the comma-separated list
+        # into a chip grid, so there are no separators left to bind
+        # — the pair now asserts the chip form (the #269 ",&nbsp;"
+        # binding is retired, not deleted: same four links, same
+        # order, new markup). The L-5 tail extends the #259 dash
+        # binding backwards to "impersonation". The em dash and the
+        # multiplication sign are JSON-escaped (\\u2014 / \\u00d7)
+        # in worker.js (the #177 precedent), so the worker counts escape both bound
         # and old forms; the page bodies hold the literal chars.
         # Geometry is pinned by hidden_files/
         # verdict269-360-tails-harness.mjs.
@@ -11617,8 +11677,9 @@ class TestChecker(unittest.TestCase):
         import build
         pairs = [
             ('/patterns/',
-             '<a href="#pattern-35">35</a>,&nbsp;<a href="#pattern-36">36</a>,&nbsp;<a href="#pattern-37">37</a>,&nbsp;<a href="#pattern-38">38</a></li>',
-             '<a href="#pattern-35">35</a>, <a href="#pattern-36">36</a>, <a href="#pattern-37">37</a>, <a href="#pattern-38">38</a></li>'),
+             '<li><a href="#pattern-35">35</a></li> <li><a href="#pattern-36">36</a></li> <li><a href="#pattern-37">37</a></li> <li><a href="#pattern-38">38</a></li>',
+             '<a href="#pattern-35">35</a>, <a href="#pattern-36">36</a>, <a href="#pattern-37">37</a>, <a href="#pattern-38">38</a></li>',
+             '<li><a href="#pattern-35">35</a></li> <li><a href="#pattern-36">36</a></li> <li><a href="#pattern-37">37</a></li> <li><a href="#pattern-38">38</a></li>'),
             ('/patterns/', 'the recipient gets 90.909091&nbsp;of&nbsp;100.',
              'the recipient gets 90.909091 of 100.'),
             ('/patterns/',
