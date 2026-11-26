@@ -7752,8 +7752,11 @@ class TestChecker(unittest.TestCase):
         # /audit/ "What you get" was one dense paragraph — the section
         # that sells the deliverable buried its four facts in a single
         # block of prose (visual verdict #53: the audit page reads as a
-        # single-column wall of text). It is now a four-item list: each
-        # fact scans on its own line, wording unchanged.
+        # single-column wall of text). It is now a three-item list: each
+        # fact scans on its own line. (2026-11-27, verdict #311: the old
+        # items 3 and 4 said the same thing twice — "an honest clean
+        # negative" and "no guaranteed findings" — and are merged into
+        # one bullet, wording otherwise unchanged.)
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -7764,17 +7767,18 @@ class TestChecker(unittest.TestCase):
         # slice now ends at the limits h2 instead of report-examples.)
         section = audit[audit.index('<h2 id="what-you-get">What you get</h2>'):
                         audit.index('<h2 id="limits">What you do not get</h2>')]
-        self.assertEqual(section.count("<li>"), 4)
+        self.assertEqual(section.count("<li>"), 3)
         self.assertNotIn("<p>", section)
         self.assertIn("<li>A written report within <strong>72 hours</strong> "
                       "of payment confirmation.</li>", section)
         self.assertIn("<li>Every finding with severity and a reproducible "
                       "proof&#8209;of&#8209;concept&nbsp;where&nbsp;one&nbsp;exists.</li>",
                       section)
-        self.assertIn("<li>An honest clean negative for the slice if no "
-                      "finding is found.</li>", section)
-        self.assertIn("<li>No guaranteed findings: a clean negative is "
-                      "reported as&nbsp;a&nbsp;clean&nbsp;negative.</li>", section)
+        self.assertIn("<li>No guaranteed findings: an honest clean negative "
+                      "for the slice if no finding is found.</li>", section)
+        self.assertNotIn("<li>No guaranteed findings: a clean negative is "
+                         "reported as&nbsp;a&nbsp;clean&nbsp;negative.</li>",
+                         section)
         # The old single-paragraph form must not survive anywhere.
         self.assertNotIn("of payment confirmation: every finding", audit)
 
@@ -15165,10 +15169,12 @@ class TestChecker(unittest.TestCase):
                         audit.index('<h2 id="limits">What you do not get</h2>'))
         self.assertLess(audit.index('<h2 id="limits">What you do not get</h2>'),
                         audit.index('</div>\n</div>\n<h2 id="report-examples">'))
-        # Both lists keep their bullets verbatim.
+        # Both lists keep their bullets verbatim. (2026-11-27, verdict
+        # #311: the get list is 3 bullets — the old items 3 and 4
+        # repeated each other and are merged into one.)
         section = audit[audit.index('<h2 id="what-you-get">What you get</h2>'):
                         audit.index('<h2 id="limits">What you do not get</h2>')]
-        self.assertEqual(section.count("<li>"), 4)
+        self.assertEqual(section.count("<li>"), 3)
         limits = audit[audit.index('<h2 id="limits">What you do not get</h2>'):
                        audit.index('<h2 id="report-examples">')]
         self.assertEqual(limits.count("<li>"), 2)
@@ -15205,6 +15211,13 @@ class TestChecker(unittest.TestCase):
         # ~0.65, right li2 "never ask for keys." ~0.61, all at 1919;
         # at 360 the four units (190-250px) still fit the ~281px
         # column, so no overflow is introduced.
+        # (2026-11-27, verdict #311: li3 and li4 are merged into one
+        # bullet -- "No guaranteed findings: an honest clean negative
+        # for the slice if no finding is found." Its last line needs
+        # no nbsp binding: probe-verdict311-lines.py measures "no
+        # finding is found." (4 words) at 1919 and "finding is
+        # found." (3 words) at 360, so the old li4 tail binding
+        # retires with the bullet.)
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -15217,7 +15230,8 @@ class TestChecker(unittest.TestCase):
                        audit.index('<h2 id="report-examples">')]
         self.assertIn("proof&#8209;of&#8209;concept&nbsp;where&nbsp;one&nbsp;exists.",
                       get)
-        self.assertIn("reported as&nbsp;a&nbsp;clean&nbsp;negative.", get)
+        self.assertIn("no finding is found.", get)
+        self.assertNotIn("reported as&nbsp;a&nbsp;clean&nbsp;negative.", audit)
         self.assertIn("of&nbsp;exploit&#8209;free&nbsp;code.", limits)
         self.assertIn("never&nbsp;ask&nbsp;for&nbsp;keys.", limits)
         # The old unbound forms are gone from the pair (and from the
@@ -15245,7 +15259,9 @@ class TestChecker(unittest.TestCase):
         worker = build.worker_js(pages)
         self.assertIn("proof&#8209;of&#8209;concept&nbsp;where&nbsp;one&nbsp;exists.",
                       worker)
-        self.assertIn("reported as&nbsp;a&nbsp;clean&nbsp;negative.", worker)
+        self.assertIn("No guaranteed findings: an honest clean negative "
+                      "for the slice if no finding is found.", worker)
+        self.assertNotIn("reported as&nbsp;a&nbsp;clean&nbsp;negative.", worker)
         self.assertIn("of&nbsp;exploit&#8209;free&nbsp;code.", worker)
         self.assertIn("never&nbsp;ask&nbsp;for&nbsp;keys.", worker)
         # The footer sentence (appended at render time, so it lives
