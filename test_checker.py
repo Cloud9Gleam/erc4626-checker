@@ -4899,6 +4899,9 @@ class TestChecker(unittest.TestCase):
         self.assertIn("View on BaseScan</a>", audit)
 
     def test_verdict214_email_first_sits_above_payment_details(self):
+        # Checker-improvement #299 (2026-11-26, visual verdict #299
+        # item 1): the Start form now sits above the pay-box, so
+        # the step-1 link reads "Start form above".
         # Visual verdict #214 (2026-11-25): in both pay-boxes the
         # email-first instruction must come before any payment detail,
         # so the reading order is email first, pay second. Wording is
@@ -4942,13 +4945,16 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<p><strong>Email first</strong> (below)', poc)
         self.assertIn(
             '<li><strong>Email first</strong> \u2014 use the '
-            '<a href="#start">Start form below</a> to confirm the scope fits.</li>',
+            '<a href="#start">Start form above</a> to confirm the scope fits.</li>',
             audit)
         self.assertNotIn('to confirm scope and get the payment', audit)
         self.assertNotIn('<p>Email first', audit)
         self.assertNotIn('<p>Email first', poc)
 
     def test_verdict232_audit_payment_matches_order(self):
+        # Checker-improvement #299 (2026-11-26, visual verdict #299
+        # item 1): the Start form now sits above the pay-box, so
+        # the step-1 link reads "Start form above".
         # Visual verdict #232 (2026-11-25, this run): the audit pay
         # box said "Email first ... to confirm scope and get the
         # payment instructions" while showing the address right below
@@ -4978,7 +4984,7 @@ class TestChecker(unittest.TestCase):
         # "to match it to your order" (the field hint below still
         # spells out "so the payment can be matched to your order").
         self.assertIn('to match it to your order', box)
-        self.assertIn('<a href="#start">Start form below</a>', box)
+        self.assertIn('<a href="#start">Start form above</a>', box)
         self.assertIn('The 72-hour clock starts when the payment is confirmed',
                       box)
         self.assertNotIn('get the payment instructions', box)
@@ -5013,10 +5019,13 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn('id=\\"audit-txhash\\"', worker)
         self.assertIn('Payment transaction hash', worker)
-        self.assertIn('Start form below', worker)
+        self.assertIn('Start form above', worker)
         self.assertNotIn('send the payment instructions', worker)
 
     def test_verdict296_audit_pay_steps(self):
+        # Checker-improvement #299 (2026-11-26, visual verdict #299
+        # item 1): step 1 now reads "Start form above" -- the
+        # form precedes the pay-box.
         # Visual verdict #293 (2026-11-26, this run) item 2: the
         # /audit/ payment flow lived in one paragraph -- email first,
         # pay, paste the hash -- so a visitor could pay first and
@@ -5042,7 +5051,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(box.count('<ol class="pay-steps">'), 1)
         steps = [
             '<li><strong>Email first</strong> \u2014 use the '
-            '<a href="#start">Start form below</a> to confirm the scope fits.</li>',
+            '<a href="#start">Start form above</a> to confirm the scope fits.</li>',
             '<li><strong>Pay 50 USDC</strong> to the address below.</li>',
             '<li><strong>Paste the payment transaction hash in the form</strong> '
             'to match it to your order.</li>',
@@ -5096,6 +5105,79 @@ class TestChecker(unittest.TestCase):
         self.assertIn('class=\\"audit-steps\\"', worker)
         self.assertIn('.pay-steps li::marker{font-weight:700;color:#0a7d2c}',
                       worker)
+
+    def test_verdict299_audit_start_form_precedes_payment(self):
+        # Visual verdict #299 (2026-11-26, this run) item 1: the
+        # numbered pay-steps said "Email first", but the Start form
+        # sat ~2 screens AFTER the payment address + QR (baseline
+        # measure-verdict299.py: 1919px pay-row 1156.3, form 2391.2),
+        # so a scrolling reader met a payable QR before ever seeing
+        # the form. The Start section now sits directly above Price
+        # and payment: Scope -> Start (form) -> Price -> What you get
+        # -> limits -> report examples -> Track record. The form's own
+        # audit-steps repeat is unchanged ("hash below" still points
+        # at the field below the repeat inside the form); the hero
+        # "Start an audit" CTA still jumps to #audit-order (the form
+        # itself moved with its anchor). Step 1 now reads "Start form
+        # above"; step 2 "address below" still holds (the address is
+        # below the list inside the pay-box). The PoC page is
+        # untouched: its flow has no on-page address.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        poc = pages["/poc-packaging/"]
+        # Section order on the page.
+        order = ["<h2 id=\"scope\">", "<h2 id=\"start\">",
+                 "<h2 id=\"price\">", "<h2 id=\"what-you-get\">",
+                 "<h2 id=\"limits\">", "<h2 id=\"report-examples\">",
+                 "<h2 id=\"track-record\">"]
+        idx = [audit.index(h) for h in order]
+        self.assertEqual(idx, sorted(idx))
+        # The form itself precedes the pay-box, the pay-row and the QR.
+        self.assertLess(audit.index('<form id="audit-order"'),
+                        audit.index('<div class="pay-box">'))
+        self.assertLess(audit.index('<form id="audit-order"'),
+                        audit.index('<div class="pay-row">'))
+        self.assertLess(audit.index('<form id="audit-order"'),
+                        audit.index('<figure class="pay-qr">'))
+        # Step 1 points up; no "below" form reference survives.
+        self.assertIn('Start form above', audit)
+        self.assertNotIn('Start form below', audit)
+        # The rest of the pay-box is untouched: price, steps 2-3,
+        # clock sentence, address row, QR, double-check note.
+        box = audit[audit.index('<div class="pay-box">'):]
+        box = box[:box.index('</div>') + len('</div>')]
+        self.assertIn('<p class="price-big">50 USDC</p>', box)
+        self.assertIn('<li><strong>Pay 50 USDC</strong> to the address below.</li>', box)
+        self.assertIn('<li><strong>Paste the payment transaction hash in the form</strong> to match it to your order.</li>', box)
+        self.assertIn('The 72-hour clock starts when the payment is confirmed', box)
+        self.assertIn('0xD07C76fa47C99C70917b6Db2E9215844f0b9dC64', box)
+        self.assertIn('Double-check the address before sending', box)
+        self.assertIn('<figure class="pay-qr">', audit)
+        # The form's own repeat is unchanged and still first in the form.
+        self.assertIn(
+            '<p class="audit-steps">How it works: <strong>1.</strong> '
+            'Email first to confirm the scope fits. <strong>2.</strong> '
+            'Pay 50 USDC on Base. <strong>3.</strong> Paste the payment '
+            'transaction hash below. The 72-hour clock starts when the '
+            'payment is confirmed.</p>',
+            build.AUDIT_FORM)
+        # Hero CTA still jumps to the form.
+        self.assertIn('<a class="cta" href="#audit-order">Start an audit', audit)
+        # PoC page untouched: still its paragraph, no steps list, no form.
+        self.assertIn('<p><strong>Email first</strong> (below)', poc)
+        self.assertNotIn('<ol class="pay-steps">', poc)
+        self.assertNotIn('<form id="audit-order"', poc)
+        # Worker copy: same order, same wording.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertLess(worker.index('id=\\"audit-order\\"'),
+                        worker.index('class=\\"pay-box\\"'))
+        self.assertIn('Start form above', worker)
+        self.assertNotIn('Start form below', worker)
 
     def test_audit_pay_address_shown_in_full_by_default(self):
         # Visual verdict #110 (2026-11-19): the 42-char address was
@@ -14438,6 +14520,9 @@ class TestChecker(unittest.TestCase):
             worker)
 
     def test_audit_toc_and_back_to_top(self):
+        # Checker-improvement #299 (2026-11-26, visual verdict #299
+        # item 1): the Start section now precedes Price and
+        # payment, so the TOC lists Start second.
         # Visual verdict #195 item 4 (2026-11-24): /audit/ is ~4.5
         # viewports with 41 track-record entries and no way to jump —
         # a visitor hunting for the price or the track record scrolled
@@ -14460,8 +14545,8 @@ class TestChecker(unittest.TestCase):
         # the 41-review track record, ~4600px down at 1919px, so a buyer
         # deciding whether to pay had to scroll past all the proof to
         # reach the terms. The TOC order follows the section order.)
-        targets = ["#scope", "#price", "#what-you-get", "#limits",
-                   "#report-examples", "#start", "#track-record"]
+        targets = ["#scope", "#start", "#price", "#what-you-get", "#limits",
+                   "#report-examples", "#track-record"]
         hrefs = [t.split('href="')[1].split('"')[0]
                  for t in toc.split("<a ")[1:]]
         self.assertEqual(hrefs, targets)
@@ -14469,11 +14554,11 @@ class TestChecker(unittest.TestCase):
         self.assertLess(audit.index('<nav class="audit-toc"'),
                         audit.index('<h2 id="scope">'))
         for anchor, label in zip(
-                ["scope", "price", "what-you-get", "limits",
-                 "report-examples", "start", "track-record"],
-                ["Scope", "Price and payment", "What you get",
+                ["scope", "start", "price", "what-you-get", "limits",
+                 "report-examples", "track-record"],
+                ["Scope", "Start", "Price and payment", "What you get",
                  "What you do not get", "What a report looks like",
-                 "Start", "Track record"]):
+                 "Track record"]):
             self.assertEqual(audit.count(f'<h2 id="{anchor}">{label}</h2>'), 1)
         self.assertEqual(audit.count("<h2 "), 7)
         for group in ("(3)", "(33)", "(3)", "(1)", "(1)"):
@@ -14606,6 +14691,9 @@ class TestChecker(unittest.TestCase):
             'Back to top &uarr;</a></p>'), 4)
 
     def test_verdict208_limits_sit_with_purchase_terms(self):
+        # Checker-improvement #299 (2026-11-26, visual verdict #299
+        # item 1): the Start section now sits between Scope and
+        # Price and payment; the limits relations below are unchanged.
         # Visual verdict #208 (2026-11-24): "What you do not get"
         # sat below the 41-review track record — h2 at y=4609 of a
         # 4915px page at 1919px (6781 of 7276px at 360px), so the
@@ -14620,9 +14708,9 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        order = ["<h2 id=\"scope\">", "<h2 id=\"price\">",
-                 "<h2 id=\"what-you-get\">", "<h2 id=\"limits\">",
-                 "<h2 id=\"report-examples\">", "<h2 id=\"start\">",
+        order = ["<h2 id=\"scope\">", "<h2 id=\"start\">",
+                 "<h2 id=\"price\">", "<h2 id=\"what-you-get\">",
+                 "<h2 id=\"limits\">", "<h2 id=\"report-examples\">",
                  "<h2 id=\"track-record\">"]
         idx = [audit.index(h) for h in order]
         self.assertEqual(idx, sorted(idx))
