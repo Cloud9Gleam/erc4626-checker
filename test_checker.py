@@ -7714,30 +7714,41 @@ class TestChecker(unittest.TestCase):
         self.assertIn("of a 100,000 USDC deposit", hero)
         self.assertIn(".flow-note{display:block;font-size:.88em;color:#4b5563;"
                       "margin-top:.2em}", build.CSS)
-        # Visual verdict #106: the second sentence was a fragment —
-        # "With the standard offset-6 defense, under 0.001 USDC."
-        # has no verb. The loss is the subject now; the number is
-        # unchanged (the 0.001 USDC pass bound from the model).
-        # Visual verdict #223 item 2 / #225 (2026-11-25): "the loss
-        # is under 0.001 USDC" left the reader to infer the scenario
-        # across the sentence boundary — which deposit, which
-        # donation — and wrote the number in four decimals while the
-        # checker page writes the same loss as 0.000900. The sentence
-        # now names the scenario itself ("the same deposit ... to
-        # the same donation") and the exact six-decimal loss.
-        # Visual verdict #242 (2026-11-25): #225 attached the wrong
-        # number to that named scenario — 0.000900 is the worst loss
-        # across the donation ladder, at the 1,000,000,000 USDC
-        # donation, not the loss "to the same donation" (the
-        # 1,000,000 USDC one, where offset 6 loses 1 base unit).
-        # The sentence now states both figures with their own
-        # donation attached: 0.000001 to the same donation, 0.000900
-        # even at a 1,000,000,000 USDC donation.
-        self.assertIn("the same deposit loses", hero)
-        self.assertIn("0.000001&nbsp;USDC", hero)
-        self.assertIn("to the same donation", hero)
-        self.assertIn("1,000,000,000 USDC donation costs it only <strong>0.000900&nbsp;USDC</strong>", hero)
-        self.assertNotIn("loses <strong>0.000900", hero)
+        # Visual verdict #293 item 4 (2026-11-26, checker-improvement
+        # #297): the three numbers used to live in one paragraph —
+        # 0.909091 / 0.000001 / 0.000900, the last one trailing at
+        # the sentence end — so a visitor could not compare them at
+        # a glance. They are now three cells side by side on the
+        # 1024px row under hero-top: same deposit, same donation, only the offset
+        # changes, and the third cell shows the 1,000x donation
+        # still under the 0.001 USDC pass bound. The paragraph is
+        # retired (its prose survives on /gate-brief/issue-1/); the
+        # strip carries the same three figures with their own
+        # scenario attached. The #106/#223/#225/#242 history is why
+        # each cell names its donation: #225 once attached the
+        # ladder-worst 0.000900 to the 1,000,000 USDC donation,
+        # which was wrong by 900x — the 1M-donation figure at
+        # offset 6 is 0.000001, and 0.000900 belongs to the
+        # 1,000,000,000 USDC donation.
+        self.assertEqual(hero.count('<div class="hero-compare">'), 1)
+        self.assertEqual(hero.count('class="hero-compare-cell"'), 3)
+        cell1 = ('<div class="hero-compare-cell"><span class="hero-compare-label">'
+                 'No protection · 1M donation</span><strong>0.909091&nbsp;USDC</strong>'
+                 '<span class="hero-compare-note">lost from a 100,000 USDC deposit</span></div>')
+        cell2 = ('<div class="hero-compare-cell"><span class="hero-compare-label">'
+                 'Offset 6 · 1M donation</span><strong>0.000001&nbsp;USDC</strong>'
+                 '<span class="hero-compare-note">same deposit, same donation</span></div>')
+        cell3 = ('<div class="hero-compare-cell"><span class="hero-compare-label">'
+                 'Offset 6 · 1B donation</span><strong>0.000900&nbsp;USDC</strong>'
+                 '<span class="hero-compare-note">1,000× the donation — under the 0.001 USDC pass bound</span></div>')
+        self.assertIn(cell1, hero)
+        self.assertIn(cell2, hero)
+        self.assertIn(cell3, hero)
+        self.assertLess(hero.index(cell1), hero.index(cell2))
+        self.assertLess(hero.index(cell2), hero.index(cell3))
+        self.assertNotIn("the same deposit loses", hero)
+        self.assertNotIn("to the same donation", hero)
+        self.assertNotIn("costs it only", hero)
         self.assertNotIn("the loss is under", hero)
         self.assertNotIn("defense, under", hero)
         self.assertIn("100,000 USDC", hero)
@@ -7760,6 +7771,13 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(max(r["victim_loss"] for r in rows6), 900)
         self.assertEqual(
             [r for r in rows6 if r["donation"] == 1_000_000_000_000][0]["victim_loss"], 1)
+        # The third cell's bound claim, re-derived: the donation
+        # check passes while the victim loss stays under
+        # min(1000 base units, victim_deposit // 1000) — for the
+        # 100,000 USDC victim that is 1000 base units (0.001
+        # USDC), and the offset-6 worst row is 900, under it.
+        self.assertEqual(min(1000, 100_000_000_000 // 1000), 1000)
+        self.assertLess(max(r["victim_loss"] for r in rows6), 1000)
         # Layout: horizontal flow on desktop, stacked with down arrows
         # on a phone viewport.
         self.assertIn(".flow{display:flex;align-items:stretch;justify-content:center;", build.CSS)
@@ -7893,6 +7911,64 @@ class TestChecker(unittest.TestCase):
                       ".flow-arrow{transform:rotate(90deg)}"
                       ".hero-stats{flex-direction:column;gap:.35em}"
                       ".hero-stats span{flex:none}}", build.CSS)
+        # The compare strip stacks at <=700px, not 640px: at 641-700px
+        # the row cells are ~192px and the 166px number has ~2px of
+        # headroom, none in a real browser.
+        self.assertIn("@media (max-width:700px){.hero-compare{flex-direction:column;gap:.5em}"
+                      ".hero-compare-label{min-height:0}}", build.CSS)
+
+    def test_verdict297_hero_compare_strip(self):
+        # Visual verdict #293 item 4 (2026-11-26, checker-improvement
+        # #297): the hero's three numbers lived in one paragraph, the
+        # last one trailing at the sentence end — no side-by-side
+        # comparison. They are now three cells in a full-width row
+        # under hero-top (same deposit, same donation, only the
+        # offset changes; the third cell shows the 1,000x donation
+        # still under the 0.001 USDC pass bound). The strip replaces
+        # the paragraph (whose prose survives on /gate-brief/issue-1/);
+        # the model numbers are re-derived in
+        # test_hero_has_attack_flow_diagram. The row placement is
+        # forced by geometry: in the left column the nbsp-bound
+        # number (166px at 1.35em) overflows a ~115px cell in the
+        # 901-1024px band (measured +52.6px at 901px, +11.6px at
+        # 1024px); on the 1024px row the cells are ~273px at 901px.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index('<p>This site is one independent researcher')
+        hero = home[hero_start:hero_end]
+        # One strip, three cells, in a full-width row under hero-top:
+        # after the checks panel closes, before the stats strip —
+        # not in the left column, not below the flow diagram.
+        self.assertEqual(hero.count('<div class="hero-compare">'), 1)
+        self.assertEqual(hero.count('class="hero-compare-cell"'), 3)
+        strip = hero.index('<div class="hero-compare">')
+        self.assertLess(hero.index('</aside>'), strip)
+        self.assertLess(strip, hero.index('class="hero-stats"'))
+        self.assertLess(hero.index('<p class="hero-cta">'),
+                        hero.index('<div class="flow"'))
+        # CSS: translucent cells on the dark band (same treatment as
+        # .hero-checks), capped at the 1024px row like .hero-stats, a
+        # two-line label reserve so the numbers stay aligned if the
+        # longest label wraps near 700px, stacked cells and no
+        # reserve at <=700px (the 641-700px row cells would leave
+        # ~2px of headroom for the 166px number, none in a real
+        # browser). The strip is a direct child of .hero, so on
+        # phones it follows hero-top in normal flow like the stats
+        # strip — no order rule.
+        for rule in (
+                ".hero-compare{display:flex;gap:.75em;max-width:1024px;margin:.9em auto 0}",
+                ".hero-compare-cell{flex:1 1 0;min-width:0;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.28);border-radius:10px;padding:.7em .8em;display:flex;flex-direction:column}",
+                ".hero-compare-label{display:block;font-size:.82em;color:#cfe8d6;min-height:2.5em;line-height:1.25}",
+                ".hero-compare-cell strong{display:block;font-size:1.35em;color:#fff;line-height:1.15;margin:.15em 0 .25em}",
+                ".hero-compare-note{display:block;font-size:.85em;color:#d7f0dd;line-height:1.4}",
+                ".hero-compare{flex-direction:column;gap:.5em}",
+                ".hero-compare-label{min-height:0}",
+                "@media (max-width:700px){.hero-compare{flex-direction:column;gap:.5em}.hero-compare-label{min-height:0}}"):
+            self.assertIn(rule, build.CSS)
 
     def test_hero_cta_first_on_mobile(self):
         # Visual verdict #108: at 320x568 the hero CTA sat below the
@@ -7913,11 +7989,17 @@ class TestChecker(unittest.TestCase):
         # #173): it is a direct child of .hero, after hero-top, so on
         # phones it follows hero-top in normal flow — nothing to
         # reorder. Only the column's own paragraphs are ordered.
+        # The .hero-compare strip (checker-improvement #297) is a
+        # direct child of .hero, after hero-top — it follows hero-top
+        # in normal flow on phones like the stats strip, so it needs
+        # no order rule; an earlier draft placed it in the column
+        # with order 2, retired when the strip moved to the row.
         anchor = build.CSS.index("#checker-form{grid-template-columns:1fr}")
         for rule in (".hero-top>div>p{order:2}",
                      ".hero-top>div>p.hero-cta{order:1}"):
             self.assertIn(rule, build.CSS)
             self.assertLess(anchor, build.CSS.index(rule))
+        self.assertNotIn(".hero-top>div>.hero-compare{order:2}", build.CSS)
         self.assertNotIn(".hero-top>div>.hero-stats{order:3}", build.CSS)
 
     def test_homepage_hero_is_full_bleed(self):
@@ -8250,7 +8332,7 @@ class TestChecker(unittest.TestCase):
             "width:100%;box-sizing:border-box;text-align:center;"
             "font-size:.62em;font-weight:600;margin:0}", build.CSS)
 
-    def test_hero_cta_and_proof_use_nonbreaking_hyphens(self):
+    def test_verdict297_hero_cta_and_strip_use_no_breakable_hyphen(self):
         # At 360px the hero CTA broke after the hyphen — "Run the
         # free ERC- / 4626 checker" — and the proof sentence broke
         # "offset- / 6" the same way (2026-11-18 02:07 headless
@@ -8262,8 +8344,13 @@ class TestChecker(unittest.TestCase):
         # free checker" — it still wrapped to two lines at 360px even
         # with the non-breaking hyphen (measured: button 305px, label
         # needs 313px). No hyphen left in the label, so the break
-        # problem is gone by construction; the proof sentence still
-        # needs its non-breaking hyphen, guarded below.
+        # problem is gone by construction.
+        # Checker-improvement #297 (2026-11-26): the proof sentence
+        # retired — its three figures moved to the .hero-compare
+        # strip, whose labels write "Offset 6" with a space, so no
+        # hyphen survives there to break either. The guard now pins
+        # the absence of both hyphen forms in the hero, and the
+        # strip labels themselves.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -8273,9 +8360,11 @@ class TestChecker(unittest.TestCase):
         hero_end = home.index('<p>This site is one independent researcher')
         hero = home[hero_start:hero_end]
         self.assertIn('Run the free checker', hero)
-        self.assertIn('standard offset&#8209;6 defense', hero)
+        self.assertIn('Offset 6 · 1M donation', hero)
+        self.assertIn('Offset 6 · 1B donation', hero)
         self.assertNotIn('ERC-4626', hero)
         self.assertNotIn('offset-6', hero)
+        self.assertNotIn('offset&#8209;6', hero)
 
     def test_hero_cta_label_fits_one_line_on_small_phones(self):
         # The hero CTA is the funnel's first click and most X traffic
@@ -8285,9 +8374,9 @@ class TestChecker(unittest.TestCase):
         # one line down to a 320px viewport (about 195px of text at
         # the 1.05em CTA size, plus padding, against a ~265px button)
         # with no CSS change and no media query. ERC-4626 is still
-        # named in the page title, the H1's context, the proof
-        # sentence and the checks card, so the button loses no
-        # information — it just stops repeating the product name.
+        # named in the page title and the cards below the hero,
+        # so the button loses no information — it just stops
+        # repeating the product name.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -8319,12 +8408,16 @@ class TestChecker(unittest.TestCase):
         # heading, one line). The paragraphs sit in the .hero-top text
         # column (verdict #63 put a checks panel on the right), so the
         # rule targets them there instead of as direct .hero children.
-        # Visual verdict #242 (2026-11-25): the comparison is now
+        # Visual verdict #242 (2026-11-25): the comparison was
         # 0.909091 vs 0.000001 to the same donation, with 0.000900 as
         # the billion-USDC worst-case tail — the #225 form attached
         # the worst-case number to the 1,000,000 USDC donation, which
-        # was wrong by 900x. The pretty-wrap rationale is unchanged:
-        # it guards the last line of the now-longer paragraph.
+        # was wrong by 900x. Visual verdict #293 item 4 /
+        # checker-improvement #297 (2026-11-26) moved the comparison
+        # out of the paragraph into the .hero-compare strip, so the
+        # pretty-wrap rule now guards the lead paragraph's tail
+        # ("no wallet, no signup." is nbsp-bound separately); the
+        # rule itself is unchanged.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -9384,7 +9477,14 @@ class TestChecker(unittest.TestCase):
         # card width (~366px inner; the note runs at .88em, so 40 chars
         # fit). All three steps share the shape, so they grow together
         # and no card is left with dead space at the bottom.
+        # Checker-improvement #297 (2026-11-26): this test used to
+        # rely on an earlier test having imported build already —
+        # run on its own it errored with ModuleNotFoundError. The
+        # path insert matches every neighbouring test.
         import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         steps = re.findall(
@@ -9411,9 +9511,14 @@ class TestChecker(unittest.TestCase):
             '<span class="flow-note">of a 100,000 USDC deposit</span></div>',
             home)
         self.assertNotIn("0.909091 USDC of a 100,000 USDC deposit</div>", home)
-        # The full sentence survives just above the flow and in the
-        # aria-label, so nothing was lost by shortening the step body.
-        self.assertIn("loses <strong>0.909091 USDC</strong> of a 100,000 USDC",
+        # The full sentence survives just above the flow as the
+        # .hero-compare strip's first cell (figure + scenario, unit
+        # nbsp-bound) and in the aria-label, so nothing was lost by
+        # shortening the step body. Checker-improvement #297
+        # (2026-11-26) retired the prose sentence the old assertion
+        # pinned; the prose itself survives on /gate-brief/issue-1/.
+        self.assertIn("<strong>0.909091&nbsp;USDC</strong>"
+                      '<span class="hero-compare-note">lost from a 100,000 USDC deposit</span>',
                       home)
         self.assertIn("the victim's 100,000 USDC deposit loses 0.909091 USDC",
                       home)
@@ -26812,20 +26917,24 @@ class TestChecker(unittest.TestCase):
         # a lone last word).
         # Visual verdict #242 (2026-11-25): #225 attached the wrong
         # number — 0.000900 is the ladder-worst, at the
-        # 1,000,000,000 USDC donation. The sentence now reads
+        # 1,000,000,000 USDC donation. The sentence then read
         # "...loses 0.000001 USDC to the same donation — and even a
         # 1,000,000,000 USDC donation costs it only 0.000900 USDC."
-        # The guarded pair is now the sentence-final "0.000900
-        # USDC." (also the gate-brief sentence's tail, so the worker
-        # bundle carries it twice), plus the same-donation figure
-        # "0.000001 USDC to the same donation".
+        # Checker-improvement #297 (2026-11-26) retired that hero
+        # sentence — the three figures moved to the .hero-compare
+        # strip, each with its own scenario, the unit nbsp-bound to
+        # the number inside its cell. The guarded pair is now the
+        # strip's "0.000001 USDC" (twice in the bundle: strip +
+        # gate-brief) and the gate-brief sentence-final "0.000900
+        # USDC." (once in the bundle — the strip's 0.000900 carries
+        # no trailing period).
         from pathlib import Path
         build_text = (Path.home() / "workspace/taskmarket/site"
                       / "build.py").read_text()
         self.assertIn("<strong>0.000900&nbsp;USDC</strong>.", build_text)
         self.assertNotIn("<strong>0.000900 USDC</strong>.", build_text)
-        self.assertIn("<strong>0.000001&nbsp;USDC</strong> to the same donation", build_text)
-        self.assertNotIn("<strong>0.000001 USDC</strong> to the same donation", build_text)
+        self.assertIn("<strong>0.000001&nbsp;USDC</strong>", build_text)
+        self.assertEqual(build_text.count("<strong>0.000001&nbsp;USDC</strong>"), 2)
         self.assertIn("depositor's&nbsp;loss.", build_text)
         self.assertNotIn("depositor's loss.", build_text)
         self.assertIn("Inbound only, no&nbsp;KYC.</p>", build_text)
@@ -26841,12 +26950,23 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertEqual(worker.count("no&nbsp;fee).</p>"), 2)
         self.assertNotIn("no fee).</p>", worker)
-        self.assertEqual(worker.count("<strong>0.000900&nbsp;USDC</strong>."), 2)
-        self.assertEqual(worker.count("<strong>0.000001&nbsp;USDC</strong> to the same donation"), 1)
+        self.assertEqual(worker.count("<strong>0.000900&nbsp;USDC</strong>."), 1)
+        self.assertEqual(worker.count("<strong>0.000001&nbsp;USDC</strong>"), 2)
         self.assertNotIn("<strong>0.000900 USDC</strong>.", worker)
-        self.assertNotIn("<strong>0.000001 USDC</strong> to the same donation", worker)
         self.assertEqual(worker.count("depositor's&nbsp;loss."), 1)
         self.assertEqual(worker.count("Inbound only, no&nbsp;KYC.</p>"), 1)
+        # The plain-space 0.000001 form is legitimate guide prose
+        # (a dozen guides write "<strong>0.000001 USDC</strong>"
+        # mid-sentence), so the nbsp guard is scoped to the hero:
+        # the strip's three numbers are nbsp-bound, no plain-space
+        # strong form survives in the hero slice.
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index('<p>This site is one independent researcher')
+        hero = home[hero_start:hero_end]
+        for num in ("0.909091", "0.000001", "0.000900"):
+            self.assertIn("<strong>%s&nbsp;USDC</strong>" % num, hero)
+            self.assertNotIn("<strong>%s USDC</strong>" % num, hero)
 
     def test_site_internal_links_resolve(self):
         # Two dead internal links shipped on 2026-11-16 and were caught
