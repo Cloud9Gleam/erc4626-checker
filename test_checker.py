@@ -15349,6 +15349,125 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=0, mn=10 ** 21, fee=0)
         self.assertNotIn(why, html)
 
+    def test_verdict294_attacker_wedge_paragraph(self):
+        # Visual verdict #293 item 3 (2026-11-26, checker-improvement):
+        # the footnote defined a negative attacker net but never said why
+        # it explodes while the victim's loss falls (noprot 1M -> 1B:
+        # -0.090909 -> -999.899111 vs 0.909091 -> 0.099890). The mechanism,
+        # verified against the model with exact Fractions: the victim's
+        # loss is roughly the fractional share her deposit cannot buy
+        # (loss = frac x price, within 0.091 USDC on every preset row),
+        # while the attacker's net is the pure pro-rata term plus the
+        # virtual-share wedge, and the wedge grows with the donation
+        # (0.909 -> 999.899 USDC, 1M -> 1B). The paragraph renders only
+        # when the table actually shows the divergence — an earlier row
+        # losing more than a later row while the later row costs the
+        # attacker more — so it is absent on the default / offset-18
+        # tables, where the loss never falls.
+        import sys
+        from pathlib import Path
+        from fractions import Fraction as F
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        wedge = ("Why a bigger donation can cost the attacker more "
+                 "and the victim less")
+        vic = 100_000_000_000
+        for off, mn, fee in ((0, 1, 0), (6, 1_000_000, 1000),
+                             (18, 1_000_000, 1000)):
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee)
+            rows = check_donation(v)["detail"]
+            vs, va = 10 ** off, 1
+            seed = max(mn, 1_000_000)
+            s0 = seed * vs // va
+            for row in rows:
+                if row["victim_loss"] is None:
+                    continue
+                d = row["donation"]
+                ideal = F(vic * (s0 + vs), seed + d + va)
+                s = ideal.numerator // ideal.denominator
+                frac = ideal - s
+                price = F(seed + d + va, s0 + vs)
+                # Victim loss is the fractional share, within 0.1 USDC
+                # (measured worst 0.090909, noprot 1M).
+                self.assertLessEqual(
+                    abs(F(row["victim_loss"]) - frac * price), 100_000)
+                # Attacker net is pure pro-rata + wedge, exact to the
+                # redeem floor (under 1 base unit).
+                a = seed + d + vic
+                t = s0 + s
+                atk_exact = F(s0 * (a + va), t + vs)
+                self.assertEqual(
+                    row["attacker_net"],
+                    atk_exact.numerator // atk_exact.denominator
+                    - (seed + d))
+        # The divergence itself, noprot anchor rows 1M -> 1B: the wedge
+        # grows ~1100x while the fractional-share loss falls ~10x.
+        v = Vault(decimals_offset=0, min_deposit=1, perf_fee_bps=0)
+        rows = check_donation(v)["detail"]
+        vs, va, seed, s0 = 1, 1, 1_000_000, 1_000_000
+        vals = {}
+        for row in rows:
+            d = row["donation"]
+            if d not in (1_000_000_000_000, 1_000_000_000_000_000):
+                continue
+            ideal = F(vic * (s0 + vs), seed + d + va)
+            s = ideal.numerator // ideal.denominator
+            price = F(seed + d + va, s0 + vs)
+            a = seed + d + vic
+            t = s0 + s
+            wedge_amt = F(s0 * (a + va), t + vs) - F(s0 * a, t)
+            vals[d] = (abs(float(wedge_amt)) / 1_000_000,
+                       float((ideal - s) * price) / 1_000_000)
+        self.assertGreater(vals[1_000_000_000_000_000][0]
+                           / vals[1_000_000_000_000][0], 1000)
+        self.assertLess(vals[1_000_000_000_000_000][1]
+                        / vals[1_000_000_000_000][1], 0.2)
+        # Render: noprot shows it once, legend < wedge < chart < the
+        # victim-side "Why the loss falls" paragraph.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=1,
+                          perf_fee_bps=0)),
+            vic=vic, off=0, mn=1, fee=0)
+        self.assertEqual(html.count(wedge), 1)
+        self.assertIn("virtual-share wedge", html)
+        self.assertLess(html.index("Pass bound:"),
+                        html.index(wedge))
+        self.assertLess(html.index(wedge), html.index("loss-chart"))
+        self.assertLess(html.index(wedge),
+                        html.index("Why the loss falls"))
+        # Default / offset 18: the loss never falls, so no paragraph.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertNotIn(wedge, html)
+        html = build.results_html(
+            run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            off=18, mn=1_000_000, fee=1000)
+        self.assertNotIn(wedge, html)
+        # Small victim at offset 0: loss still falls 1M -> 1B (0.999001
+        # -> 0.000999) while the attacker cost grows, so it renders.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=1,
+                          perf_fee_bps=0),
+                    victim_deposit=1_000_000_000),
+            vic=1_000_000_000, off=0, mn=1, fee=0)
+        self.assertIn(wedge, html)
+        # Error rows: no numbers, no paragraph.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=10 ** 21,
+                          perf_fee_bps=0)),
+            vic=vic, off=0, mn=10 ** 21, fee=0)
+        self.assertNotIn(wedge, html)
+        # Worker JS renderer: same guard, same order.
+        js = build.checker_results_html_js()
+        fn = js[js.index("function resultsHTML"):]
+        self.assertEqual(fn.count(wedge), 1)
+        self.assertLess(fn.index("Pass bound: attacker never profits"),
+                        fn.index(wedge))
+        self.assertLess(fn.index(wedge),
+                        fn.index("Why the loss falls"))
 
     def test_smoothed_nav_guide_numbers(self):
         # Smoothed-NAV guide: 30-day moving-average reported price.
