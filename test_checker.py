@@ -1501,7 +1501,7 @@ class TestChecker(unittest.TestCase):
                         passed.index("verdict-strip__detail"))
         self.assertNotIn("Result: ALL PASS", passed)
         self.assertNotIn("Result: SOME FAILED", failed)
-        self.assertIn('<span class="verdict-strip__verdict">✕ SOME FAILED</span>',
+        self.assertIn('<span class="verdict-strip__verdict">× SOME FAILED</span>',
                       failed)
 
     def test_verdict284_zero_loss_strip_carries_measured_zero(self):
@@ -1682,7 +1682,7 @@ class TestChecker(unittest.TestCase):
         # Measured loss: strip is verdict + short loss sentence only
         # (no victim-deposit clause — the deposit size lives in the
         # Parameters line).
-        self.assertIn('<span class="verdict-strip__verdict">✕ SOME FAILED</span>',
+        self.assertIn('<span class="verdict-strip__verdict">× SOME FAILED</span>',
                       strip)
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
                       "victim loses <strong>0.909091</strong> USDC", strip)
@@ -1708,7 +1708,7 @@ class TestChecker(unittest.TestCase):
         errored = run_all(Vault(decimals_offset=0, min_deposit=10**15,
                                 perf_fee_bps=0))
         estrip = build.verdict_strip_html(errored)
-        self.assertIn('<span class="verdict-strip__verdict">✕ SOME FAILED</span>',
+        self.assertIn('<span class="verdict-strip__verdict">× SOME FAILED</span>',
                       estrip)
         self.assertIn("2 of 6 failed: Donation inflation, Minimum viable "
                       "deposit", estrip)
@@ -2056,7 +2056,7 @@ class TestChecker(unittest.TestCase):
     def test_result_notice_does_not_restate_verdict(self):
         # Visual verdict 17:07 follow-up (2026-11-22,
         # checker-improvement): on the live checker page the verdict
-        # was stated three times — strip ("✕ SOME FAILED"),
+        # was stated three times — strip ("× SOME FAILED"),
         # banner ("Result: SOME FAILED — 1 of 6 failed ..."), and the
         # "What to do next" notice ("A check failed." / "This preset
         # passes the model."). The strip has a pinned reason to stay
