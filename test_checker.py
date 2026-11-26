@@ -9683,7 +9683,16 @@ class TestChecker(unittest.TestCase):
         self.assertLess(html.index("loss-title"), html.index("loss-row"))
         self.assertLess(html.index("loss-axis"), html.index("loss-head"))
         self.assertNotIn("<p class='loss-note'>", html)
-        self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;padding-left:1.2em}", build.CSS)
+        # Visual verdict #276 (2026-11-26): the legend / note is no
+        # longer a bare bulleted list — a lone "Within the bound:"
+        # bullet on the default page read as a stray raw <li>. It is
+        # now a light box in the .params language (same #f9fafb /
+        # #e5e7eb / 8px); the bold labels stay the per-item markers.
+        self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;"
+                      "padding:.6em .9em;list-style:none;background:#f9fafb;"
+                      "border:1px solid #e5e7eb;border-radius:8px}", build.CSS)
+        self.assertNotIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;"
+                         "padding-left:1.2em}", build.CSS)
         self.assertIn(".loss-head li{margin:.15em 0}", build.CSS)
         # The Worker-side template renders the same omission note, and
         # no placeholder label anywhere. The note is built conditionally
@@ -13246,12 +13255,79 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<body id=\\"top\\">', worker)
         self.assertIn('<nav class=\\"audit-toc\\"', worker)
         self.assertIn(
-            ".audit-toc{background:#fff;border:1px solid #e5e7eb;"
+            ".audit-toc{background:#f9fafb;border:1px solid #e5e7eb;"
             "border-radius:10px;padding:.7em 1em .8em;margin:1em 0}",
             build.CSS)
         self.assertIn(
             ".back-to-top{margin:1.2em 0 0;text-align:right;font-size:.9em}",
             build.CSS)
+
+    def test_verdict276_unstyled_spots_are_styled(self):
+        # Visual verdict #276 (2026-11-26, live browser): three spots
+        # read as unstyled/raw HTML — the /audit/ TOC (default disc
+        # bullets in a white box on a white card), the /checker/
+        # "Within the bound:" note (a lone bullet, no box at all),
+        # and the Track record intro (a bare <p> with no treatment
+        # while the h2 beside it has a green bar and the cards below
+        # have borders and pills). All three now use the site's
+        # light-box language (.params: #f9fafb / #e5e7eb / 8px). No
+        # copy or numbers change; the TOC columns and the
+        # column-span:all last item are untouched (the browser's
+        # "left 4 / right 3" count is the known #264 misread — the
+        # spanning item is a full-width row, headless rects 466.2 /
+        # 463.7, diff 2.5px).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        # 1. TOC: light-box background, no disc bullets, green
+        # chevron markers on the items.
+        self.assertIn(
+            ".audit-toc{background:#f9fafb;border:1px solid #e5e7eb;"
+            "border-radius:10px;padding:.7em 1em .8em;margin:1em 0}",
+            build.CSS)
+        self.assertNotIn(".audit-toc{background:#fff;", build.CSS)
+        self.assertIn(".audit-toc ul{margin:0;padding-left:0;list-style:none}",
+                      build.CSS)
+        self.assertIn(
+            ".audit-toc li{margin:.15em 0;position:relative;padding-left:1em}",
+            build.CSS)
+        self.assertNotIn(".audit-toc li{margin:.15em 0}", build.CSS)
+        self.assertIn(
+            '.audit-toc li::before{content:"\u203a";position:absolute;'
+            "left:0;top:0;color:#0a7d2c;font-weight:700}",
+            build.CSS)
+        self.assertEqual(audit.count('<nav class="audit-toc"'), 1)
+        toc = audit[audit.index('<nav class="audit-toc"'):
+                    audit.index('</nav>')]
+        self.assertEqual(toc.count("<li>"), 7)
+        # 2. .loss-head: light-box note/legend, no bullets. The
+        # markup is untouched, so both renderers still emit the
+        # same <ul class='loss-head'> (see the legend tests).
+        self.assertIn(".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;"
+                      "padding:.6em .9em;list-style:none;background:#f9fafb;"
+                      "border:1px solid #e5e7eb;border-radius:8px}", build.CSS)
+        self.assertIn("<ul class='loss-head'>", build.checker_results_html_js())
+        # 3. Track record intro: classed paragraph, light box with
+        # the green left border echoing the .audit-page h2 accent.
+        # Text is byte-identical to the condensed #162 paragraph.
+        self.assertIn('<p class="track-intro">Every review below was reproduced '
+                      "from source in forge.", audit)
+        self.assertNotIn("<p>Every review below was reproduced", audit)
+        self.assertIn(
+            ".track-intro{background:#f9fafb;border:1px solid #e5e7eb;"
+            "border-left:4px solid #0a7d2c;border-radius:8px;padding:.6em .9em}",
+            build.CSS)
+        # The deployed worker carries all three rules.
+        worker = build.worker_js(pages)
+        for rule in (".audit-toc{background:#f9fafb;",
+                     ".audit-toc li::before{content:",
+                     ".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;"
+                     "padding:.6em .9em;list-style:none;background:#f9fafb;",
+                     ".track-intro{background:#f9fafb;"):
+            self.assertIn(rule, worker)
 
     def test_verdict273_long_index_pages_have_back_to_top(self):
         # Visual verdict #272 item 5 (2026-11-26): /patterns/ is a
@@ -13338,8 +13414,12 @@ class TestChecker(unittest.TestCase):
         # link ended at x=725, ~700px of dead space on the right
         # (#197 item 6). At min-width 641px the list runs two CSS
         # columns; below that it stays single-column (the 310px
-        # mobile box has no slack to split). CSS columns, not grid:
-        # grid items lose their li markers, column items keep them.
+        # mobile box has no slack to split). CSS columns, not grid.
+        # Visual verdict #276 (2026-11-26): the default disc bullets
+        # are gone — the list is list-style none with a green chevron
+        # ::before on each item (generated content survives the
+        # columns; the #198 "grid loses the markers" reason is
+        # retired, the columns layout itself is unchanged).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -13348,8 +13428,10 @@ class TestChecker(unittest.TestCase):
                 "{.audit-toc ul{columns:2;column-gap:2em}}")
         self.assertIn(rule, build.CSS)
         self.assertEqual(build.CSS.count(rule), 1)
-        self.assertIn(".audit-toc ul{margin:0;padding-left:1.2em}",
+        self.assertIn(".audit-toc ul{margin:0;padding-left:0;list-style:none}",
                       build.CSS)
+        self.assertNotIn(".audit-toc ul{margin:0;padding-left:1.2em}",
+                         build.CSS)
         self.assertNotIn(".audit-toc ul{display:grid", build.CSS)
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         toc = audit[audit.index('<nav class="audit-toc"'):
