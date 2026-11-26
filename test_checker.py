@@ -5022,6 +5022,39 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(".sol", page)
         self.assertIn("library-only", page)
 
+    def test_patterns_duplicate_37_is_labelled_37b(self):
+        # Visual verdict #280 item 1 (2026-11-26, checker-improvement):
+        # the /patterns/ index showed two identical "37" pills linking
+        # to different entries (#pattern-37 Santa's List enum-default,
+        # #pattern-37b RAAC scaled-balance), and both section headings
+        # read "Pattern 37". A first-time visitor could not tell them
+        # apart. The second entry is now labelled 37b everywhere it is
+        # visible -- pill, heading, Browse intro and provenance -- while
+        # the pinned substrings "37 is used twice for two different
+        # entries" (#272) and "Pattern 37 appears twice" survive as
+        # prefixes. The Browse intro already explained the gaps up front
+        # (#272), so the verdict's "explanation only at page bottom"
+        # was a misread and no structural change was needed there.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        page = pages["/patterns/"]
+        self.assertIn('<a href="#pattern-37b">37b</a>', page)
+        self.assertNotIn('<a href="#pattern-37b">37</a>', page)
+        self.assertIn('<a href="#pattern-37">37</a>', page)
+        self.assertIn("<h3>Pattern 37b — Scaled-balance token double-index",
+                      page)
+        self.assertNotIn("<h3>Pattern 37 — Scaled-balance", page)
+        self.assertIn("<h3>Pattern 37 — Enum index 0 must be the inert state",
+                      page)
+        self.assertIn("37 is used twice for two different entries "
+                      "(37 and 37b)", page)
+        self.assertIn("Pattern 37 appears twice, as 37 and 37b", page)
+        self.assertEqual(page.count("<section id=\"pattern-"), 199)
+        self.assertEqual(page.count('<li><a href="#pattern-'), 199)
+
     def test_patterns_gaps_match_source_file(self):
         # 2026-11-22: the /patterns/ footnote once listed 207 as a gap
         # and omitted 39 — both wrong against the playbook. 207 IS a
