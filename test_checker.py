@@ -4674,10 +4674,13 @@ class TestChecker(unittest.TestCase):
                 for x in range(qr.get_size()) if qr.get_module(x, y)}
         self.assertEqual(cells, grid)
         self.assertEqual(len(cells), 1230)
-        # CSS: 160px square beside the caption, stacked under 640px.
+        # CSS: 200px square beside the caption, stacked under 640px.
+        # Checker-improvement #279 (2026-11-26, visual verdict #278
+        # item 4): the QR was 160px, too small for the payment area's
+        # visual weight; 200px is a 25% larger scan target.
         self.assertIn(".pay-qr{display:flex;gap:1em;align-items:center;",
                       build.CSS)
-        self.assertIn(".pay-qr svg{flex:0 0 auto;width:160px;height:160px;",
+        self.assertIn(".pay-qr svg{flex:0 0 auto;width:200px;height:200px;",
                       build.CSS)
         self.assertIn(".pay-qr figcaption{font-size:.95em;color:#374151}",
                       build.CSS)
@@ -4694,6 +4697,55 @@ class TestChecker(unittest.TestCase):
         self.assertIn(">Copy address</button>", audit)
         self.assertIn("https://basescan.org/address/" + build.PAY_ADDR, audit)
         self.assertIn("Double-check the address before sending", audit)
+
+    def test_verdict279_pay_area_has_visual_weight(self):
+        # Checker-improvement #279 (2026-11-26, visual verdict #278
+        # item 4): the payment area read as weak -- QR 160px, Copy a
+        # plain white outlined button (the global button[type=button]
+        # rule), BaseScan a bare green text link, the address in a
+        # light-grey box. Now: QR 200px, Copy is the filled green
+        # primary, BaseScan is the outlined secondary at the same
+        # button metrics, the address box is 1.15em with a #9ca3af
+        # border. The Copy override carries [type=button] in its
+        # selector so it beats the later global white rule on
+        # specificity, not order; the global white rule itself stays
+        # (other type=button buttons keep it).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".pay-row button[type=button]{flex-shrink:0;white-space:nowrap;"
+            "background:#0a7d2c;color:#fff;border:1px solid #0a7d2c}",
+            build.CSS)
+        self.assertIn(
+            ".pay-row button[type=button]:hover{background:#086623}",
+            build.CSS)
+        self.assertIn(
+            ".pay-row a.basescan-link{flex-shrink:0;white-space:nowrap;"
+            "background:#fff;color:#0a7d2c;border:1px solid #0a7d2c;"
+            "border-radius:8px;padding:.55em 1.15em;font-weight:600;"
+            "text-decoration:none}", build.CSS)
+        self.assertIn(
+            ".pay-row a.basescan-link:hover{background:#eef7f0;"
+            "text-decoration:none}", build.CSS)
+        self.assertIn(".pay-qr svg{flex:0 0 auto;width:200px;height:200px;",
+                      build.CSS)
+        self.assertNotIn("width:160px;height:160px", build.CSS)
+        self.assertNotIn(
+            ".pay-row a.basescan-link{flex-shrink:0;white-space:nowrap;"
+            "font-size:.9em}", build.CSS)
+        self.assertIn("button[type=button]{background:#fff;color:#0a7d2c;",
+                      build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(".pay-row button[type=button]{flex-shrink:0;",
+                      worker)
+        self.assertIn(".pay-row a.basescan-link{flex-shrink:0;", worker)
+        self.assertIn("width:200px;height:200px", worker)
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertIn(">Copy address</button>", audit)
+        self.assertIn("View on BaseScan</a>", audit)
 
     def test_verdict214_email_first_sits_above_payment_details(self):
         # Visual verdict #214 (2026-11-25): in both pay-boxes the
@@ -5739,8 +5791,13 @@ class TestChecker(unittest.TestCase):
         # USDC could only trust the truncated display and the Copy
         # button. The row now carries a "View on BaseScan" link to the
         # full address, so the address and its USDC activity can be
-        # checked before paying. A plain link, not a third button: the
-        # row already has the copy button.
+        # checked before paying. Checker-improvement #279 (2026-11-26,
+        # visual verdict #278 item 4): the link is now an outlined
+        # secondary button, same padding/radius/weight as a button,
+        # paired with the filled-green Copy primary per #102.
+        # Verdict #103's plain-link rationale ("not a third button")
+        # is retired with the toggle (#230): the row holds exactly
+        # two actions now.
         import sys
         import re
         from pathlib import Path
@@ -5752,8 +5809,13 @@ class TestChecker(unittest.TestCase):
             + build.PAY_ADDR + '" target="_blank" rel="noopener">'
             'View on BaseScan</a>', audit)
         self.assertIn(".pay-row a.basescan-link{flex-shrink:0;"
-                      "white-space:nowrap;font-size:.9em}",
+                      "white-space:nowrap;background:#fff;color:#0a7d2c;"
+                      "border:1px solid #0a7d2c;border-radius:8px;"
+                      "padding:.55em 1.15em;font-weight:600;"
+                      "text-decoration:none}",
                       build.CSS)
+        self.assertIn(".pay-row a.basescan-link:hover{background:#eef7f0;"
+                      "text-decoration:none}", build.CSS)
         # Inside the pay-row, after the copy button, before the note.
         row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
         self.assertIsNotNone(row, "pay-row not found")
@@ -5784,7 +5846,10 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         rule = (".pay-row a.basescan-link{flex-shrink:0;"
-                "white-space:nowrap;font-size:.9em}")
+                "white-space:nowrap;background:#fff;color:#0a7d2c;"
+                "border:1px solid #0a7d2c;border-radius:8px;"
+                "padding:.55em 1.15em;font-weight:600;"
+                "text-decoration:none}")
         self.assertIn(rule, build.CSS)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
@@ -8731,10 +8796,13 @@ class TestChecker(unittest.TestCase):
         # verdict 01:07): four controls still crammed one row
         # (847px in a 903px row), the address at body size, the trust
         # element not prominent. The address now takes its own
-        # full-width line at 1.1em — a deposit-address field — and
+        # full-width line at 1.15em — a deposit-address field — and
         # the two actions share the line below it. The address
         # still wraps instead of being ellipsis-clipped -- a clipped
         # payment address hides characters the payer must see.
+        # Checker-improvement #279 (2026-11-26, visual verdict #278
+        # item 4): 1.1em -> 1.15em and the border #d1d5db -> #9ca3af,
+        # so the trust element reads as a field, not a faint chip.
         # Checker-improvement #230 (2026-11-25, visual verdict #230
         # item 1) retires the toggle that collapsed the address, so
         # the shortened display is gone for good and the row holds
@@ -8749,7 +8817,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn("flex:0 0 100%", m.group(0))
         self.assertNotIn("flex:0 1 auto", m.group(0))
         self.assertIn("box-sizing:border-box", m.group(0))
-        self.assertIn("font-size:1.1em", m.group(0))
+        self.assertIn("font-size:1.15em", m.group(0))
+        self.assertIn("border:1px solid #9ca3af", m.group(0))
         self.assertIn("max-width:100%", m.group(0))
         self.assertIn("word-break:break-all", m.group(0))
         self.assertNotIn("text-overflow:ellipsis", m.group(0))
@@ -8786,7 +8855,7 @@ class TestChecker(unittest.TestCase):
         # was the hugging one from verdict #59 — 2026-11-23
         # supersedes that (visual verdict 01:07, see
         # test_audit_pay_row_address_own_line): the address is now
-        # its own full-width line at 1.1em, the note still fills the
+        # its own full-width line at 1.15em, the note still fills the
         # full-width strip below the actions.
         import re
         import sys
