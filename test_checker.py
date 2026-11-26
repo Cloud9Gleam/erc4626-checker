@@ -8515,22 +8515,54 @@ class TestChecker(unittest.TestCase):
         self.assertIn('Nothing here is a paid promotion and nothing here '
                       'connects a&nbsp;wallet.</p>',
                       body[second:second + 200])
-        # The h2 is main's first child, so the global h2 top margin
-        # (1.6em) must not stack on main's padding under the hero.
-        self.assertIn("main>h2:first-child{margin-top:0}", build.CSS)
+        # Visual verdict #307 (2026-11-27): the intro no longer
+        # lives inside <main> — the h2 + two paragraphs are hoisted
+        # out of the white card at render time and sit directly on
+        # the sage page background, so the ~460px of dead white the
+        # short second paragraph left in the card is gone. The old
+        # main>h2:first-child margin-zero rule retires with the
+        # move: no page has an h2 as main's first child any more.
+        self.assertNotIn("main>h2:first-child", build.CSS)
+        self.assertIn(".home-intro{margin-top:1.5em}", build.CSS)
+        self.assertIn(".home-intro h2{margin-top:0;"
+                      "border-bottom:1px solid #9aa89a}", build.CSS)
+        self.assertIn(".home-intro p{max-width:80ch}", build.CSS)
         # The render hoist must not swallow the h2 into the hero band:
-        # the rendered page has the bleed band first, then the h2
-        # inside <main>.
+        # the rendered page has the bleed band first, then the intro
+        # on the sage background, then <main> with the cards.
         pages = build.render_all()
         home = pages["/"]
         self.assertEqual(home.count('<div class="hero-bleed">'), 1)
+        self.assertEqual(home.count('<div class="home-intro">'), 1)
         bleed = home.index('<div class="hero-bleed">')
+        wrap = home.index('<div class="wrap">')
+        intro = home.index('<div class="home-intro">')
         main = home.index("<main>")
         h2 = home.index('<h2>What this site is</h2>')
-        self.assertLess(bleed, main)
-        self.assertLess(main, h2)
+        self.assertLess(bleed, wrap)
+        self.assertLess(wrap, intro)
+        self.assertLess(intro, h2)
+        self.assertLess(h2, main)
         self.assertNotIn('<h2>What this site is</h2>',
-                         home[bleed:main])
+                         home[bleed:wrap])
+        # main now opens on the cards: the white card holds only
+        # the three sub-cards.
+        self.assertTrue(home[main:].startswith('<main><div class="cards">'))
+        self.assertNotIn('<div class="home-intro">', pages["/checker/"])
+        self.assertNotIn('<div class="home-intro">', pages["/audit/"])
+
+    def test_verdict307_home_intro_mobile_padding(self):
+        # Visual verdict #307: below 640px the wrap's side padding
+        # is 0 and main carries its own 1.1em, so the intro — now
+        # outside main — needs the same side padding, plus a bottom
+        # gap (main's top margin is zeroed on mobile, so the desktop
+        # gap from main's .75em top margin does not exist there).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".home-intro{padding:0 1.1em;margin-bottom:.75em}",
+                      build.CSS)
 
     def test_copy_link_button_fills_banner_on_mobile(self):
         # Verdict #100 minor observation: whitespace around the
