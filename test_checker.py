@@ -8751,6 +8751,12 @@ class TestChecker(unittest.TestCase):
         # entry: the h3 title's "(+ for *)" broke after `*`,
         # orphaning "*)" at the next line's start; the parenthetical
         # is now nbsp-bound so it stays one unit.
+        # Verdict #289 (2026-11-26): three of the four fixed spans
+        # are short code units that split across lines at 1919/360,
+        # so they now carry class="nowrap" (batch nowrap of the
+        # 82-text census union); the literal `**` inside them is
+        # unchanged, only the opening tag gained the class. The
+        # fourth span (36 chars) never splits and stays plain.
         import re
         import sys
         from pathlib import Path
@@ -8759,9 +8765,9 @@ class TestChecker(unittest.TestCase):
         page = dict((p, b) for p, t, d, k, b in build.PAGES)["/patterns/"]
         fixed = (
             "<code>totalSupply() * 10 ** decimalOffset</code>",
-            "<code>... + 10 ** decimalOffset</code>",
+            "<code class=\"nowrap\">... + 10 ** decimalOffset</code>",
             "<code>10 ** offset</code>",
-            "<code>+ 10 ** offset</code>",
+            "<code class=\"nowrap\">+ 10 ** offset</code>",
         )
         for form in fixed:
             self.assertEqual(page.count(form), 1, form)
@@ -8774,13 +8780,15 @@ class TestChecker(unittest.TestCase):
         for form in mangled:
             self.assertNotIn(form, page)
         # No code span anywhere on the page may contain a strong tag:
-        # the defect class, not just these four instances.
-        for m in re.finditer(r"<code>(.*?)</code>", page, re.S):
+        # the defect class, not just these four instances. The pattern
+        # matches classed spans too (#289 nowrap batch).
+        for m in re.finditer(r"<code[^>]*>(.*?)</code>", page, re.S):
             self.assertNotIn("<strong>", m.group(1))
             self.assertNotIn("</strong>", m.group(1))
         # The deliberate `+` in Check (d) keeps its literal `**` --
         # the fix must not over-strip neighbouring code spans.
-        self.assertIn("<code>+ 10 ** decimalOffset</code>", page)
+        # (#289: this span is nowrap-bound, like its `...` sibling.)
+        self.assertIn("<code class=\"nowrap\">+ 10 ** decimalOffset</code>", page)
         # Title parenthetical stays one unit (verdict #282 item 4).
         self.assertIn("(<code>+</code>&nbsp;for&nbsp;<code>*</code>)",
                       page)
@@ -8867,6 +8875,157 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertEqual(worker.count(bound.replace('"', '\\"')), 1)
         self.assertEqual(worker.count(plain), 1)
+
+    def test_verdict289_short_code_chips_are_nowrap(self):
+        # Visual verdict #287 item 1, batch (2026-11-26,
+        # checker-improvement): #288 fixed one short code chip
+        # (Pattern 5) and censused the class: 29 short (<=30 chars)
+        # multi-line <code> units at 1919, 67 at 360 on /patterns/.
+        # This round wraps the whole union -- 91 distinct texts,
+        # 114 occurrences -- in class="nowrap", headlined by
+        # pattern-84's "1 wei", five characters splitting across
+        # lines. The .nowrap rule (#260 precedent) keeps each chip
+        # one piece; the line breaker moves it whole to the next
+        # line. Every unit is <=30 chars (~<=220px), so all fit the
+        # ~287px mobile column whole. No <pre> region exists in the
+        # patterns body, so nowrap cannot collapse preformatted
+        # newlines. Only the /patterns/ body is touched; the
+        # /research/patterns/ table cell keeps the plain form (#288).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        page = dict((p, b) for p, t, d, k, b in build.PAGES)["/patterns/"]
+        expected = (
+            '+ 1 wei',
+            '+ 10 ** decimalOffset',
+            '+ 10 ** offset',
+            '- pendingWithdrawals',
+            '- unrealizedLoss',
+            '... + 10 ** decimalOffset',
+            '1 wei',
+            '10^(decOut - decIn)',
+            '&gt; 0',
+            '&gt;= lastUpdateIntervalTime',
+            'MIN = 1e18',
+            'StructName(type name,...)',
+            'T - start',
+            'T &lt; start',
+            'T &gt;= now',
+            'X − Y',
+            '_hashTypedDataV4',
+            'accountedX &lt;= balance',
+            'accrue → claim',
+            'amount * price / 1e18',
+            'amount + amount * f',
+            'amount / 1e18',
+            'amount / index',
+            'answer &gt; 0',
+            'answeredInRound &gt;= roundId',
+            'assets * supply / totalAssets',
+            'assets − liabilities',
+            'burn(a, 150e18)',
+            'bytes32(5 ether)',
+            'capacity - amount &gt;= 0',
+            'capacity = credit + debt',
+            'capacity &gt; 0',
+            'capacity ≤ 0',
+            'claim-all',
+            'claimed &lt;= accrued + 1 wei',
+            'deadline = type(uint256).max',
+            'deadline &gt;= block.timestamp',
+            'debt / totalDelegatedCredit',
+            'decAsset &lt;= decSynthetic',
+            'decreaseAllowance',
+            'else { dailyDrips = 0; }',
+            'f(x) = (1.8D - 1.1x)/(2(D-x))',
+            'fee = amount * 3 / 1000',
+            'from == to',
+            'f² / (1 - f)',
+            'goal &gt; 0',
+            'hasClaimedEth = true',
+            'i_deployedAt = block.timestamp',
+            'if (shares == 0) shares = 1',
+            'if fund.dealine_set { revert }',
+            'index - oldIndex',
+            'last + 0 &gt;= parameters_ts',
+            'last + period &gt;= ts',
+            'last* == 0',
+            'ledger[user] += amount',
+            'ledger[user] == 2 × stake',
+            'ledger[x] = value',
+            'length == 0',
+            'lp * reserve / total_supply',
+            'mapping(address =&gt; uint256)',
+            'max - spent',
+            'max(leaf amounts)',
+            'msg.sender == initiator',
+            'n &gt; (100 - otherShares) / PCT',
+            'no_fee * (1 + f)',
+            'no_fee / (1 - f)',
+            'owner = _newOwner',
+            'paid_to ⊂ divided_by',
+            'payment &gt;= required * (1 + f)',
+            'payment &gt;= required / (1 - f)',
+            'payoutWei = uint128(msg.value)',
+            'playerB == address(0)',
+            'redeemed &gt; Y',
+            'refund == total staked',
+            'require(balance == X)',
+            'require(ledger[x] == 0)',
+            'require(x &gt; 0)',
+            'safeTransfer',
+            'success == false',
+            'sum(ledger) == totalSupply',
+            'totalWeight = Σ weight',
+            'transfer',
+            'transfer(msg.sender, ...)',
+            'ts == last',
+            'ts &gt;= last_update',
+            'tx.origin == owner',
+            'user shares == 0',
+            'x * y / 1e18',
+            'x / (1e18 / y)',
+            'x / 1e18 &lt;= limit',
+            'Σ weight[i] == totalWeight',
+        )
+        for raw in expected:
+            bound = '<code class="nowrap">' + raw + '</code>'
+            plain = '<code>' + raw + '</code>'
+            self.assertIn(bound, page, raw)
+            self.assertNotIn(plain, page, raw)
+        multi = {
+            '&gt; 0': 5,
+            'amount / index': 2,
+            'bytes32(5 ether)': 2,
+            'decreaseAllowance': 2,
+            'f² / (1 - f)': 2,
+            'index - oldIndex': 2,
+            'playerB == address(0)': 5,
+            'safeTransfer': 4,
+            'transfer': 7,
+            'tx.origin == owner': 2,
+        }
+        for raw, n in multi.items():
+            self.assertEqual(
+                page.count('<code class="nowrap">' + raw + '</code>'),
+                n, raw)
+        # Headline case: pattern-84's "1 wei", five characters.
+        self.assertEqual(
+            page.count('<code class="nowrap">1 wei</code>'), 1)
+        self.assertIn("Pattern 84", page)
+        # Total: 114 new chips + the Pattern 5 chip from #288.
+        self.assertEqual(page.count('<code class="nowrap">'), 115)
+        # .nowrap exists and means white-space:nowrap.
+        self.assertIn(".nowrap{white-space:nowrap}", build.CSS)
+        # Worker (memory build): the bound "1 wei" arrives once,
+        # JSON-escaped (#269 lesson); the plain form is gone
+        # from the whole build (no other page carries it).
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        bound = '<code class="nowrap">1 wei</code>'
+        self.assertEqual(worker.count(bound.replace('"', '\\"')), 1)
+        self.assertEqual(worker.count('<code>1 wei</code>'), 0)
 
     def test_hero_flow_step_bodies_are_single_line(self):
         # Visual verdict #57: step 3's body wrapped to two lines
