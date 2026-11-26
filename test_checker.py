@@ -5296,6 +5296,43 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn('{PAY_ADDR}', worker)
         self.assertIn('audit-pay-copy-status', worker)
 
+    def test_verdict321_audit_after_pay_link_nowrap(self):
+        # Checker-improvement #321 (2026-11-27, visual verdict #320
+        # item 4): the "Price and payment" link inside the "After you
+        # pay" block wrapped mid-link -- "Price and" on one line, the
+        # orphan "payment" starting the next (baseline
+        # measure-verdict321.py: 2 rects at 1919 and 360px, the second
+        # rect 70.8px / 66.6px wide starting at the left edge). The
+        # link is now nowrap, so it moves down as one unit. The link
+        # is ~150px and the block is 263px wide at 360px, so it fits
+        # whole on a line -- no overflow risk.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        # The rule exists in the shared CSS (PAGES bodies carry no
+        # <style> block, so the served-page count is pinned by the
+        # Worker harness, not here).
+        self.assertIn('.audit-after-pay a{white-space:nowrap}', build.CSS)
+        # The link is inside the after-pay block (the one that wrapped).
+        block = audit[audit.index('class="audit-after-pay"'):]
+        block = block[:block.index('</p>')]
+        self.assertIn('<a href="#price">Price and payment</a>', block)
+        # Scope pin: the .audit-toc copy of the same link measured 1
+        # rect at both widths, so it is left alone -- no nowrap rule
+        # for it, and the nav item itself is unchanged.
+        self.assertNotIn('.audit-toc a{white-space:nowrap}', build.CSS)
+        self.assertIn('<li><a href="#price">Price and payment</a></li>',
+                      audit)
+        # Worker copy carries the rule (the /audit/ page is served by
+        # the worker, not a static file).
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('.audit-after-pay a{white-space:nowrap}', worker)
+        self.assertNotIn('.audit-toc a{white-space:nowrap}', worker)
+
     def test_audit_pay_address_shown_in_full_by_default(self):
         # Visual verdict #110 (2026-11-19): the 42-char address was
         # hidden behind "Show full address" while the same row warned
