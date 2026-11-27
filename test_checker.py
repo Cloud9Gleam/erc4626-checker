@@ -1694,6 +1694,57 @@ class TestChecker(unittest.TestCase):
             2)
         self.assertNotIn("usdc(BigInt(worst.victim_loss))+\"</strong> of \"+usdcTrim(BigInt(bound))", worker)
 
+    def test_verdict353_jump_link_rides_with_its_dash(self):
+        # Checker-improvement #353 (2026-11-27, visual verdict #352
+        # item 1 follow-up): the em-dash separator between the
+        # detail sentence and the jump link was bare text, so at
+        # 360px the noprot strip wrapped right after it — line 4
+        # ended "bound: 0.099890 USDC —" and the link opened line 5
+        # alone. Same dangling-separator defect #350 fixed for " · "
+        # (no line may end on a separator). The dash now rides
+        # inside the same nowrap span as the link, so the whole
+        # "— see the full results ↓" chunk moves down as one piece.
+        # Wording and numbers are unchanged. The Worker JS renderer
+        # mirrors the strip and is verified by the verdict353 node
+        # harness, not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        jump = ('<span class="nowrap">&mdash; <a href="#results">'
+                'see the full results &darr;</a></span>')
+        failed = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
+        self.assertIn(jump, failed)
+        self.assertNotIn(" USDC &mdash; <a href", failed)
+        passed = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)))
+        self.assertIn(jump, passed)
+        self.assertNotIn(" USDC &mdash; <a href", passed)
+        # The bare-link branch (no detail, e.g. an errored run with
+        # no measured loss) carries no separator at all, so it stays
+        # a bare link — no dash to dangle.
+        bare = build.verdict_strip_html([])
+        self.assertIn('<a href="#results">see the full results &darr;</a>',
+                      bare)
+        self.assertNotIn("&mdash;", bare)
+        # Both renderers carry the nowrap jump (Python double quotes,
+        # JS single quotes, as written in build.py source); the old
+        # bare-dash forms are gone from both.
+        src = open(Path(__file__).parent.parent
+                   / "site" / "build.py").read()
+        self.assertEqual(
+            src.count('<span class=\\"nowrap\\">&mdash; <a href=\\"#results\\">'
+                      'see the full results &darr;</a></span>'),
+            1)
+        self.assertEqual(
+            src.count("<span class='nowrap'>&mdash; <a href='#results'>"
+                      "see the full results &darr;</a></span>"),
+            1)
+        self.assertNotIn('} &mdash; <a href', src)
+        self.assertNotIn('detail+" &mdash; "', src)
+
     def test_verdict351_drawn_rows_chip_in_title(self):
         # Checker-improvement #351 (2026-11-27, visual verdict #350
         # item 1): the default page draws one bar of four tested
