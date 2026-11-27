@@ -293,9 +293,20 @@ def check_share_price_sanity(v: Vault) -> dict:
     w.deposit(100_000_000_000)
     price_before = w.convert_to_assets(1_000_000)
     buys_before = w.preview_deposit(1_000_000)
+    # Second probe, same deposits, realistic size: what a plain
+    # 100,000 USDC deposit buys before and after the second one.
+    # deposit() mints exactly preview_deposit(), so the "before"
+    # figure is what the second deposit itself bought.
+    # Checker-improvement #326 (visual verdict #326 item 1): the
+    # Share-price card had one detail row against Fee's three and
+    # sat ~51px short; this row is the check's own scenario data,
+    # not filler — the Pass rule already names the two 100,000 USDC
+    # deposits but the card never showed what they bought.
+    buys100k_before = w.preview_deposit(100_000_000_000)
     w.deposit(100_000_000_000)
     price_after = w.convert_to_assets(1_000_000)
     buys_after = w.preview_deposit(1_000_000)
+    buys100k_after = w.preview_deposit(100_000_000_000)
     ok = price_before >= 0 and price_after >= price_before - 1
     # Same rule as preview consistency: when the price is unchanged
     # across the second deposit, state the number once; the "X -> Y"
@@ -314,8 +325,18 @@ def check_share_price_sanity(v: Vault) -> dict:
              if buys_before == buys_after else
              f"1{NBSP}USDC buys {_fmt_int(buys_before)}{NBSP}shares -> "
              f"{_fmt_int(buys_after)}{NBSP}shares")
+    # The asset-price probe (price_before/price_after) is NOT a
+    # display row: at offset 6 it reads 0.000001 USDC per 1,000,000
+    # shares and at offset 18 it reads 0.000000 — a zero price that
+    # looks broken (visual verdict #174). The verdict above still
+    # follows that probe with its 1-base-unit tolerance; the display
+    # stays in buys units, now at two sizes.
+    big = (f"100,000{NBSP}USDC buys {_fmt_int(buys100k_before)}{NBSP}shares (unchanged)"
+           if buys100k_before == buys100k_after else
+           f"100,000{NBSP}USDC buys {_fmt_int(buys100k_before)}{NBSP}shares -> "
+           f"{_fmt_int(buys100k_after)}{NBSP}shares")
     return {"name": "share_price_sanity", "pass": ok,
-            "detail": [price]}
+            "detail": [price, big]}
 
 
 def check_minimum_viable_deposit(v: Vault, vault_assets: int = 0,
