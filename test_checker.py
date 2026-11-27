@@ -3175,9 +3175,14 @@ class TestChecker(unittest.TestCase):
         # bold — the verdict span and the <strong> number carry the
         # weight. The strip is two lines: the verdict at 1.65em
         # (~28px) on its own line, the detail at body size below.
+        # Checker-improvement #345 (2026-11-27, visual verdict #343
+        # item 4): the bottom margin is .5em, not 1em — the other
+        # half of the 16px the Run checks button needs to clear
+        # the 998px fold (the TOC's scoped .5em margin is the
+        # first half; the gap is the collapsed max of the two).
         self.assertIn(
             ".verdict-strip{border-radius:8px;"
-            "padding:.6em 1em;margin:0 0 1em;max-width:none}",
+            "padding:.6em 1em;margin:0 0 .5em;max-width:none}",
             build.CSS)
         self.assertIn(
             ".verdict-strip__verdict{display:block;font-size:1.65em;"
@@ -3188,6 +3193,44 @@ class TestChecker(unittest.TestCase):
             "font-weight:400}",
             build.CSS)
         self.assertIn("main p{max-width:80ch}", build.CSS)
+
+    def test_verdict345_run_button_above_fold(self):
+        # Checker-improvement #345 (2026-11-27, visual verdict #343
+        # item 4): the Run checks button sat 7px below the 998px
+        # fold at 1919px (button bottom 1005, measured headless with
+        # hidden_files/measure-verdict345.py) — a regression from
+        # #342, which inserted the 43px sticky TOC between the strip
+        # and the form. The fix saves 16px in the two gaps above the
+        # form: the strip's bottom margin and the checker TOC's
+        # margins both go 1em -> .5em. Both must move — each gap is
+        # the collapsed max of the two margins meeting there — so
+        # this test pins both halves, and pins the shared TOC rule
+        # still at 1em so /audit/ is untouched (the checker rule is
+        # scoped to .checker-page). The bar itself is untouched:
+        # same 43px height, same sticky top:71px, same 131px anchor
+        # clearance. Pixel proof (button bottom ~989) lives in the
+        # verdict345 harness, not here — this suite has no browser.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".verdict-strip{border-radius:8px;"
+            "padding:.6em 1em;margin:0 0 .5em;max-width:none}",
+            build.CSS)
+        self.assertIn(".checker-page .checker-toc{margin:.5em 0}", build.CSS)
+        self.assertEqual(build.CSS.count(".checker-page .checker-toc{"), 1)
+        self.assertIn(
+            ".audit-toc,.checker-toc{background:#f9fafb;border:1px solid #d1d5db;"
+            "border-left:4px solid #0a7d2c;border-radius:10px;"
+            "padding:.7em 1em .8em;margin:1em 0}",
+            build.CSS)
+        self.assertIn(
+            "@media (min-width:641px){.audit-toc,.checker-toc{position:sticky;"
+            "top:71px;",
+            build.CSS)
+        self.assertIn(".audit-page [id],.checker-page [id]{scroll-margin-top:131px}",
+                      build.CSS)
 
     def test_home_intro_spacing_tightened(self):
         # Visual verdict #120 item 5 (2026-11-19): the homepage's three
