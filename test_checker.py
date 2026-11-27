@@ -12442,6 +12442,71 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(build.CSS.count("position:sticky"), 3)
         self.assertIn("transform:translateY(-110%)", build.CSS)
 
+    def test_verdict367_anchor_jump_keeps_toc_visible(self):
+        # Checker-improvement #367 (2026-11-28, browser verdict #366
+        # side observation): an anchor jump is a discrete navigation,
+        # not free scrolling -- but its scroll event tripped the same
+        # hide, so for the 200ms slide the fixed header covered the
+        # top half of the "On this page" band (seen on both presets
+        # at 1919px), and once hidden the landing sat ~43px loose
+        # against the 131px scroll-margin (the margin assumes the
+        # 43px bar is visible: 71 header + 43 bar + ~17 air).
+        # A jump now arms a 1000ms no-hide window -- click on a bar
+        # link, hashchange, or a fragment at load, re-armed on load
+        # -- during which the hide branch is skipped and the bar is
+        # shown: the landing is exact and the slide never starts.
+        # Free scrolling after the window hides the bar exactly as
+        # before (hidden_files/measure-verdict367.py for the
+        # click-path baseline, measure-verdict367b.py for the
+        # scroll-event race, measure-verdict367c.py for the fix).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        script = build.TOC_HIDE_SCRIPT
+        # The arming's moving parts, pinned as strings: the window
+        # state and its 1000ms arm (which also shows the bar, so a
+        # jump from a hidden bar still lands against a visible
+        # one), the guard on the hide branch itself, and the three
+        # triggers -- a click on a link inside a bar, any
+        # hashchange, and a fragment already present at load (the
+        # load re-arm covers a jump that lands after parse).
+        for frag in (
+                "var jumpUntil=0;",
+                "function armJump(){jumpUntil=performance.now()+1000;show();}",
+                "if(stick[i]!=null&&y>stick[i]+2&&performance.now()>=jumpUntil)"
+                "b.classList.add('toc-hidden');",
+                "addEventListener('click',function(e){if(e.target&&"
+                "e.target.closest&&e.target.closest('a'))armJump();});",
+                "addEventListener('hashchange',armJump)",
+                "if(location.hash)armJump();",
+                "addEventListener('load',function(){if(location.hash)"
+                "armJump();});"):
+            self.assertIn(frag, script)
+        # The guard sits on the hide branch only: the show triggers
+        # (scroll up, near the top, focus-in) and the settle nudge
+        # are untouched, and the arm never hides anything itself.
+        self.assertNotIn("jumpUntil", build.CSS)
+        for frag in ("y-dirY>8", "dirY-y>8", "y<=80",
+                     "addEventListener('focusin',show)",
+                     "setTimeout(settle,180)"):
+            self.assertIn(frag, script)
+        # The script ships with the hide script: once on each TOC
+        # page, three times in the worker; the home page carries
+        # neither. The sticky rules and the anchor clearance are
+        # untouched -- the landing math the window protects.
+        self.assertEqual(pages["/audit/"].count(script), 1)
+        self.assertEqual(pages["/checker/"].count(script), 1)
+        self.assertEqual(pages["/"].count(script), 0)
+        self.assertEqual(worker.count(script), 3)
+        self.assertEqual(build.CSS.count("position:sticky"), 3)
+        self.assertIn(
+            ".audit-page [id],.checker-page [id]"
+            "{scroll-margin-top:131px}", build.CSS)
+        self.assertIn("transform:translateY(-110%)", build.CSS)
+
     def test_footer_closes_the_page_tightly(self):
         # Visual verdict #69: the page ending felt loose -- the small
         # grey footer text floated ~34px below the white card and the
