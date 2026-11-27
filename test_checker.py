@@ -14187,7 +14187,19 @@ class TestChecker(unittest.TestCase):
             "<tr><td class='check-label'>floor binds</td>"
             "<td class='check-value'><span class='nowrap'>"
             "<strong>1.000000</strong> USDC</span></td></tr>", html)
-        self.assertNotIn("effective minimum", html)
+        # Checker-improvement #323: the phrase now legitimately
+        # appears once on the page, in the Minimum card's Pass rule
+        # ("the effective minimum is the higher of the
+        # minimum-deposit floor and the live-price 1-share
+        # threshold") — so the ban is scoped to the floor-binds
+        # row itself, where the figure alone still carries the
+        # meaning; the rule line is where the term is defined.
+        cards = html.split("<section class='check-card")[1:]
+        minimum = [c for c in cards if "Minimum viable deposit" in c][0]
+        details = minimum.split(
+            "<div class='check-details'>")[1].split("</div>", 1)[0]
+        self.assertNotIn("effective minimum", details)
+        self.assertIn("the effective minimum is the higher of", minimum)
         # Noprot has no floor-binds row (min_deposit 0); nothing
         # changes there.
         html = build.results_html(
@@ -30639,14 +30651,21 @@ class TestChecker(unittest.TestCase):
         # inside the cards (#103), so the short cards instead state
         # their pass rule — the exact criterion and the scenario it
         # was tested on, straight from the model. Donation already
-        # has its pass-bound paragraph and minimum-viable-deposit
-        # states its rule in its blurb, so those two carry no rule
-        # line. The rule texts below are verified against the model
-        # docstrings and the amounts the checks actually run:
-        # rounding amounts (1, 100, 10,000 USDC) and the 1-base-unit
-        # tolerance; preview 10,000 USDC deposit + 1,000,000-share
-        # mint/redeem; fee 10,000 USDC yield; share-price two
-        # 100,000 USDC deposits, 1-base-unit tolerance.
+        # has its pass-bound paragraph, so it alone carries no rule
+        # line. Minimum-viable-deposit was exempt the same way until
+        # checker-improvement #323 (visual verdict #322 item 3): its
+        # blurb states what must hold, the rule adds the exact
+        # criterion — the effective minimum is the higher of the
+        # vault's minimum-deposit floor and the 1-share threshold at
+        # the vault's live price — and the card was the grid's
+        # shortest by ~76px. The rule texts below are verified
+        # against the model docstrings and the amounts the checks
+        # actually run: rounding amounts (1, 100, 10,000 USDC) and
+        # the 1-base-unit tolerance; minimum 1 USDC deposit, floor
+        # vs live-price 1-share threshold; preview 10,000 USDC
+        # deposit + 1,000,000-share mint/redeem; fee 10,000 USDC
+        # yield; share-price two 100,000 USDC deposits, 1-base-unit
+        # tolerance.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -30655,6 +30674,14 @@ class TestChecker(unittest.TestCase):
             "Rounding directions":
                 "Every preview within 1 base unit of the exact ratio"
                 " — deposits of 1, 100, 10,000 USDC.",
+            "Minimum viable deposit":
+                # Checker-improvement #323: the tail is one
+                # nbsp-bound unit (#241 pattern) so the last line
+                # can never be just "threshold."; both hyphens are
+                # U+2011 (#200 precedent).
+                "A 1 USDC deposit mints at least 1 share — the "
+                "effective minimum is the higher of the "
+                "minimum-deposit floor and the&nbsp;live&#8209;price&nbsp;1&#8209;share&nbsp;threshold.",
             "Preview consistency":
                 # Verdict #222/#241: the tail is one nbsp-bound unit —
                 # #222 bound only "and redeem." and the real browser
@@ -30683,7 +30710,7 @@ class TestChecker(unittest.TestCase):
                 (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
                  {"off": 0, "mn": 0, "fee": 0})):
             html = build.results_html(run_all(v), **kwargs)
-            self.assertEqual(html.count("<p class='check-rule'>"), 4)
+            self.assertEqual(html.count("<p class='check-rule'>"), 5)
             cards = html.split("<section class='check-card")[1:]
             by_title = {}
             for card in cards:
@@ -30699,8 +30726,7 @@ class TestChecker(unittest.TestCase):
                 self.assertLess(
                     by_title[title].index("check-rule"),
                     by_title[title].index("check-guide"))
-            for title in ("Donation inflation",
-                          "Minimum viable deposit"):
+            for title in ("Donation inflation",):
                 self.assertNotIn("check-rule", by_title[title])
         self.assertIn(".check-rule{font-size:.92em;color:#4b5563",
                       build.CSS)
@@ -30738,6 +30764,14 @@ class TestChecker(unittest.TestCase):
         fee = build.CHECK_META["fee_conservation"][3]
         self.assertIn("times&nbsp;the&nbsp;fee&nbsp;rate.", fee)
         self.assertNotIn("times the fee rate.", fee)
+        # Checker-improvement #323: the Minimum rule's tail is bound
+        # the same way — the whole "the live-price 1-share
+        # threshold." phrase is one unit, both hyphens U+2011.
+        minimum = build.CHECK_META["minimum_viable_deposit"][3]
+        self.assertIn("the&nbsp;live&#8209;price&nbsp;1&#8209;share&nbsp;threshold.", minimum)
+        self.assertNotIn("the live-price 1-share threshold.", minimum)
+        self.assertNotIn("1-share threshold.", minimum.replace(
+            "the&nbsp;live&#8209;price&nbsp;1&#8209;share&nbsp;threshold.", ""))
         # The JS CHECK_META stays plain on purpose: the Worker renders
         # the rule through esc(), which would print a literal nbsp
         # entity (#190 trap) — the bind happens after esc() instead.
@@ -30746,10 +30780,15 @@ class TestChecker(unittest.TestCase):
                       '10,000 USDC deposit and a 1,000,000-share mint and redeem."', js)
         self.assertIn('"Holder gain + fee must equal the 10,000 USDC yield '
                       'exactly, and the fee must equal the yield times the fee rate."', js)
+        self.assertIn('"A 1 USDC deposit mints at least 1 share — the '
+                      'effective minimum is the higher of the minimum-deposit '
+                      'floor and the live-price 1-share threshold."', js)
         self.assertIn('.replace("1,000,000-share mint and redeem.", '
                       '"1,000,000&#8209;share&nbsp;mint&nbsp;and&nbsp;redeem.")', js)
         self.assertIn('.replace("times the fee rate.", '
                       '"times&nbsp;the&nbsp;fee&nbsp;rate.")', js)
+        self.assertIn('.replace("the live-price 1-share threshold.", '
+                      '"the&nbsp;live&#8209;price&nbsp;1&#8209;share&nbsp;threshold.")', js)
         # /audit/ intro: the link text is one unbreakable unit — the
         # nbsp binds "4626" to "checker", and the non-breaking hyphen
         # (U+2011, #200 precedent) binds "ERC" to "4626": the real
