@@ -5393,6 +5393,45 @@ class TestChecker(unittest.TestCase):
         self.assertIn('.audit-after-pay a{white-space:nowrap}', worker)
         self.assertNotIn('.audit-toc a{white-space:nowrap}', worker)
 
+    def test_verdict327_audit_after_pay_no_orphan_line(self):
+        # Checker-improvement #327 (2026-11-27, visual verdict #326
+        # item 3): the second sentence of the "After you pay" block
+        # wrapped so its last line was only the nowrap link plus
+        # "below." -- "Price and payment below.", ~205px of an ~866px
+        # text width (baseline measure-verdict327.py: lines 716px +
+        # 205px at 1919px). The sentence is shortened by 21 chars
+        # ("Full payment details, including the QR code, are in" ->
+        # "Details and the QR code are in"), so the whole second
+        # sentence fits on one line; both facts survive (the details
+        # and the QR code live in the linked Price and payment
+        # section). At 360px the block drops from 5 lines to 4.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        block = audit[audit.index('class="audit-after-pay"'):]
+        block = block[:block.index('</p>')]
+        self.assertIn('Then paste the transaction hash below. '
+                      'Details and the QR code are in '
+                      '<a href="#price">Price and payment</a> below.',
+                      block)
+        self.assertNotIn('Full payment details, including the QR code, '
+                         'are in', audit)
+        # The rest of the block is untouched: first sentence, address,
+        # copy button, link, nowrap rule.
+        self.assertIn('<strong>After you pay</strong> &mdash; '
+                      'pay 50 USDC on Base to ', block)
+        self.assertIn('onclick="copyPayAddr(this)">Copy address</button>',
+                      block)
+        self.assertIn('.audit-after-pay a{white-space:nowrap}', build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('Details and the QR code are in ', worker)
+        self.assertNotIn('Full payment details, including the QR code, '
+                         'are in', worker)
+
     def test_verdict322_header_brand_mark_and_sticky(self):
         # Checker-improvement #322 (2026-11-27, visual verdict #322
         # item 2): the nav brand was plain ~20px "Hatch Worker" text
