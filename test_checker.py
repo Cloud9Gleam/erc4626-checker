@@ -5463,7 +5463,8 @@ class TestChecker(unittest.TestCase):
                       'vertical-align:-.22em;margin-right:.45em}', build.CSS)
         # Exactly three sticky elements site-wide: the header, the
         # bottom-sticky run bar (z-index 5), and the /audit/ TOC
-        # (#332, desktop-only, top:84px under the header) -- the
+        # (#332, desktop-only, top:71px flush under the header,
+        # #334) -- the
         # header paints above both.
         self.assertEqual(build.CSS.count('position:sticky'), 3)
         self.assertIn('.run-bar{grid-column:1 / -1;position:sticky;'
@@ -15794,7 +15795,7 @@ class TestChecker(unittest.TestCase):
             ".back-to-top{margin:1.2em 0 0;text-align:right;font-size:.9em}",
             build.CSS)
 
-    def test_verdict333_audit_toc_slim_sticky_bar(self):
+    def test_verdict334_audit_toc_flush_under_header(self):
         # Visual verdict #333 item 1 (2026-11-27): the #332 sticky
         # TOC pinned the whole 187px two-column box -- header + box
         # = ~271px (27% of a 998px viewport) permanently occupied,
@@ -15810,9 +15811,17 @@ class TestChecker(unittest.TestCase):
         # layout (#198) and the column-span last item (#246) retire:
         # a flex row has no columns to balance, and the chevron
         # markers survive because flex items keep their ::before.
-        # Anchor jumps on /audit/ need 177px clearance (84 + 75.1px
-        # bar + ~18px air), measured headless at 1919px; on mobile
-        # the TOC is static, so the global 84px still applies there.
+        # Visual verdict #334 (2026-11-27, #333 follow-up): the
+        # 13px gap #332 left between the sticky header and the
+        # bar cut scrolling content in half at the seam -- a line
+        # parked in the gap read as half-cut. The bar now pins
+        # flush: top:71px is the header height itself (71.4px
+        # measured headless); the top 0.4px tucks under the
+        # header, invisible (header z-index 10 > bar 5).
+        # Anchor jumps on /audit/ need 163px clearance (71 +
+        # 75.1px bar + ~17px air), measured headless at 1919px;
+        # on mobile the TOC is static, so the global 84px still
+        # applies there.
         # No copy, numbers, or markup change: still one nav, 7 links,
         # same order, the Track record link still the last li.
         import sys
@@ -15830,7 +15839,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".audit-toc a{font-weight:600}", build.CSS)
         self.assertIn(
             "@media (min-width:641px){.audit-toc{position:sticky;"
-            "top:84px;z-index:5;display:flex;flex-wrap:wrap;"
+            "top:71px;z-index:5;display:flex;flex-wrap:wrap;"
             "align-items:baseline;gap:.1em 1.1em;padding:.45em 1em}",
             build.CSS)
         self.assertEqual(build.CSS.count(".audit-toc{position:sticky"), 1)
@@ -15840,8 +15849,10 @@ class TestChecker(unittest.TestCase):
             "gap:.1em 1.2em}",
             build.CSS)
         self.assertIn(".audit-toc li{margin:0}", build.CSS)
-        self.assertIn(".audit-page [id]{scroll-margin-top:177px}",
+        self.assertIn(".audit-page [id]{scroll-margin-top:163px}",
                       build.CSS)
+        self.assertNotIn(".audit-page [id]{scroll-margin-top:177px}",
+                         build.CSS)
         self.assertNotIn(".audit-page [id]{scroll-margin-top:288px}",
                          build.CSS)
         self.assertNotIn(
@@ -15857,9 +15868,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".audit-toc{background:#f9fafb;", worker)
         self.assertIn(
             "@media (min-width:641px){.audit-toc{position:sticky;"
-            "top:84px;z-index:5;display:flex;",
+            "top:71px;z-index:5;display:flex;",
             worker)
-        self.assertIn(".audit-page [id]{scroll-margin-top:177px}", worker)
+        self.assertIn(".audit-page [id]{scroll-margin-top:163px}", worker)
+        self.assertNotIn("scroll-margin-top:177px", worker)
         self.assertIn(".audit-toc a{font-weight:600}", worker)
         self.assertNotIn("scroll-margin-top:288px", worker)
         # Markup untouched: still one nav, 7 links, same order, the
