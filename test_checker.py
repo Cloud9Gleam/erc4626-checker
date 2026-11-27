@@ -9384,7 +9384,15 @@ class TestChecker(unittest.TestCase):
         hero_start = home.index('<div class="hero">')
         hero_end = home.index('<p>This site is one independent researcher')
         hero = home[hero_start:hero_end]
-        proof = ('<p class="hero-proof">Same research: 355&nbsp;findings '
+        # Checker-improvement #357 (visual verdict #356 item 1):
+        # the "Same research:" opener was cut 2026-11-28 — with the
+        # lead trimmed to one line the proof had to be one line too
+        # (411/260px at 1919px, measured hidden_files/
+        # measure-verdict356.py), and the opener's tie to the checker
+        # is carried by proximity: the proof sits directly under the
+        # lead about the checker in the same hero column. The totals
+        # and the link are unchanged.
+        proof = ('<p class="hero-proof">355&nbsp;findings '
                  're-verified in forge across 40&nbsp;reviews. '
                  '<a href="/research/gamma/">See&nbsp;a&nbsp;sample&nbsp;report&nbsp;&rarr;</a></p>')
         self.assertEqual(hero.count('<p class="hero-proof">'), 1)
@@ -9408,6 +9416,45 @@ class TestChecker(unittest.TestCase):
                 ".hero-proof a:hover,.hero-proof a:focus-visible{text-decoration-thickness:2px}"):
             self.assertIn(rule, build.CSS)
         self.assertNotIn(".hero-proof{order", build.CSS)
+
+    def test_verdict357_hero_lead_and_proof_are_single_line_wording(self):
+        # Checker-improvement #357 (visual verdict #356 item 1):
+        # the hero lead wrapped 506/166px and the proof 411/260px
+        # at 1919px in the 634px left column (measure-verdict356.py)
+        # — a one-third tail under a full first line on the first
+        # screen. Balance is the wrong fix here: #117 measured it
+        # shrinking every line to ~347-428px and leaving a ~240px
+        # empty green band, and #356's brief says so. The fix is
+        # copy surgery to one line each, picked on pixels
+        # (measure-verdict357-candidates.py): the lead drops
+        # "parameters " — "on your vault" says the same thing, the
+        # word survives in the checker form's "Vault parameters"
+        # heading — and the proof drops its "Same research:" opener.
+        # Both keep every number and claim: six exact-integer
+        # checks, free / no wallet / no signup, 355 findings,
+        # 40 reviews, the sample-report link. Pixel evidence lives
+        # in hidden_files/verdict357-hero-lines-harness.mjs and
+        # measure-verdict356.py re-run; this test pins the wording
+        # so a later edit cannot silently re-lengthen either line.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        hero_start = home.index('<div class="hero">')
+        hero_end = home.index('<p>This site is one independent researcher')
+        hero = home[hero_start:hero_end]
+        lead = ('<p>Run six exact-integer checks on your vault — '
+                'free, no&nbsp;wallet, no&nbsp;signup.</p>')
+        proof = ('<p class="hero-proof">355&nbsp;findings '
+                 're-verified in forge across 40&nbsp;reviews. '
+                 '<a href="/research/gamma/">See&nbsp;a&nbsp;sample&nbsp;report&nbsp;&rarr;</a></p>')
+        self.assertIn(lead, hero)
+        self.assertIn(proof, hero)
+        self.assertNotIn("on your vault's parameters — free", hero)
+        self.assertNotIn("Same research:", hero)
+        self.assertLess(hero.index(lead), hero.index(proof))
+        self.assertLess(hero.index(proof), hero.index('<p class="hero-cta">'))
 
     def test_hero_cta_first_on_mobile(self):
         # Visual verdict #108: at 320x568 the hero CTA sat below the
