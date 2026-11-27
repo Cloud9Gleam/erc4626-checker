@@ -1745,18 +1745,23 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn('} &mdash; <a href', src)
         self.assertNotIn('detail+" &mdash; "', src)
 
-    def test_verdict351_drawn_rows_chip_in_title(self):
-        # Checker-improvement #351 (2026-11-27, visual verdict #350
-        # item 1): the default page draws one bar of four tested
-        # donations, and first-time readers took the single bar for
-        # a single test — the "Not drawn" legend line below the axis
-        # names the missing rows, but it sits where the eye lands
-        # last. The chart title now carries the count as a chip at
-        # its right end ("1 of 4 rows drawn"), counted from the same
-        # drawable / omitted lists as the legend, so the two can
-        # never disagree. Shown only when rows are omitted. The
-        # Worker JS renderer mirrors the chip and is verified by the
-        # verdict351 node harness, not by this suite.
+    def test_verdict366_single_row_bound_scale_is_a_gauge(self):
+        # Checker-improvement #366 (2026-11-28, visual verdict #365
+        # item 2): the default page's chart is one bar plus legend
+        # lines explaining rows NOT in the chart — the bar is 12%
+        # of the chart's height, the legend 3x the bar — so a first
+        # glance reads it as a chart that failed to load, and #351's
+        # chip did not cure that. When the bound-scale chart has
+        # exactly one drawable row it is framed as a gauge now: the
+        # title names the worst ("Worst victim loss vs the pass
+        # bound"), the Scale line carries the count ("Worst of the
+        # 4 donations tested"), and the chip and the "Not drawn"
+        # line go away — in a gauge there are no missing rows; the
+        # table above still lists every row with its exact figure.
+        # The chip survives where the chart stays a multi-row chart
+        # (noprot, and a two-bar bound-scale chart). The Worker JS
+        # renderer mirrors the gauge and is verified by the
+        # verdict366 node harness, not by this suite.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -1765,30 +1770,84 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
-        self.assertIn("<p class='loss-title'>Victim loss by donation size&nbsp;(USDC)"
-                      "<span class='loss-drawn'>1 of 4 rows drawn</span></p>",
+        self.assertIn("<p class='loss-title'>Worst victim loss vs the pass bound&nbsp;(USDC)</p>",
                       passed)
-        self.assertIn("<strong>Not drawn:</strong> under 0.5% of the pass bound "
-                      "(1, 1K, 1M USDC)", passed)
+        self.assertNotIn("<span class='loss-drawn'>", passed)
+        self.assertNotIn("Not drawn:", passed)
+        self.assertIn("<strong>Scale:</strong> Worst of 4 donations; "
+                      "scaled to the pass bound (0.001 USDC); "
+                      "gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.", passed)
+        self.assertIn("90% of the bound", passed)
+        self.assertIn("width:90.0%", passed)
+        # Noprot stays a multi-row chart: chip + Not drawn line.
         failed = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("<span class='loss-drawn'>2 of 4 rows drawn</span>", failed)
+        self.assertIn("<p class='loss-title'>Victim loss by donation size&nbsp;(USDC)"
+                      "<span class='loss-drawn'>2 of 4 rows drawn</span></p>",
+                      failed)
         self.assertIn("<strong>Not drawn:</strong> under 0.5% of the worst row "
                       "(1, 1K USDC)", failed)
+        # A two-bar bound-scale chart keeps the chip and the Not
+        # drawn line too: losses 400 / 900 against a 1000-unit
+        # bound, the 2-unit row folded out.
+        bound_multi = [{"name": "donation_inflation", "pass": True, "detail": [
+            {"donation": 1_000_000, "victim_loss": 2,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000, "victim_loss": 400,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000_000, "victim_loss": 900,
+             "attacker_net": -1}]}]
+        multi = build.results_html(bound_multi, vic=100_000_000_000, off=6,
+                                   mn=1_000_000, fee=1000)
+        self.assertIn("<p class='loss-title'>Victim loss by donation size&nbsp;(USDC)"
+                      "<span class='loss-drawn'>2 of 3 rows drawn</span></p>",
+                      multi)
+        self.assertIn("<strong>Not drawn:</strong> under 0.5% of the pass bound "
+                      "(1 USDC)", multi)
+        self.assertIn("Bars are scaled to the pass bound (0.001 USDC)", multi)
+        # The axis-rounded gauge branch: victim 0.75 USDC, so the
+        # pass bound is 750 base units but the nice axis maximum is
+        # 1000 — the Scale line names the axis and the bound, and
+        # the bar is 50% of the axis. One drawable row (loss 500),
+        # the three zero rows folded out.
+        axis_gauge = [{"name": "donation_inflation", "pass": True, "detail": [
+            {"donation": 1_000_000, "victim_loss": 0,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000, "victim_loss": 0,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000_000, "victim_loss": 0,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000_000_000, "victim_loss": 500,
+             "attacker_net": -1}]}]
+        ax = build.results_html(axis_gauge, vic=750_000, off=6,
+                                mn=1_000_000, fee=1000)
+        self.assertIn("<p class='loss-title'>Worst victim loss vs the pass bound&nbsp;(USDC)</p>", ax)
+        self.assertNotIn("<span class='loss-drawn'>", ax)
+        self.assertNotIn("Not drawn:", ax)
+        self.assertIn("<strong>Scale:</strong> Worst of 4 donations; axis 0–0.001 USDC "
+                      "(bound 0.00075 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.", ax)
+        self.assertIn("width:50.0%", ax)
+        self.assertNotIn("Within the bound:", ax)
         # No chart at all on the zero-loss run: no title, no chip.
         zero = build.results_html(
             run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=18, mn=1_000_000, fee=1000)
         self.assertNotIn("Victim loss by donation size", zero)
+        self.assertNotIn("Worst victim loss vs the pass bound", zero)
         self.assertNotIn("loss-drawn", zero)
-        # The Worker template carries the same chip behind the
-        # omitted.length guard, and the CSS lays the title out as a
-        # flex row with the chip at its right end.
+        # The Worker template carries the gauge title behind the
+        # gauge guard and the chip behind the omitted.length guard,
+        # and the CSS lays the title out as a flex row with the chip
+        # at its right end (multi-row charts only now).
         src = open(Path(__file__).parent.parent / "site" / "build.py").read()
-        self.assertIn("(omitted.length?\"<span class='loss-drawn'>\"+drawable.length"
-                      "+\" of \"+(drawable.length+omitted.length)+\" rows drawn</span>\":\"\")",
+        self.assertIn("(gauge?\"Worst victim loss vs the pass bound&nbsp;(USDC)\""
+                      ":\"Victim loss by donation size&nbsp;(USDC)\"+(omitted.length?"
+                      "\"<span class='loss-drawn'>\"+drawable.length"
+                      "+\" of \"+(drawable.length+omitted.length)+\" rows drawn</span>\":\"\"))",
+                      src)
+        self.assertIn("if(omitted.length&&!gauge)items.push(\"<strong>Not drawn:</strong>",
                       src)
         self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;font-weight:600;"
                       "margin:0 0 .1em;display:flex;justify-content:space-between;"
@@ -2758,8 +2817,12 @@ class TestChecker(unittest.TestCase):
         self.assertIn("Or first see whether offset 6 fixes it \u2014 "
                       "same checks, your other parameters unchanged.", js)
         # E. Legend suffix, bound in, plain out, both renderers.
+        # Checker-improvement #366: the gauge adds two more Scale
+        # branches to the JS template (bound-scale gauge, axis
+        # rounded or not), so the suffix count goes 4 -> 6; the
+        # plain-space form stays absent.
         self.assertEqual(js.count("gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%."),
-                         4)
+                         6)
         self.assertNotIn("gridlines at 25%, 50%, 75%.", js)
         html_noprot = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
@@ -3886,10 +3949,15 @@ class TestChecker(unittest.TestCase):
         # now draws its bound-scaled chart, so the bundle holds the
         # title twice: static page + template literal. The notice
         # fix still lives in the JS template only.
+        # Checker-improvement #366: the static default page renders
+        # the gauge title now, so the old multi-row title survives
+        # only in the JS template (count 1) while the gauge title
+        # is on the static page + the template (count 2).
         self.assertEqual(worker.count("on a plain&nbsp;deposit (an ordinary deposit"), 1)
         self.assertEqual(worker.count("plain&nbsp;deposit"), 2)
         self.assertEqual(worker.count("donation&nbsp;involved)."), 2)
-        self.assertEqual(worker.count("Victim loss by donation size&nbsp;(USDC)"), 2)
+        self.assertEqual(worker.count("Victim loss by donation size&nbsp;(USDC)"), 1)
+        self.assertEqual(worker.count("Worst victim loss vs the pass bound&nbsp;(USDC)"), 2)
         # Visual verdict #343 item 2 (2026-11-27): the offset-6
         # sentence was reworded to one line ("(your" orphaned at a
         # line end); the bundle count stays 1, template only.
@@ -13615,7 +13683,9 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-fill pass"), 1)
         self.assertEqual(html.count("loss-fill fail"), 0)
         self.assertEqual(html.count("loss-track--empty"), 0)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the pass bound (1, 1K, 1M USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
+        self.assertIn("<p class='loss-title'>Worst victim loss vs the pass bound&nbsp;(USDC)</p>", html)
+        self.assertNotIn("<span class='loss-drawn'>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> Worst of 4 donations; scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
         self.assertIn("<span style='left:100%'>0.001</span>", html)
         self.assertNotIn("Within the bound:", html)
         self.assertNotIn("Red bars:", html)
@@ -13795,7 +13865,10 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertIn("25% of the bound", html)
         self.assertIn("width:25.0%", html)
-        self.assertIn("Bars are scaled to the pass bound (0.001 USDC)", html)
+        self.assertIn("<p class='loss-title'>Worst victim loss vs the pass bound&nbsp;(USDC)</p>", html)
+        self.assertNotIn("<span class='loss-drawn'>", html)
+        self.assertNotIn("Not drawn:", html)
+        self.assertIn("<strong>Scale:</strong> Worst of 4 donations; scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.", html)
         self.assertIn("<span style='left:100%'>0.001</span>", html)
         self.assertNotIn("Within the bound:", html)
         self.assertNotIn("Red bars:", html)
@@ -14361,7 +14434,9 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-too-small"), 0)
         self.assertIn("width:90.0%", html)
         self.assertIn("90% of the bound", html)
-        self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the pass bound (1, 1K, 1M USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
+        self.assertIn("<p class='loss-title'>Worst victim loss vs the pass bound&nbsp;(USDC)</p>", html)
+        self.assertNotIn("<span class='loss-drawn'>", html)
+        self.assertIn("<ul class='loss-head'><li><strong>Scale:</strong> Worst of 4 donations; scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
         self.assertNotIn("Within the bound:", html)
         self.assertNotIn("Red bars:", html)
         # Bound scale with more than one drawable row: losses
@@ -14410,7 +14485,7 @@ class TestChecker(unittest.TestCase):
         # sentence form is retired (verdict #123) — the JS carries no
         # Peak line any more.
         js = build.checker_results_html_js()
-        self.assertIn("<strong>Not drawn:</strong> under 0.5% of \"+(boundScale?"
+        self.assertIn("if(omitted.length&&!gauge)items.push(\"<strong>Not drawn:</strong> under 0.5% of \"+(boundScale?"
                       "\"the pass bound\":\"the worst row\")+\" (", js)
         # Visual verdict #137 (2026-11-21): the Worker template
         # carries the same sentence for the passing case.
@@ -29086,10 +29161,14 @@ class TestChecker(unittest.TestCase):
         # and the bar label carries the worst row's share (90% of
         # the bound); the value (0.000900 USDC) lives in the table
         # and the banner. No Within sentence on this branch.
+        # Checker-improvement #366: the single-row bound-scale chart
+        # is a gauge now — the Scale line names the count ("Worst of
+        # the 4 donations tested") and the bound; the worst-row value
+        # still lives in the bar label.
         v = Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)
         html = build.results_html(run_all(v), off=6, mn=1_000_000, fee=1000)
         self.assertIn(
-            "Bars are scaled to the pass bound (0.001 USDC)", html)
+            "Worst of 4 donations; scaled to the pass bound (0.001 USDC)", html)
         self.assertNotIn("Within the bound:", html)
         self.assertNotIn("<p class='loss-note'>", html)
         self.assertNotIn("Victim loss peaks at", html)
