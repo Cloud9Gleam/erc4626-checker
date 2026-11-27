@@ -5461,10 +5461,11 @@ class TestChecker(unittest.TestCase):
         self.assertIn('[id]{scroll-margin-top:84px}', build.CSS)
         self.assertIn('.brand svg{width:1.3em;height:1.3em;'
                       'vertical-align:-.22em;margin-right:.45em}', build.CSS)
-        # Exactly two sticky elements site-wide: the header and the
-        # bottom-sticky run bar (z-index 5) -- the header paints
-        # above it.
-        self.assertEqual(build.CSS.count('position:sticky'), 2)
+        # Exactly three sticky elements site-wide: the header, the
+        # bottom-sticky run bar (z-index 5), and the /audit/ TOC
+        # (#332, desktop-only, top:84px under the header) -- the
+        # header paints above both.
+        self.assertEqual(build.CSS.count('position:sticky'), 3)
         self.assertIn('.run-bar{grid-column:1 / -1;position:sticky;'
                       'top:calc(100vh - 89px);z-index:5;', build.CSS)
         # Worker copy carries the rules and the mark (the /checker/
@@ -15785,12 +15786,67 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<body id=\\"top\\">', worker)
         self.assertIn('<nav class=\\"audit-toc\\"', worker)
         self.assertIn(
-            ".audit-toc{background:#f9fafb;border:1px solid #e5e7eb;"
-            "border-radius:10px;padding:.7em 1em .8em;margin:1em 0}",
+            ".audit-toc{background:#f9fafb;border:1px solid #d1d5db;"
+            "border-left:4px solid #0a7d2c;border-radius:10px;"
+            "padding:.7em 1em .8em;margin:1em 0}",
             build.CSS)
         self.assertIn(
             ".back-to-top{margin:1.2em 0 0;text-align:right;font-size:.9em}",
             build.CSS)
+
+    def test_verdict332_audit_toc_sticky(self):
+        # Visual verdicts #328 item 5 / #330 item 6 (2026-11-27): the
+        # /audit/ TOC scrolled away after one screen -- the page is
+        # 4948px at 1919px and the visitor lost the 7 jump links. The
+        # TOC now pins under the sticky header on desktop (top:84px =
+        # the 71px header + ~13px air, the same 84px as the global
+        # [id] scroll-margin), z-index:5 below the header's 10. The
+        # box is also less pale: #d1d5db border + the green left
+        # accent of .track-intro / the audit h2s, and semibold links.
+        # Sticky is desktop-only: at 360px the single-column TOC is
+        # 258.6px tall (~40% of a 640px viewport). Anchor jumps on
+        # /audit/ need 288px clearance (84 + 187px TOC + ~17px air)
+        # so the target h2 lands below the stuck box, not under it;
+        # on mobile the TOC is static, so the global 84px still
+        # applies there. No copy, numbers, or markup change.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".audit-toc{background:#f9fafb;border:1px solid #d1d5db;"
+            "border-left:4px solid #0a7d2c;border-radius:10px;"
+            "padding:.7em 1em .8em;margin:1em 0}",
+            build.CSS)
+        self.assertNotIn(
+            ".audit-toc{background:#f9fafb;border:1px solid #e5e7eb;",
+            build.CSS)
+        self.assertIn(".audit-toc a{font-weight:600}", build.CSS)
+        self.assertIn(
+            "@media (min-width:641px){.audit-toc{position:sticky;"
+            "top:84px;z-index:5}",
+            build.CSS)
+        self.assertEqual(build.CSS.count(".audit-toc{position:sticky"), 1)
+        self.assertIn(".audit-page [id]{scroll-margin-top:288px}",
+                      build.CSS)
+        # The global clearance is untouched (mobile + every other page).
+        self.assertIn("[id]{scroll-margin-top:84px}", build.CSS)
+        self.assertEqual(build.CSS.count("position:sticky"), 3)
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        self.assertIn(".audit-toc{background:#f9fafb;", worker)
+        self.assertIn(
+            "@media (min-width:641px){.audit-toc{position:sticky;"
+            "top:84px;z-index:5}",
+            worker)
+        self.assertIn(".audit-page [id]{scroll-margin-top:288px}", worker)
+        self.assertIn(".audit-toc a{font-weight:600}", worker)
+        # Markup untouched: still one nav, 7 links, same order.
+        audit = pages["/audit/"]
+        self.assertEqual(audit.count('<nav class="audit-toc"'), 1)
+        toc = audit[audit.index('<nav class="audit-toc"'):
+                    audit.index("</nav>")]
+        self.assertEqual(toc.count("<li>"), 7)
 
     def test_verdict276_unstyled_spots_are_styled(self):
         # Visual verdict #276 (2026-11-26, live browser): three spots
@@ -15815,8 +15871,9 @@ class TestChecker(unittest.TestCase):
         # 1. TOC: light-box background, no disc bullets, green
         # chevron markers on the items.
         self.assertIn(
-            ".audit-toc{background:#f9fafb;border:1px solid #e5e7eb;"
-            "border-radius:10px;padding:.7em 1em .8em;margin:1em 0}",
+            ".audit-toc{background:#f9fafb;border:1px solid #d1d5db;"
+            "border-left:4px solid #0a7d2c;border-radius:10px;"
+            "padding:.7em 1em .8em;margin:1em 0}",
             build.CSS)
         self.assertNotIn(".audit-toc{background:#fff;", build.CSS)
         self.assertIn(".audit-toc ul{margin:0;padding-left:0;list-style:none}",
