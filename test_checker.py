@@ -5427,6 +5427,51 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("stretch", mob)
         self.assertNotIn("position:absolute", mob)
 
+    def test_verdict364_audit_after_pay_bottom_padding_balances(self):
+        # Checker-improvement #364 (2026-11-28, visual verdict #362
+        # item 3, re-measured by a real browser in #363): the Copy
+        # button (~131x40px) shares the first line of the
+        # .audit-after-pay box on desktop and stretches its line
+        # box, so the first glyph sits ~23px below the box top
+        # while the last glyph sits ~18px above the bottom -- a
+        # 5px asymmetry (the original verdict said 25/5-10px; the
+        # re-measure corrected the bottom figure). Headless
+        # measures 14.9/15.9 -- its fonts wrap the button onto its
+        # own line, so it cannot see this defect
+        # (measure-verdict364.py baseline). Desktop only:
+        # padding-bottom .7em -> 1em (+5.1px at 17px) evens the
+        # two gaps; mobile stays .7em, where the gaps measure
+        # symmetric (14.2/14.6). The button itself is untouched
+        # (#319/#321: inline Copy + nowrap link).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Base rule untouched: green callout, .7em padding, .9em margin.
+        self.assertIn(
+            ".audit-after-pay{background:#f0fdf4;border:1px solid #bbe0c6;"
+            "border-radius:8px;padding:.7em .9em;margin:0 0 .9em}",
+            build.CSS)
+        # Exactly one desktop rule, after the base rule so it wins on
+        # equal specificity (both single-class selectors).
+        rule = "@media (min-width:641px){.audit-after-pay{padding-bottom:1em}}"
+        self.assertEqual(build.CSS.count(rule), 1)
+        self.assertLess(build.CSS.index(
+            ".audit-after-pay{background:#f0fdf4"),
+            build.CSS.index(rule))
+        # The rule must not leak into the mobile query: no
+        # audit-after-pay padding inside max-width:640px.
+        self.assertNotIn("@media (max-width:640px){.audit-after-pay",
+                         build.CSS)
+        # Button override and nowrap link untouched.
+        self.assertIn(
+            "#audit-order .audit-after-pay button{display:inline-block;width:auto;",
+            build.CSS)
+        self.assertIn(
+            "#audit-order .audit-after-pay button:hover{background:#086623}",
+            build.CSS)
+        self.assertIn(".audit-after-pay a{white-space:nowrap}", build.CSS)
+
     def test_verdict279_pay_area_has_visual_weight(self):
         # Checker-improvement #279 (2026-11-26, visual verdict #278
         # item 4): the payment area read as weak -- QR 160px, Copy a
