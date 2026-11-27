@@ -8221,23 +8221,34 @@ class TestChecker(unittest.TestCase):
         self.assertIn("box-shadow:0 0 0 3px rgba(10,125,44,.15)", build.CSS)
         self.assertIn("label{display:block;margin:.7em 0;color:#111827}", build.CSS)
 
-    def test_hero_has_attack_flow_diagram(self):
+    def test_homepage_attack_flow_diagram_below_intro(self):
+        # Visual verdict #325 (2026-11-27, checker-improvement): the
+        # flow diagram moved OUT of the hero band. Baseline (measured
+        # hidden_files/measure-verdict325.py at 1919x998): the band ran
+        # 722px tall — 72% of the viewport — and "What this site is"
+        # started at y=818.9 with its paragraphs below the fold. The
+        # flow was the single biggest removable block (132.8px + 30.6px
+        # margins); trimming spacing would save only ~35px. It now sits
+        # after the two intro paragraphs, ahead of the cards, riding the
+        # #307 intro hoist onto the sage background. The hero keeps
+        # hero-top, the compare strip and the stats strip; the diagram
+        # keeps its three steps, numbers and aria-label verbatim.
         # The homepage hero was the site's first visual element of any
-        # kind: before this change it was text only (tenth visual verdict,
-        # 15:39 CST — 0 <img> / 0 <svg> on all four pages, verified
-        # against the live HTML the same run). The diagram must show the
-        # mechanism in three steps, and every number in it must be the
-        # model's own number, not a copy of the paragraph above it.
+        # kind (tenth visual verdict, 15:39 CST — 0 <img> / 0 <svg> on
+        # all four pages, verified against the live HTML the same run).
+        # The diagram must show the mechanism in three steps, and every
+        # number in it must be the model's own number, not a copy of
+        # the paragraph above it.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
-        # The flow diagram is the hero's only diagram. The hero CTA
-        # lives in the left column of .hero-top (visual verdict #64:
-        # the CTA below the flow left a ~150px blank band under the
-        # intro text), so the flow sits after the CTA and before the
-        # paragraph that follows the hero. The left column is filled
+        # The flow diagram used to be the hero's only diagram, after
+        # the CTA (visual verdict #64: the CTA below the flow left a
+        # ~150px blank band under the intro text). Since #325 it sits
+        # after the two intro paragraphs, ahead of the cards — the
+        # hero now ends at the stats strip. The left column is filled
         # by the intro and the CTA (the hero-stats strip moved out
         # from under the CTA to a full-width row under hero-top in
         # verdict #173); a model-caveat line was tried here and
@@ -8246,36 +8257,41 @@ class TestChecker(unittest.TestCase):
         hero_start = home.index('<div class="hero">')
         hero_end = home.index('<p>This site is one independent researcher')
         hero = home[hero_start:hero_end]
+        self.assertNotIn('<div class="flow"', hero)
+        intro_start = home.index('<h2>What this site is</h2>')
+        intro_end = home.index('<div class="cards">')
+        intro = home[intro_start:intro_end]
         cta = home.index('Run the free checker')
         flow = home.index('<div class="flow"')
         self.assertLess(hero_start, cta)
         self.assertLess(cta, flow)
-        self.assertLess(flow, hero_end)
-        self.assertIn('<div class="flow"', hero)
-        self.assertEqual(hero.count('<div class="flow-step'), 3)
+        self.assertLess(intro_start, flow)
+        self.assertLess(home.index('<p>A clean negative is reported'), flow)
+        self.assertLess(flow, intro_end)
+        self.assertEqual(intro.count('<div class="flow-step'), 3)
         # The victim step is the red one: numbered badges on all three,
         # and only the loss step carries the loss class.
-        self.assertEqual(hero.count('class="flow-num"'), 3)
-        self.assertIn('<span class="flow-num">1</span>', hero)
-        self.assertIn('<span class="flow-num">2</span>', hero)
-        self.assertIn('<span class="flow-num">3</span>', hero)
-        self.assertEqual(hero.count('<div class="flow-step loss">'), 1)
-        self.assertEqual(hero.count('class="flow-arrow"'), 2)
-        self.assertIn("Attacker donates", hero)
-        self.assertIn("Share price inflates", hero)
-        self.assertIn("Victim loses", hero)
-        self.assertIn("1,000,000 USDC", hero)
-        self.assertIn("0.909091 USDC", hero)
+        self.assertEqual(intro.count('class="flow-num"'), 3)
+        self.assertIn('<span class="flow-num">1</span>', intro)
+        self.assertIn('<span class="flow-num">2</span>', intro)
+        self.assertIn('<span class="flow-num">3</span>', intro)
+        self.assertEqual(intro.count('<div class="flow-step loss">'), 1)
+        self.assertEqual(intro.count('class="flow-arrow"'), 2)
+        self.assertIn("Attacker donates", intro)
+        self.assertIn("Share price inflates", intro)
+        self.assertIn("Victim loses", intro)
+        self.assertIn("1,000,000 USDC", intro)
+        self.assertIn("0.909091 USDC", intro)
         # Visual verdict #111: the three steps read as unfilled
         # placeholder boxes on desktop (text 32-56% of the card width).
         # Each step carries one honest sub-line from the site's own
         # donation-attack writeup ("deposit a little, donate a lot, let
         # the victim deposit"; the victim's 100,000 USDC deposit buys
         # 999 shares, not 100,000). The sub-line is a smaller grey tier.
-        self.assertEqual(hero.count('class="flow-note"'), 3)
-        self.assertIn("before the victim deposits", hero)
-        self.assertIn("the victim's deposit buys fewer shares", hero)
-        self.assertIn("of a 100,000 USDC deposit", hero)
+        self.assertEqual(intro.count('class="flow-note"'), 3)
+        self.assertIn("before the victim deposits", intro)
+        self.assertIn("the victim's deposit buys fewer shares", intro)
+        self.assertIn("of a 100,000 USDC deposit", intro)
         self.assertIn(".flow-note{display:block;font-size:.88em;color:#4b5563;"
                       "margin-top:.2em}", build.CSS)
         # Visual verdict #293 item 4 (2026-11-26, checker-improvement
@@ -8427,18 +8443,22 @@ class TestChecker(unittest.TestCase):
         # a connector, not a block. Same language as the text arrows
         # elsewhere on the site. No disc, no glyph, no thick bar,
         # no triangle.
+        # Visual verdict #325: the arrows left the dark hero with the
+        # flow — white on sage is ~1.6:1, nearly invisible — so the
+        # chevron is now solid site green #0a7d2c (~3.4:1 on sage).
+        # Geometry unchanged (40x20, 4px strokes, shaft/head join).
         self.assertIn(
             ".flow-arrow{position:relative;align-self:center;"
             "flex:0 0 auto;width:40px;height:20px}", build.CSS)
         self.assertIn(
             ".flow-arrow::before{content:\"\";position:absolute;left:0;"
             "top:8px;width:39px;height:4px;"
-            "background:#fff}", build.CSS)
+            "background:#0a7d2c}", build.CSS)
         self.assertIn(
             ".flow-arrow::after{content:\"\";position:absolute;right:5px;"
             "top:4px;width:12px;height:12px;"
-            "border-top:4px solid #fff;"
-            "border-right:4px solid #fff;"
+            "border-top:4px solid #0a7d2c;"
+            "border-right:4px solid #0a7d2c;"
             "transform:rotate(45deg)}", build.CSS)
         self.assertNotIn("rgba(255,255,255,.6)", build.CSS[
             build.CSS.index(".flow-arrow::before"):])
@@ -8454,8 +8474,8 @@ class TestChecker(unittest.TestCase):
         # between cards, leaving ~7px of air on each side — squeezed
         # in, nearly touching the card edges. The gap is now .9em
         # (~15px of air per side); the arrow geometry itself is
-        # unchanged (verdict #123's 40x20 / 4px / solid-white
-        # chevron stands, and the disc stays forbidden per #59).
+        # unchanged (verdict #123's 40x20 / 4px chevron stands, now
+        # solid green per #325, and the disc stays forbidden per #59).
         self.assertIn(
             ".flow{display:flex;align-items:stretch;justify-content:center;"
             "gap:.9em;max-width:1024px;margin:.9em auto}", build.CSS)
@@ -8463,7 +8483,7 @@ class TestChecker(unittest.TestCase):
         # span itself has no background and no border-radius. (Scoped
         # to the flow diagram: the hero CTA below the flow legitimately
         # carries an &rarr; of its own.)
-        flow_html = hero[hero.index('<div class="flow"'):]
+        flow_html = intro[intro.index('<div class="flow"'):]
         self.assertEqual(flow_html.count("&rarr;"), 0)
         arrow_rule = build.CSS[build.CSS.index(".flow-arrow{"):]
         arrow_rule = arrow_rule[:arrow_rule.index("}") + 1]
@@ -8481,6 +8501,33 @@ class TestChecker(unittest.TestCase):
         self.assertIn("@media (max-width:700px){.hero-compare{flex-direction:column;gap:.5em}"
                       ".hero-compare-label{min-height:0}}", build.CSS)
 
+    def test_verdict325_flow_below_intro_shortens_hero(self):
+        # Visual verdict #325 (2026-11-27, checker-improvement): the
+        # rendered home page has the bleed band first, then the intro
+        # on the sage background (h2, two paragraphs, flow), then
+        # <main> with the cards. The flow is exactly once on the home
+        # page and nowhere inside the bleed band; the hero's height
+        # saving itself (722px -> ~559px at 1919px) is measured by
+        # hidden_files/measure-verdict325.py, not pinned here.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = build.render_all()
+        home = pages["/"]
+        self.assertEqual(home.count('<div class="flow"'), 1)
+        bleed = home.index('<div class="hero-bleed">')
+        wrap = home.index('<div class="wrap">')
+        self.assertNotIn('<div class="flow"', home[bleed:wrap])
+        intro = home.index('<div class="home-intro">')
+        main = home.index("<main>")
+        flow = home.index('<div class="flow"')
+        self.assertLess(intro, flow)
+        self.assertLess(flow, main)
+        self.assertLess(home.index('Nothing here is a paid promotion'), flow)
+        self.assertLess(home.index('connects a&nbsp;wallet.'), flow)
+        self.assertTrue(home[main:].startswith('<main><div class="cards">'))
+
     def test_verdict297_hero_compare_strip(self):
         # Visual verdict #293 item 4 (2026-11-26, checker-improvement
         # #297): the hero's three numbers lived in one paragraph, the
@@ -8491,7 +8538,7 @@ class TestChecker(unittest.TestCase):
         # still under the 0.001 USDC pass bound). The strip replaces
         # the paragraph (whose prose survives on /gate-brief/issue-1/);
         # the model numbers are re-derived in
-        # test_hero_has_attack_flow_diagram. The row placement is
+        # test_homepage_attack_flow_diagram_below_intro. The row placement is
         # forced by geometry: in the left column the nbsp-bound
         # number (166px at 1.35em) overflows a ~115px cell in the
         # 901-1024px band (measured +52.6px at 901px, +11.6px at
@@ -8506,14 +8553,17 @@ class TestChecker(unittest.TestCase):
         hero = home[hero_start:hero_end]
         # One strip, three cells, in a full-width row under hero-top:
         # after the checks panel closes, before the stats strip —
-        # not in the left column, not below the flow diagram.
+        # not in the left column; the flow diagram no longer follows it (#325).
         self.assertEqual(hero.count('<div class="hero-compare">'), 1)
         self.assertEqual(hero.count('class="hero-compare-cell"'), 3)
         strip = hero.index('<div class="hero-compare">')
         self.assertLess(hero.index('</aside>'), strip)
         self.assertLess(strip, hero.index('class="hero-stats"'))
-        self.assertLess(hero.index('<p class="hero-cta">'),
-                        hero.index('<div class="flow"'))
+        # Visual verdict #325: the flow left the hero — the CTA is
+        # still in the hero, and the flow now follows the intro
+        # paragraphs (see test_homepage_attack_flow_diagram_below_intro).
+        self.assertNotIn('<div class="flow"', hero)
+        self.assertIn('<p class="hero-cta">', hero)
         # CSS: translucent cells on the dark band (same treatment as
         # .hero-checks), capped at the 1024px row like .hero-stats, a
         # two-line label reserve so the numbers stay aligned if the
@@ -8667,7 +8717,8 @@ class TestChecker(unittest.TestCase):
         # body at render time and served in a full-width band (same
         # pattern as the header nav): the band carries the gradient
         # edge to edge, the inner .hero is centred at the site width.
-        # The hero itself is untouched — same h1, CTA, stats, flow.
+        # The hero itself keeps h1, CTA, compare and stats; the flow
+        # moved out to the intro (#325).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -8691,7 +8742,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<h1>Is your vault's accounting safe?</h1>",
                       hero_block)
         self.assertIn('class="cta"', hero_block)
-        self.assertIn('<div class="flow"', hero_block)
+        # Visual verdict #325: the flow left the hero band — the band
+        # now ends at the stats strip. The diagram sits in the intro,
+        # on the sage background, still above the white card.
+        self.assertNotIn('<div class="flow"', hero_block)
+        flow = home.index('<div class="flow"')
+        self.assertLess(hero, flow)
+        self.assertLess(flow, main)
         self.assertIn('class="hero-stats"', hero_block)
         # The band carries the gradient; the inner hero is transparent
         # (its own gradient would restart at the 1280px box and seam),
@@ -9355,8 +9412,9 @@ class TestChecker(unittest.TestCase):
         # so there is no column foot to pin to: it spans the full
         # 1024px hero-top row as a direct child of .hero, with its
         # own 1024px cap, margin-top clearing the taller column and
-        # margin-bottom 0 handing the gap to the flow's own .9em
-        # margin. The column keeps justify-content:space-between —
+        # margin-bottom 0 handing the gap to the hero's own .9em
+        # bottom padding (#325: the flow moved out of the band).
+        # The column keeps justify-content:space-between —
         # it now spreads the intro/CTA slack across the column's gaps
         # (measured 1919px: left column 317.8 vs panel 305.6, the CTA
         # ends 1.2px above the panel bottom). The base p margin rule
@@ -9375,15 +9433,24 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("margin-top:auto", rule)
         self.assertIn("max-width:1024px;margin:1em auto 0", rule)
         # Markup: the strip is a direct child of .hero, after
-        # hero-top closes and before the flow — not inside the left
-        # column, whose last child is now the CTA paragraph.
+        # hero-top closes — it is now the hero's last row (#325) —
+        # not inside the left column, whose last child is now the
+        # CTA paragraph.
         hero_start = home.index('<div class="hero">')
         hero_end = home.index("This site is one independent researcher",
                               hero_start)
         hero = home[hero_start:hero_end]
         stats_idx = hero.index('<p class="hero-stats">')
         self.assertLess(hero.index("</aside>"), stats_idx)
-        self.assertLess(stats_idx, hero.index('<div class="flow"'))
+        # Visual verdict #325: the flow left the hero, so there is no
+        # flow below the strip to index. The strip is the hero's last
+        # row: the hero closes right after it.
+        self.assertNotIn('<div class="flow"', hero)
+        # The hero closes right after the stats strip: stats </p>,
+        # then the hero's own </div>, then the intro h2 — nothing
+        # else in between.
+        self.assertIn('</p>\n</div>\n<h2>What this site is</h2>',
+                      hero[stats_idx:])
         col_end = hero.index("</aside>")
         # The CTA is the left column's last child: it sits before the
         # aside closes, while the strip sits after it.
@@ -9545,11 +9612,20 @@ class TestChecker(unittest.TestCase):
         stats = '<p class="hero-stats">'
         self.assertIn(stats, hero)
         stats_idx = hero.index(stats)
-        # Full-width strip: after hero-top closes, before the flow.
+        # Full-width strip: after hero-top closes — it is now the
+        # hero's last row (#325).
         # It is no longer inside the left column (see the #173 note
         # above): the CTA is the column's last child now.
         self.assertLess(hero.index("</aside>"), stats_idx)
-        self.assertLess(stats_idx, hero.index('<div class="flow"'))
+        # Visual verdict #325: the flow left the hero, so there is no
+        # flow below the strip to index. The strip is the hero's last
+        # row: the hero closes right after it.
+        self.assertNotIn('<div class="flow"', hero)
+        # The hero closes right after the stats strip: stats </p>,
+        # then the hero's own </div>, then the intro h2 — nothing
+        # else in between.
+        self.assertIn('</p>\n</div>\n<h2>What this site is</h2>',
+                      hero[stats_idx:])
         self.assertLess(hero.index("Run the free checker"),
                         stats_idx)
         # Rule (p) — visual verdict #223 (2026-11-25): the hero used
@@ -32229,18 +32305,22 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="/guides/erc4626-loss-socialization/">',
                       build)
 
-    def test_hero_flow_arrow_is_a_slim_chevron(self):
-        # Visual verdict #100 (2026-11-18): the homepage hero's flow
-        # arrows were two chunky white blocks - a 6px bar plus a 24px
+    def test_flow_arrow_is_a_slim_chevron(self):
+        # Visual verdict #100 (2026-11-18): the homepage flow arrows
+        # were two chunky white blocks - a 6px bar plus a 24px
         # triangle - that read as clip-art against the dark-green hero.
         # They are now a slim chevron: a connector, not a block.
         # Pins the new geometry and forbids the old one.
+        # Visual verdict #325 (2026-11-27): the flow left the dark
+        # hero band for the sage background, so the chevron is solid
+        # site green #0a7d2c now, not white (white on sage is ~1.6:1).
         # Visual verdict #101 (2026-11-18) then called the 2px /
         # 60%-white chevron thin and low-contrast: 3px strokes in
         # 90%-white now.
         # Visual verdict #123 (2026-11-20) still read the 32x16 /
         # 3px / 90%-white chevron as a small grey ">" at 1919px:
-        # enlarged to 40x20, 4px strokes, solid white.
+        # enlarged to 40x20, 4px strokes, solid white — solid site
+        # green since #325, when the flow left the dark band.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -32252,13 +32332,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".flow-arrow::before{content:\"\";position:absolute;left:0;"
             "top:8px;width:39px;height:4px;"
-            "background:#fff}",
+            "background:#0a7d2c}",
             build.CSS)
         self.assertIn(
             ".flow-arrow::after{content:\"\";position:absolute;right:5px;"
             "top:4px;width:12px;height:12px;"
-            "border-top:4px solid #fff;"
-            "border-right:4px solid #fff;"
+            "border-top:4px solid #0a7d2c;"
+            "border-right:4px solid #0a7d2c;"
             "transform:rotate(45deg)}",
             build.CSS)
         self.assertNotIn("width:48px;height:24px", build.CSS)
