@@ -9320,10 +9320,37 @@ class TestChecker(unittest.TestCase):
             self.assertIn(
                 ".audit-page [id],.checker-page [id]"
                 "{scroll-margin-top:131px}", css)
+            # Paired descendant rules: a selector list like
+            # ".audit-toc,.checker-toc ul" parses as ".audit-toc"
+            # elements OR "ul under .checker-toc" -- the audit side
+            # never matches. The first build shipped that shorthand
+            # and regressed the live /audit/ bar to a 263px vertical
+            # list (caught the same round by the real browser); every
+            # descendant rule therefore repeats the full pair.
+            self.assertIn(
+                ".audit-toc ul,.checker-toc ul{flex:1;min-width:0;"
+                "display:flex;flex-wrap:wrap;gap:.1em 1em}", css)
+            # The worker embeds the CSS in a JS string literal,
+            # where the quote is escaped (content:\") and the › as
+            # \u203a -- so the full content:"›"; form is pinned on
+            # build.CSS only (below), and the loop asserts the
+            # prefix up to content: that both forms share.
+            self.assertIn(
+                ".audit-toc li::before,.checker-toc li::before{"
+                "content:", css)
+            for bad in (".audit-toc,.checker-toc p{",
+                        ".audit-toc,.checker-toc a{",
+                        ".audit-toc,.checker-toc ul{",
+                        ".audit-toc,.checker-toc li{"):
+                self.assertNotIn(bad, css)
             # The checker bar's own gap override (9 links vs the
             # audit bar's 7): 1em -> .8em, without which the bar
             # folded to two rows even with the shorthand labels.
             self.assertIn(".checker-toc ul{gap:.1em .8em}", css)
+        # Full marker form, CSS only (see the note above).
+        self.assertIn(
+            ".audit-toc li::before,.checker-toc li::before{"
+            'content:"›";', build.CSS)
         # The global 84px clearance still covers mobile + other pages.
         self.assertIn("[id]{scroll-margin-top:84px}", build.CSS)
         # The Worker embeds the checker page twice (PAGES +
@@ -16320,19 +16347,19 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(
             ".audit-toc{background:#f9fafb;border:1px solid #e5e7eb;",
             build.CSS)
-        self.assertIn(".audit-toc,.checker-toc a{font-weight:600}", build.CSS)
+        self.assertIn(".audit-toc a,.checker-toc a{font-weight:600}", build.CSS)
         self.assertIn(
             "@media (min-width:641px){.audit-toc,.checker-toc{position:sticky;"
             "top:71px;z-index:5;display:flex;flex-wrap:wrap;"
             "align-items:baseline;gap:.1em 1.1em;padding:.45em 1em;font-size:.95em}",
             build.CSS)
         self.assertEqual(build.CSS.count(".audit-toc,.checker-toc{position:sticky"), 1)
-        self.assertIn(".audit-toc,.checker-toc p{margin:0}", build.CSS)
+        self.assertIn(".audit-toc p,.checker-toc p{margin:0}", build.CSS)
         self.assertIn(
-            ".audit-toc,.checker-toc ul{flex:1;min-width:0;display:flex;flex-wrap:wrap;"
+            ".audit-toc ul,.checker-toc ul{flex:1;min-width:0;display:flex;flex-wrap:wrap;"
             "gap:.1em 1em}",
             build.CSS)
-        self.assertIn(".audit-toc,.checker-toc li{margin:0}", build.CSS)
+        self.assertIn(".audit-toc li,.checker-toc li{margin:0}", build.CSS)
         self.assertIn(".audit-page [id],.checker-page [id]{scroll-margin-top:131px}",
                       build.CSS)
         self.assertNotIn(".audit-page [id]{scroll-margin-top:177px}",
@@ -16359,7 +16386,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".audit-page [id],.checker-page [id]{scroll-margin-top:131px}", worker)
         self.assertNotIn("scroll-margin-top:177px", worker)
         self.assertNotIn("scroll-margin-top:163px", worker)
-        self.assertIn(".audit-toc,.checker-toc a{font-weight:600}", worker)
+        self.assertIn(".audit-toc a,.checker-toc a{font-weight:600}", worker)
         self.assertNotIn("scroll-margin-top:288px", worker)
         # Markup: still one nav, 7 links, same order, the Track
         # record link still the last li; the four long labels are
@@ -16403,14 +16430,14 @@ class TestChecker(unittest.TestCase):
             "padding:.7em 1em .8em;margin:1em 0}",
             build.CSS)
         self.assertNotIn(".audit-toc{background:#fff;", build.CSS)
-        self.assertIn(".audit-toc,.checker-toc ul{margin:0;padding-left:0;list-style:none}",
+        self.assertIn(".audit-toc ul,.checker-toc ul{margin:0;padding-left:0;list-style:none}",
                       build.CSS)
         self.assertIn(
-            ".audit-toc,.checker-toc li{margin:.15em 0;position:relative;padding-left:1em}",
+            ".audit-toc li,.checker-toc li{margin:.15em 0;position:relative;padding-left:1em}",
             build.CSS)
         self.assertNotIn(".audit-toc li{margin:.15em 0}", build.CSS)
         self.assertIn(
-            '.audit-toc,.checker-toc li::before{content:"\u203a";position:absolute;'
+            '.audit-toc li::before,.checker-toc li::before{content:"\u203a";position:absolute;'
             "left:0;top:0;color:#0a7d2c;font-weight:700}",
             build.CSS)
         self.assertEqual(audit.count('<nav class="audit-toc"'), 1)
@@ -16437,7 +16464,7 @@ class TestChecker(unittest.TestCase):
         # The deployed worker carries all three rules.
         worker = build.worker_js(pages)
         for rule in (".audit-toc,.checker-toc{background:#f9fafb;",
-                     ".audit-toc,.checker-toc li::before{content:",
+                     ".audit-toc li::before,.checker-toc li::before{content:",
                      ".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;"
                      "padding:.6em .9em;list-style:none;background:#f9fafb;",
                      ".track-intro{background:#f9fafb;"):
