@@ -5356,13 +5356,16 @@ class TestChecker(unittest.TestCase):
                 for x in range(qr.get_size()) if qr.get_module(x, y)}
         self.assertEqual(cells, grid)
         self.assertEqual(len(cells), 1230)
-        # CSS: 200px square beside the caption, stacked under 640px.
-        # Checker-improvement #279 (2026-11-26, visual verdict #278
-        # item 4): the QR was 160px, too small for the payment area's
-        # visual weight; 200px is a 25% larger scan target.
+        # CSS: 160px square beside the caption, stacked under 640px.
+        # Checker-improvement #365 (2026-11-28, visual verdict #365
+        # item 1): the QR is back to #279's old 160px -- the caption
+        # is now a ~136px block, so a 200px QR left 64px of slack that
+        # landed as a visible void wherever it went; 160px leaves
+        # ~24px. 49 modules at 160px is ~2.8px/module, still a
+        # comfortable scan target.
         self.assertIn(".pay-qr{display:flex;gap:1em;align-items:center;",
                       build.CSS)
-        self.assertIn(".pay-qr svg{flex:0 0 auto;width:200px;height:200px;",
+        self.assertIn(".pay-qr svg{flex:0 0 auto;width:160px;height:160px;",
                       build.CSS)
         self.assertIn(".pay-qr figcaption{font-size:.95em;color:#374151}",
                       build.CSS)
@@ -5379,53 +5382,63 @@ class TestChecker(unittest.TestCase):
         self.assertIn(">Copy address</button>", audit)
         self.assertIn("https://basescan.org/address/" + build.PAY_ADDR, audit)
         self.assertIn("Double-check the address before sending", audit)
-    def test_verdict363_pay_qr_caption_fills_qr_height(self):
-        # Checker-improvement #363 (2026-11-28, visual verdict #362
-        # item 4): the caption column (~136px: scan text + warning
-        # note) was centred against the 200px QR, leaving ~32px of
-        # empty green below the note on the right while the QR ran to
-        # 16px above the pay-box bottom -- a 48px dead band at the box
-        # bottom, ragged against the QR edge. Desktop only (the mobile
-        # stacked column is taller than the QR and has no band): the
-        # figure stretches the caption to the QR height and the note
-        # is pinned to the caption bottom, so the note bottom lands on
-        # the QR bottom and the box bottom edge is even. The pin is
-        # absolute positioning, not a flex column: the first attempt
-        # made the figcaption display:flex, which turned the inline
-        # <strong>50 USDC</strong> into its own flex item and orphaned
-        # it on a line of its own (scan text went from 2 to 4 lines).
+    def test_verdict365_pay_qr_caption_centred_group(self):
+        # Checker-improvement #365 (2026-11-28, visual verdict #365
+        # item 1): REVERSES #363. The pinned note put ~70px of empty
+        # green between the scan text and the bordered note -- verdict
+        # #365 measured it at 70-75px and judged it WORSE than the
+        # 48px bottom dead band #363 removed: bigger, mid-column, and
+        # it cuts the two related sentences into two detached blocks.
+        # The caption is now a flex column centred as ONE group, so
+        # the scan text and the note stay adjacent (.6em apart) and
+        # the slack sits at the edges. Flex works now because the
+        # scan text is wrapped in .pay-scan: #363's failure was bare
+        # text nodes + the inline <strong> becoming separate flex
+        # items (scan text 2 -> 4 lines); with the wrapper the column
+        # has exactly two items. The QR is back to 160px (#279's old
+        # size): against a ~136px caption a 200px QR leaves 64px of
+        # slack, a 160px QR ~24px (~12px top/bottom).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        # Base rules untouched: centred row, 200px QR, stacked mobile.
+        # Base rules untouched: centred row, 160px QR, stacked mobile.
         self.assertIn(".pay-qr{display:flex;gap:1em;align-items:center;",
                       build.CSS)
-        self.assertIn(".pay-qr svg{flex:0 0 auto;width:200px;height:200px;",
+        self.assertIn(".pay-qr svg{flex:0 0 auto;width:160px;height:160px;",
                       build.CSS)
         self.assertIn("@media (max-width:640px){.pay-qr{flex-direction:column;",
                       build.CSS)
-        # Desktop pin: exactly one min-width rule, all three parts,
-        # and no flex-column fragment anywhere (the orphaning attempt).
+        # Desktop centring: exactly one min-width rule, stretch + the
+        # flex-column centring, and no #363 pin fragment anywhere.
         self.assertEqual(build.CSS.count("@media (min-width:641px){.pay-qr{"), 1)
         self.assertIn("@media (min-width:641px){.pay-qr{align-items:stretch}",
                       build.CSS)
-        self.assertIn(".pay-qr figcaption{position:relative}", build.CSS)
-        self.assertIn(".pay-qr figcaption .pay-note{position:absolute;left:0;right:0;"
-                      "bottom:0;margin-top:0}}", build.CSS)
-        self.assertNotIn(".pay-qr figcaption{display:flex", build.CSS)
-        # The note keeps its base .6em top margin outside the desktop
-        # rule, so the mobile stacked layout still separates scan text
-        # from the note.
+        self.assertIn(".pay-qr figcaption{display:flex;flex-direction:column;",
+                      build.CSS)
+        self.assertIn("justify-content:center}}", build.CSS)
+        self.assertNotIn(".pay-qr figcaption{position:relative}", build.CSS)
+        self.assertNotIn(".pay-qr figcaption .pay-note{position:absolute",
+                         build.CSS)
+        # The scan-text wrapper exists in the audit markup and the
+        # note keeps its base .6em top margin, so the mobile stacked
+        # layout still separates scan text from the note.
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        self.assertIn("<span class='pay-scan'>Scan with your wallet to pay "
+                      "<strong>50 USDC</strong> on Base", audit)
+        self.assertIn("</span><span class=\"pay-note\">", audit)
+        self.assertIn(".pay-qr figcaption .pay-scan{display:block}",
+                      build.CSS)
         self.assertIn(".pay-qr figcaption .pay-note{display:block;margin-top:.6em;",
                       build.CSS)
-        # The pin must not leak into the mobile query: the
+        # The centring must not leak into the mobile query: the
         # max-width:640px block still holds only the column direction.
         m = build.CSS
         mob = m[m.index("@media (max-width:640px){.pay-qr"):
                 m.index("@media (max-width:640px){.pay-qr") + 120]
         self.assertNotIn("stretch", mob)
-        self.assertNotIn("position:absolute", mob)
+        self.assertNotIn("justify-content:center", mob)
 
     def test_verdict364_audit_after_pay_bottom_padding_balances(self):
         # Checker-improvement #364 (2026-11-28, visual verdict #362
@@ -5477,7 +5490,9 @@ class TestChecker(unittest.TestCase):
         # item 4): the payment area read as weak -- QR 160px, Copy a
         # plain white outlined button (the global button[type=button]
         # rule), BaseScan a bare green text link, the address in a
-        # light-grey box. Now: QR 200px, Copy is the filled green
+        # light-grey box. Now: QR 160px (back from #365, which
+        # reverted #279's 200px -- against the ~136px caption a
+        # 200px QR left 64px of slack), Copy is the filled green
         # primary, BaseScan is the outlined secondary at the same
         # button metrics, the address box is 1.15em with a #9ca3af
         # border. The Copy override carries [type=button] in its
@@ -5503,9 +5518,9 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".pay-row a.basescan-link:hover{background:#eef7f0;"
             "text-decoration:none}", build.CSS)
-        self.assertIn(".pay-qr svg{flex:0 0 auto;width:200px;height:200px;",
+        self.assertIn(".pay-qr svg{flex:0 0 auto;width:160px;height:160px;",
                       build.CSS)
-        self.assertNotIn("width:160px;height:160px", build.CSS)
+        self.assertNotIn("width:200px;height:200px", build.CSS)
         self.assertNotIn(
             ".pay-row a.basescan-link{flex-shrink:0;white-space:nowrap;"
             "font-size:.9em}", build.CSS)
@@ -5516,7 +5531,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".pay-row button[type=button]{flex-shrink:0;",
                       worker)
         self.assertIn(".pay-row a.basescan-link{flex-shrink:0;", worker)
-        self.assertIn("width:200px;height:200px", worker)
+        self.assertIn("width:160px;height:160px", worker)
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         self.assertIn(">Copy address</button>", audit)
         self.assertIn("View on BaseScan</a>", audit)
