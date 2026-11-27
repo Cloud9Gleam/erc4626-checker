@@ -1446,7 +1446,7 @@ class TestChecker(unittest.TestCase):
         # rides in a nowrap span (same span in the JS lossSentenceShort).
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
                       "worst loss <strong>0.909091</strong> of 0.001 USDC"
-                      " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
+                      ". <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
                       failed)
         self.assertNotIn("victim loses", failed)
         custom = build.verdict_strip_html(
@@ -1602,9 +1602,55 @@ class TestChecker(unittest.TestCase):
         # The Worker renderer mirrors the span (single quotes there).
         worker = open(Path(__file__).parent.parent
                       / "site" / "build.py").read()
-        self.assertIn("s+=\" · <span class='nowrap'>\"+usdcTrim(BigInt(second.donation))",
+        self.assertIn("s+=\". <span class='nowrap'>\"+usdcTrim(BigInt(second.donation))",
                       worker)
         self.assertNotIn("s+=\" · \"+usdcTrim(BigInt(second.donation))+\" USDC also",
+                         worker)
+
+    def test_verdict350_fail_strip_second_clause_is_its_own_sentence(self):
+        # Checker-improvement #350 (2026-11-27, visual verdict #350
+        # item 1): the FAIL strip's two breaching clauses were joined
+        # with " · ", and at 1919px the detail wrapped right after
+        # it — line 1 ended "USDC ·", line 2 opened with the
+        # second clause, a separator dangling at a line end like a
+        # typo (same at 360px, where line 2 ended "USDC ·"). The
+        # second clause is now its own sentence (". " not " · "),
+        # and the "and N more" tail likewise (". And N more"), so any
+        # wrap falls at a sentence boundary and no rendered line can
+        # end on a separator. Numbers, wording and the #344 nowrap
+        # span are unchanged; the Worker JS renderer mirrors the
+        # strip and is verified by the verdict350 node harness, not
+        # by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        failed = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
+        self.assertIn("worst loss <strong>0.909091</strong> of 0.001 USDC"
+                      ". <span class=\"nowrap\">1,000,000,000 USDC</span>"
+                      " also over the bound: 0.099890 USDC", failed)
+        self.assertNotIn(" · ", failed)
+        # Three breaching rows: the second is named, the third counted
+        # — the tail is its own sentence too.
+        three = [{"name": "donation_inflation", "pass": False,
+                  "detail": [{"donation": 1_000_000, "victim_loss": 0},
+                             {"donation": 1_000_000_000, "victim_loss": 5000},
+                             {"donation": 1_000_000_000_000, "victim_loss": 909091},
+                             {"donation": 1_000_000_000_000_000, "victim_loss": 99890}]}]
+        self.assertIn("worst loss <strong>0.909091</strong> of 0.001 USDC"
+                      ". <span class=\"nowrap\">1,000,000,000 USDC</span>"
+                      " also over the bound: 0.099890 USDC"
+                      ". And 1 more over the bound",
+                      build.verdict_strip_html(three))
+        # The Worker renderer mirrors the periods (single quotes there).
+        worker = open(Path(__file__).parent.parent
+                      / "site" / "build.py").read()
+        self.assertIn("s+=\". <span class='nowrap'>\"+usdcTrim(BigInt(second.donation))",
+                      worker)
+        self.assertIn("s+=\". And \"+(over.length-1)+\" more over the bound\"",
+                      worker)
+        self.assertNotIn("s+=\" · <span class='nowrap'>\"+usdcTrim(BigInt(second.donation))",
                          worker)
 
     def test_verdict335_fail_strip_names_second_breach(self):
@@ -1625,7 +1671,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             "<span class=\"nowrap\">1,000,000 USDC donation</span>: "
             "worst loss <strong>0.909091</strong> of 0.001 USDC"
-            " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
+            ". <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
             failed)
         self.assertNotIn("victim loses", failed)
         # The helper itself: worst first, only rows over the bound.
@@ -1643,8 +1689,8 @@ class TestChecker(unittest.TestCase):
                              {"donation": 1_000_000_000_000_000, "victim_loss": 99890}]}]
         self.assertIn(
             "worst loss <strong>0.909091</strong> of 0.001 USDC"
-            " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC"
-            " · and 1 more over the bound",
+            ". <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC"
+            ". And 1 more over the bound",
             build.verdict_strip_html(three))
         # One breaching row only: no second clause at all.
         one = [{"name": "donation_inflation", "pass": False,
@@ -1848,7 +1894,7 @@ class TestChecker(unittest.TestCase):
                       strip)
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
                       "worst loss <strong>0.909091</strong> of 0.001 USDC"
-                      " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
+                      ". <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
                       strip)
         self.assertNotIn("100,000 USDC deposit loses", strip)
         self.assertNotIn("1 of 6 failed", strip)
@@ -1918,7 +1964,7 @@ class TestChecker(unittest.TestCase):
                                 perf_fee_bps=0))
         strip = build.verdict_strip_html(results)
         self.assertIn("worst loss <strong>0.909091</strong> of 0.001 USDC"
-                      " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
+                      ". <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
                       strip)
         self.assertNotIn("victim loses", strip)
         self.assertNotIn("deposit loses", strip)
@@ -1978,7 +2024,7 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
                       "worst loss <strong>0.909091</strong> of 0.001 USDC"
-                      " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
+                      ". <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
                       strip)
         self.assertNotIn("100,000 USDC deposit loses", strip)
         self.assertIn("0.909091", failed)
