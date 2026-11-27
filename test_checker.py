@@ -9439,6 +9439,73 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertEqual(worker.count('<nav class=\\"checker-toc\\"'), 2)
 
+    def test_verdict347_anchor_clearance_tiers(self):
+        # Checker-improvement #347 (2026-11-27, pixel adjudication
+        # of visual verdict #345 item 1): the fixed 131px
+        # scroll-margin assumed a 71px header + a 43px one-line
+        # TOC bar at every width. Measured headless on the live
+        # site (hidden_files/measure-verdict347b/c.py) it does not
+        # hold: the header is 107px at <=803px (nav wraps to two
+        # rows) and 71.4px at >=804px; the TOC bar is 99.7px (3
+        # lines) at <=662px, 71.5px (2 lines) at 663-1038px, 43.2px
+        # (1 line) at >=1039px. Before the fix every anchor jump
+        # at 641-1024px landed 11.5px (two-line bar) to 39.7px
+        # (three-line bar) under the stuck stack, and at 641-803px
+        # the bar's first row hid behind the 107px header. The
+        # fix: the bar's sticky top tracks the header height
+        # (107px at <=803px), and the scroll-margin is tiered so
+        # each band keeps the same ~16px air the 131px rule has at
+        # wide widths -- 223px = 107+99.7+~16, 195px =
+        # 107+71.5+~16, 159px = 71.4+71.5+~16, 131px =
+        # 71.4+43.2+~16. Cascade order is the tiers' safety: each
+        # narrower max-width rule comes later, so where several
+        # match, the narrowest wins. Mid-scroll occlusion is NOT
+        # covered here: only ~10px of a 422px card sat under the
+        # band at the sampled position and a small scroll reveals
+        # it -- same class as #343 item 1, inherent to any sticky
+        # bar. Geometry is pinned by
+        # hidden_files/measure-verdict347.py, not here -- this
+        # suite has no browser.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Base rule untouched: one-line bar at >=1039px.
+        self.assertIn(".audit-page [id],.checker-page [id]{scroll-margin-top:131px}",
+                      build.CSS)
+        self.assertIn("@media (min-width:641px){.audit-toc,.checker-toc{position:sticky;top:71px;",
+                      build.CSS)
+        # The bar's sticky top tracks the 107px header at <=803px.
+        self.assertIn("@media (min-width:641px) and (max-width:803px){.audit-toc,.checker-toc{top:107px}}",
+                      build.CSS)
+        # Tiers, each exactly once, narrowest last in the file.
+        self.assertIn("@media (min-width:641px) and (max-width:1038px){.audit-page [id],.checker-page [id]{scroll-margin-top:159px}}",
+                      build.CSS)
+        self.assertIn("@media (min-width:641px) and (max-width:803px){.audit-page [id],.checker-page [id]{scroll-margin-top:195px}}",
+                      build.CSS)
+        self.assertIn("@media (min-width:641px) and (max-width:662px){.audit-page [id],.checker-page [id]{scroll-margin-top:223px}}",
+                      build.CSS)
+        self.assertEqual(build.CSS.count("scroll-margin-top:159px"), 1)
+        self.assertEqual(build.CSS.count("scroll-margin-top:195px"), 1)
+        self.assertEqual(build.CSS.count("scroll-margin-top:223px"), 1)
+        self.assertEqual(build.CSS.count(".audit-toc,.checker-toc{top:107px}"), 1)
+        order = [build.CSS.index("scroll-margin-top:131px"),
+                 build.CSS.index("scroll-margin-top:159px"),
+                 build.CSS.index("scroll-margin-top:195px"),
+                 build.CSS.index("scroll-margin-top:223px")]
+        self.assertEqual(order, sorted(order))
+        # The override comes after the base sticky rule, so it wins
+        # where both media queries match.
+        self.assertLess(build.CSS.index("position:sticky;top:71px"),
+                        build.CSS.index(".audit-toc,.checker-toc{top:107px}"))
+        # The Worker embeds the tiers too.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        for rule in ("scroll-margin-top:131px", "scroll-margin-top:159px",
+                     "scroll-margin-top:195px", "scroll-margin-top:223px",
+                     ".audit-toc,.checker-toc{top:107px}"):
+            self.assertIn(rule, worker)
+
     def test_copy_link_button_fills_banner_on_mobile(self):
         # Verdict #100 minor observation: whitespace around the
         # "Copy link to these results" button. Desktop falsified
