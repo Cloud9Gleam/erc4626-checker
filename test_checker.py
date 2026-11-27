@@ -6292,6 +6292,68 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn('Full payment details, including the QR code, '
                          'are in', worker)
 
+    def test_verdict368_audit_after_pay_same_address_note(self):
+        # Checker-improvement #368 (2026-11-28, visual verdict #365
+        # item 7): the same PAY_ADDR is shown twice on /audit/ -- in
+        # the form's "After you pay" block (#319) and in the Price
+        # pay-row -- with a "Copy address" button each, and a payer
+        # could reasonably wonder which copy to use, or whether the
+        # two are different addresses. The duplication stays (#319:
+        # the form asks for the hash before the pay-box, so the
+        # address must be visible in the form), but the form block
+        # now says "(same address)" right after its Copy button, so
+        # either copy works without comparing 42 hex chars. The note
+        # is a nowrap span: at 360px it drops to its own line rather
+        # than splitting mid-phrase (baseline
+        # measure-verdict368b.py: 1919px the note rides on the button
+        # line; 360px the button line has ~105px free and the note
+        # needs ~100px, so nowrap keeps it whole either way).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        block = audit[audit.index('class="audit-after-pay"'):]
+        block = block[:block.index('</p>')]
+        # The note is inside the block, after the button and its
+        # status span, before the <br> that starts the second
+        # sentence.
+        self.assertIn('<span class="nowrap">(same address)</span>',
+                      block)
+        self.assertLess(
+            block.index('onclick="copyPayAddr(this)">Copy address</button>'),
+            block.index('<span class="nowrap">(same address)</span>'))
+        self.assertLess(
+            block.index('<span id="audit-pay-copy-status" role="status"></span>'),
+            block.index('<span class="nowrap">(same address)</span>'))
+        self.assertLess(
+            block.index('<span class="nowrap">(same address)</span>'),
+            block.index('<br>'))
+        # The note's claim is true: both displayed addresses are the
+        # same PAY_ADDR constant, and both buttons copy the same
+        # #pay-addr data-full.
+        self.assertIn('<code id="audit-pay-addr">' + build.PAY_ADDR + '</code>',
+                      block)
+        # The pay-row shows the same address as text AND as the
+        # data-full the buttons copy (the BaseScan href carries it a
+        # fourth time, so no global count is pinned here).
+        self.assertIn('<span id="pay-addr" data-full="' + build.PAY_ADDR +
+                      '">' + build.PAY_ADDR + '</span>', audit)
+        # The rest of the block is untouched: #327's second sentence
+        # verbatim, #321's nowrap link, #319's button and status span.
+        self.assertIn('Then paste the transaction hash below. '
+                      'Details and the QR code are in '
+                      '<a href="#price">Price and payment</a> below.',
+                      block)
+        self.assertIn('.audit-after-pay a{white-space:nowrap}', build.CSS)
+        # Worker copy carries the note (the /audit/ page is served by
+        # the worker, not a static file).
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('(same address)</span>',
+                      worker)
+
     def test_verdict322_header_brand_mark_and_sticky(self):
         # Checker-improvement #322 (2026-11-27, visual verdict #322
         # item 2): the nav brand was plain ~20px "Hatch Worker" text
