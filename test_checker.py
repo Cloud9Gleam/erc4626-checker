@@ -15794,21 +15794,27 @@ class TestChecker(unittest.TestCase):
             ".back-to-top{margin:1.2em 0 0;text-align:right;font-size:.9em}",
             build.CSS)
 
-    def test_verdict332_audit_toc_sticky(self):
-        # Visual verdicts #328 item 5 / #330 item 6 (2026-11-27): the
-        # /audit/ TOC scrolled away after one screen -- the page is
-        # 4948px at 1919px and the visitor lost the 7 jump links. The
-        # TOC now pins under the sticky header on desktop (top:84px =
-        # the 71px header + ~13px air, the same 84px as the global
-        # [id] scroll-margin), z-index:5 below the header's 10. The
-        # box is also less pale: #d1d5db border + the green left
-        # accent of .track-intro / the audit h2s, and semibold links.
-        # Sticky is desktop-only: at 360px the single-column TOC is
-        # 258.6px tall (~40% of a 640px viewport). Anchor jumps on
-        # /audit/ need 288px clearance (84 + 187px TOC + ~17px air)
-        # so the target h2 lands below the stuck box, not under it;
-        # on mobile the TOC is static, so the global 84px still
-        # applies there. No copy, numbers, or markup change.
+    def test_verdict333_audit_toc_slim_sticky_bar(self):
+        # Visual verdict #333 item 1 (2026-11-27): the #332 sticky
+        # TOC pinned the whole 187px two-column box -- header + box
+        # = ~271px (27% of a 998px viewport) permanently occupied,
+        # and content scrolling under it was cut in half (pay-box
+        # input top edge, a Bounded-slice preview row, the Start
+        # form split in two; headless: the Track record h2 lost its
+        # top 9.2px). The desktop TOC is now a slim flex bar: the
+        # nav is display:flex (label + ul in one wrapping row, tight
+        # gaps, .45em padding) and the ul is flex:1, so it takes the
+        # remaining width beside the label and wraps its 7 links
+        # inside it -- measured 75.1px at 1919px (was 186.8px),
+        # permanent occupation 159.1px (was 270.8px). The two-column
+        # layout (#198) and the column-span last item (#246) retire:
+        # a flex row has no columns to balance, and the chevron
+        # markers survive because flex items keep their ::before.
+        # Anchor jumps on /audit/ need 177px clearance (84 + 75.1px
+        # bar + ~18px air), measured headless at 1919px; on mobile
+        # the TOC is static, so the global 84px still applies there.
+        # No copy, numbers, or markup change: still one nav, 7 links,
+        # same order, the Track record link still the last li.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -15824,11 +15830,25 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".audit-toc a{font-weight:600}", build.CSS)
         self.assertIn(
             "@media (min-width:641px){.audit-toc{position:sticky;"
-            "top:84px;z-index:5}",
+            "top:84px;z-index:5;display:flex;flex-wrap:wrap;"
+            "align-items:baseline;gap:.1em 1.1em;padding:.45em 1em}",
             build.CSS)
         self.assertEqual(build.CSS.count(".audit-toc{position:sticky"), 1)
-        self.assertIn(".audit-page [id]{scroll-margin-top:288px}",
+        self.assertIn(".audit-toc p{margin:0}", build.CSS)
+        self.assertIn(
+            ".audit-toc ul{flex:1;min-width:0;display:flex;flex-wrap:wrap;"
+            "gap:.1em 1.2em}",
+            build.CSS)
+        self.assertIn(".audit-toc li{margin:0}", build.CSS)
+        self.assertIn(".audit-page [id]{scroll-margin-top:177px}",
                       build.CSS)
+        self.assertNotIn(".audit-page [id]{scroll-margin-top:288px}",
+                         build.CSS)
+        self.assertNotIn(
+            "@media (min-width:641px){.audit-toc ul{columns:2;",
+            build.CSS)
+        self.assertNotIn(".audit-toc li:last-child{column-span:all}",
+                         build.CSS)
         # The global clearance is untouched (mobile + every other page).
         self.assertIn("[id]{scroll-margin-top:84px}", build.CSS)
         self.assertEqual(build.CSS.count("position:sticky"), 3)
@@ -15837,16 +15857,21 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".audit-toc{background:#f9fafb;", worker)
         self.assertIn(
             "@media (min-width:641px){.audit-toc{position:sticky;"
-            "top:84px;z-index:5}",
+            "top:84px;z-index:5;display:flex;",
             worker)
-        self.assertIn(".audit-page [id]{scroll-margin-top:288px}", worker)
+        self.assertIn(".audit-page [id]{scroll-margin-top:177px}", worker)
         self.assertIn(".audit-toc a{font-weight:600}", worker)
-        # Markup untouched: still one nav, 7 links, same order.
+        self.assertNotIn("scroll-margin-top:288px", worker)
+        # Markup untouched: still one nav, 7 links, same order, the
+        # Track record link still the last li.
         audit = pages["/audit/"]
         self.assertEqual(audit.count('<nav class="audit-toc"'), 1)
         toc = audit[audit.index('<nav class="audit-toc"'):
                     audit.index("</nav>")]
         self.assertEqual(toc.count("<li>"), 7)
+        self.assertIn(
+            '<li><a href="#track-record">Track record — 41 entries</a>'
+            '</li>\n</ul>', audit)
 
     def test_verdict276_unstyled_spots_are_styled(self):
         # Visual verdict #276 (2026-11-26, live browser): three spots
@@ -15857,11 +15882,13 @@ class TestChecker(unittest.TestCase):
         # while the h2 beside it has a green bar and the cards below
         # have borders and pills). All three now use the site's
         # light-box language (.params: #f9fafb / #e5e7eb / 8px). No
-        # copy or numbers change; the TOC columns and the
-        # column-span:all last item are untouched (the browser's
-        # "left 4 / right 3" count is the known #264 misread — the
-        # spanning item is a full-width row, headless rects 466.2 /
-        # 463.7, diff 2.5px).
+        # copy or numbers change. The TOC columns (#198) and the
+        # column-span:all last item (#246) retired in #333, when the
+        # desktop TOC became a slim flex bar -- the browser's
+        # "left 4 / right 3" count is the known #264 misread, and the
+        # spanning item it described no longer exists (its geometry,
+        # headless rects 466.2 / 463.7, diff 2.5px, was measured on
+        # the retired two-column layout).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -16142,78 +16169,6 @@ class TestChecker(unittest.TestCase):
         # in the worker, not in the PAGES body) is untouched.
         self.assertIn("a clean negative is reported as a clean negative, "
                       "never as a&nbsp;finding.", worker)
-
-    def test_verdict198_audit_toc_is_two_column_on_desktop(self):
-        # Visual verdict #198 (2026-11-24): the /audit/ table of
-        # contents was a single column in a 946px box — the longest
-        # link ended at x=725, ~700px of dead space on the right
-        # (#197 item 6). At min-width 641px the list runs two CSS
-        # columns; below that it stays single-column (the 310px
-        # mobile box has no slack to split). CSS columns, not grid.
-        # Visual verdict #276 (2026-11-26): the default disc bullets
-        # are gone — the list is list-style none with a green chevron
-        # ::before on each item (generated content survives the
-        # columns; the #198 "grid loses the markers" reason is
-        # retired, the columns layout itself is unchanged).
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
-        import build
-        rule = ("@media (min-width:641px)"
-                "{.audit-toc ul{columns:2;column-gap:2em}}")
-        self.assertIn(rule, build.CSS)
-        self.assertEqual(build.CSS.count(rule), 1)
-        self.assertIn(".audit-toc ul{margin:0;padding-left:0;list-style:none}",
-                      build.CSS)
-        self.assertNotIn(".audit-toc ul{margin:0;padding-left:1.2em}",
-                         build.CSS)
-        self.assertNotIn(".audit-toc ul{display:grid", build.CSS)
-        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        toc = audit[audit.index('<nav class="audit-toc"'):
-                    audit.index('</nav>')]
-        self.assertEqual(toc.count("<li>"), 7)
-        worker = build.worker_js(
-            dict((p, b) for p, t, d, k, b in build.PAGES))
-        # The test passes page bodies, not rendered pages, so the CSS
-        # appears once here (via the 404 page built inside
-        # worker_js); the deployed worker.js inlines it per page, 241
-        # times — the harness asserts that count.
-        self.assertEqual(worker.count(rule), 1)
-
-    def test_verdict246_audit_toc_last_item_spans_both_columns(self):
-        # Visual verdict #246 (2026-11-25): with 7 items the balanced
-        # CSS columns split 3 left / 4 right — the right column ended
-        # one row (~28px, headless rects) lower than the left, left
-        # light / right heavy (#244 measured the same ~24-28px).
-        # The last item now spans both columns, so the first six
-        # balance 3/3 and the longest link (Track record — 41
-        # entries) takes its own full-width row. Geometry is pinned
-        # by hidden_files/measure-verdict246.py (1919px: column
-        # bottoms 466.2 / 463.7, diff 2.5px, was 28.0px; 360px
-        # single-column, unchanged). Below 641px there are no
-        # columns, so the rule is a no-op there.
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
-        import build
-        rule = ".audit-toc li:last-child{column-span:all}"
-        self.assertIn(rule, build.CSS)
-        self.assertEqual(build.CSS.count(rule), 1)
-        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        toc = audit[audit.index('<nav class="audit-toc"'):
-                    audit.index('</nav>')]
-        self.assertEqual(toc.count("<li>"), 7)
-        # The spanner rule is positional (:last-child), so the
-        # track-record item must be the last li in the list.
-        self.assertIn(
-            '<li><a href="#track-record">Track record — 41 entries</a>'
-            '</li>\n</ul>', audit)
-        worker = build.worker_js(
-            dict((p, b) for p, t, d, k, b in build.PAGES))
-        # As in the #198 test: the CSS appears once in this
-        # in-test build; the deployed worker.js inlines it 241
-        # times — the harness asserts that count.
-        self.assertEqual(worker.count(rule), 1)
 
     def test_audit_order_form_is_a_card(self):
         # Visual verdict #100 (2026-11-18): on /audit/ the Start
