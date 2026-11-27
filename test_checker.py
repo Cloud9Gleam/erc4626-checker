@@ -12210,7 +12210,14 @@ class TestChecker(unittest.TestCase):
         # the overlap. Post-fix the probe reads 0 TOC-seam clips on
         # both pages' up-stops; header-seam clips remain (accepted
         # #360 remainder -- clearing both seams cannot converge in a
-        # uniform paragraph, the seams are 44px apart).
+        # uniform paragraph, the seams are 44px apart). The same
+        # round's browser verification caught one residual the text
+        # walk cannot see -- <input> values are not DOM text nodes,
+        # so three checker inputs showed half-cut values at one
+        # up-stop -- and the settle now tests form-control value
+        # text too (centred single line; textarea lines tile the
+        # padded block). Post-extension the probe reads 0 input
+        # clips as well.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -12238,7 +12245,12 @@ class TestChecker(unittest.TestCase):
                 "window.scrollBy(0,-n)",
                 "if(n<=0.5)break;",
                 "for(var k=0;k<3;k++)",
-                "if(y<=stick[i]+2)break;"):
+                "if(y<=stick[i]+2)break;",
+                "querySelectorAll('input,textarea,select')",
+                "tagName==='TEXTAREA'",
+                "getComputedStyle(el)",
+                "er.height/2",
+                "need2=seam-tt"):
             self.assertIn(frag, script)
         # The settle ships with the hide script: once on each TOC
         # page, three times in the worker (audit + checker +
