@@ -13160,9 +13160,19 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #102: one unfilled block per card, slate
         # left accent on the group, no fill/border/shadow on the
         # lines. The old per-line box rule must not survive.
+        # Checker-improvement #339 (2026-11-27, visual verdict
+        # #339 item 2) supersedes the slate accent itself: the
+        # #149 grid gives the small tables their own structure,
+        # the bar read as a blockquote style misapplied to a data
+        # table, and the Donation/API tables never had it. The
+        # block keeps its margin only.
         self.assertIn(
-            ".check-card .check-details{border-left:3px solid #6b7280;"
-            "padding:.1em 0 .1em .85em;margin:.5em 0}", build.CSS)
+            ".check-card .check-details{margin:.5em 0}", build.CSS)
+        self.assertNotIn(
+            ".check-card .check-details{border-left:3px solid #6b7280;",
+            build.CSS)
+        self.assertNotIn(
+            ".check-details{border-left:", build.CSS)
         self.assertNotIn(
             ".check-card p.check-detail{background:#f3f4f6;", build.CSS)
         self.assertNotIn(
@@ -13242,6 +13252,49 @@ class TestChecker(unittest.TestCase):
                       build.checker_results_html_js())
         self.assertNotIn("<p class='check-detail'>",
                          build.checker_results_html_js())
+
+    def test_verdict339_check_details_have_no_left_accent(self):
+        # Checker-improvement #339 (2026-11-27, visual verdict
+        # #339 item 2): the four half-width cards' detail tables
+        # and the Rounding sentence sat inside .check-details
+        # with a 3px slate left bar plus .85em left padding --
+        # about 17px of indent that read as a blockquote style
+        # misapplied to a data table. The Donation table and the
+        # API table never had it, and the #149 grid already gives
+        # the small tables their own structure. The block now
+        # keeps its margin only; the bar and the indent are gone
+        # in both render paths, and the tables still render.
+        # The Share-price "(unchanged)" wrap narrows with the
+        # reclaimed 17px (about 21px short to about 5px) but does
+        # not close on the default preset -- a pixel property,
+        # pinned by measure-verdict339.py, not here.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".check-card .check-details{margin:.5em 0}", build.CSS)
+        self.assertNotIn("border-left:3px solid #6b7280", build.CSS)
+        self.assertNotIn(".check-details{border-left:", build.CSS)
+        self.assertNotIn(".check-details{padding:.1em 0 .1em .85em",
+                         build.CSS)
+        # The tables themselves are untouched: same grid, same
+        # label/value rules, same mobile stacking.
+        self.assertIn(".check-table{margin:0;font-size:1em;width:100%}",
+                      build.CSS)
+        self.assertIn(
+            ".check-table td{border:1px solid #e5e7eb;"
+            "padding:.28em .5em;vertical-align:top}", build.CSS)
+        self.assertIn("@media (max-width:640px){.check-table tr{display:block}",
+                      build.CSS)
+        # The Worker CSS carries the same rule (one embedding per
+        # page) -- pinned by verdict339-check-details-harness.mjs
+        # against the built worker.js, not here: this template
+        # carries markup only. The detail blocks still render in
+        # both paths.
+        js = build.checker_results_html_js()
+        self.assertIn("<div class='check-details'>", js)
+        self.assertIn("<table class='check-table'>", js)
 
     def test_check_table_has_gridlines(self):
         # Visual verdict #149 (2026-11-22): the five small
