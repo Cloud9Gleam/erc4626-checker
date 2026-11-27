@@ -1226,6 +1226,60 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=1000)),
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
 
+    def test_donation_blurb_follows_the_run(self):
+        # Checker-improvement #324 (visual verdict #324 item 4): the
+        # Donation card's one-line blurb used to be one static sentence
+        # — "the loss is rounding dust, not theft" — printed on PASS
+        # and FAIL pages alike. On a failing run (noprot: worst loss
+        # 0.909091 USDC, 909x the bound) that sentence contradicts the
+        # numbers on the same card. The blurb now follows the run:
+        # PASS keeps the dust sentence; a measured breach says the
+        # loss breaks the pass bound; a fail with no loss measured
+        # (refused check, error rows) says so instead of inventing
+        # one. The other five cards' blurbs never change. The Worker
+        # JS renderer carries the same three blurbs; it is verified
+        # by the verdict324 harness (node), not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        head = ("An attacker deposits the minimum, donates to inflate "
+                "the share price, and a victim deposit buys far fewer "
+                "shares than it should")
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn(head + " — the loss is rounding dust, not theft.",
+                      passed)
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn(
+            head + " — the loss breaks the pass bound: real money, not rounding dust.",
+            failed)
+        self.assertNotIn("the loss is rounding dust, not theft.", failed)
+        # Refused check: victim deposit below the minimum, so no loss
+        # is measured on any row — the blurb must not claim dust.
+        errored = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000),
+                    victim_deposit=500_000),
+            vic=500_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn(
+            head + " — this run did not pass; the table below shows why.",
+            errored)
+        self.assertNotIn("the loss is rounding dust, not theft.", errored)
+        # The mechanism head is shared, and the other five checks keep
+        # their blurbs on every run.
+        for html in (passed, failed, errored):
+            self.assertIn("Deposit rounds down, mint and withdraw round up",
+                          html)
+            self.assertIn("A 1 USDC deposit must mint at least one share",
+                          html)
+            self.assertIn("previewDeposit, previewMint and previewRedeem",
+                          html)
+
     def test_results_notice_trails_all_cards(self):
         # Visual verdict #162 (2026-11-23, checker-improvement):
         # the #161 item 2 placement put the notice directly after
