@@ -5468,9 +5468,10 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<a href="#price">Price and payment</a>', block)
         # Scope pin: the .audit-toc copy of the same link measured 1
         # rect at both widths, so it is left alone -- no nowrap rule
-        # for it, and the nav item itself is unchanged.
+        # for it. Checker-improvement #340 shortens its label to
+        # "Price" (the h2 and the after-pay link keep the full text).
         self.assertNotIn('.audit-toc a{white-space:nowrap}', build.CSS)
-        self.assertIn('<li><a href="#price">Price and payment</a></li>',
+        self.assertIn('<li><a href="#price">Price</a></li>',
                       audit)
         # Worker copy carries the rule (the /audit/ page is served by
         # the worker, not a static file).
@@ -7971,7 +7972,7 @@ class TestChecker(unittest.TestCase):
         # anywhere on the audit page.
         toc = audit[audit.index('<nav class="audit-toc"'):
                     audit.index('</nav>')]
-        self.assertIn("Track record — 41 entries", toc)
+        self.assertIn("Track record (41)", toc)
         self.assertNotIn("41 reviews", audit)
         # CSS: one muted, slightly smaller rule; the intro box rule
         # itself is untouched.
@@ -16093,7 +16094,7 @@ class TestChecker(unittest.TestCase):
         hrefs = [t.split('href="')[1].split('"')[0]
                  for t in toc.split("<a ")[1:]]
         self.assertEqual(hrefs, targets)
-        self.assertIn("Track record — 41 entries", toc)
+        self.assertIn("Track record (41)", toc)
         self.assertLess(audit.index('<nav class="audit-toc"'),
                         audit.index('<h2 id="scope">'))
         for anchor, label in zip(
@@ -16153,8 +16154,18 @@ class TestChecker(unittest.TestCase):
         # 75.1px bar + ~17px air), measured headless at 1919px;
         # on mobile the TOC is static, so the global 84px still
         # applies there.
-        # No copy, numbers, or markup change: still one nav, 7 links,
-        # same order, the Track record link still the last li.
+        # Checker-improvement #340 (2026-11-27, visual verdict #339
+        # item 5): the 7 links folded to two rows (5+2) because they
+        # needed 1337px in a 946px bar -- the second row held only 2
+        # items with ~800px blank. The four long labels are now nav
+        # shorthand (Price / Limits / Report sample / Track record
+        # (41); the h2s keep their full text), the ul gap tightens
+        # 1.2em -> 1em, and the desktop bar gets font-size:.95em --
+        # measured one row, 43px at 1919px (was 75px), 61px spare in
+        # headless, permanent occupation ~114px (was ~146px). The
+        # anchor clearance re-derives to 131px (71 + 43 + ~17 air).
+        # No copy or numbers change: still one nav, 7 links, same
+        # order, the Track record link still the last li.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -16171,20 +16182,22 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             "@media (min-width:641px){.audit-toc{position:sticky;"
             "top:71px;z-index:5;display:flex;flex-wrap:wrap;"
-            "align-items:baseline;gap:.1em 1.1em;padding:.45em 1em}",
+            "align-items:baseline;gap:.1em 1.1em;padding:.45em 1em;font-size:.95em}",
             build.CSS)
         self.assertEqual(build.CSS.count(".audit-toc{position:sticky"), 1)
         self.assertIn(".audit-toc p{margin:0}", build.CSS)
         self.assertIn(
             ".audit-toc ul{flex:1;min-width:0;display:flex;flex-wrap:wrap;"
-            "gap:.1em 1.2em}",
+            "gap:.1em 1em}",
             build.CSS)
         self.assertIn(".audit-toc li{margin:0}", build.CSS)
-        self.assertIn(".audit-page [id]{scroll-margin-top:163px}",
+        self.assertIn(".audit-page [id]{scroll-margin-top:131px}",
                       build.CSS)
         self.assertNotIn(".audit-page [id]{scroll-margin-top:177px}",
                          build.CSS)
         self.assertNotIn(".audit-page [id]{scroll-margin-top:288px}",
+                         build.CSS)
+        self.assertNotIn(".audit-page [id]{scroll-margin-top:163px}",
                          build.CSS)
         self.assertNotIn(
             "@media (min-width:641px){.audit-toc ul{columns:2;",
@@ -16201,19 +16214,21 @@ class TestChecker(unittest.TestCase):
             "@media (min-width:641px){.audit-toc{position:sticky;"
             "top:71px;z-index:5;display:flex;",
             worker)
-        self.assertIn(".audit-page [id]{scroll-margin-top:163px}", worker)
+        self.assertIn(".audit-page [id]{scroll-margin-top:131px}", worker)
         self.assertNotIn("scroll-margin-top:177px", worker)
+        self.assertNotIn("scroll-margin-top:163px", worker)
         self.assertIn(".audit-toc a{font-weight:600}", worker)
         self.assertNotIn("scroll-margin-top:288px", worker)
-        # Markup untouched: still one nav, 7 links, same order, the
-        # Track record link still the last li.
+        # Markup: still one nav, 7 links, same order, the Track
+        # record link still the last li; the four long labels are
+        # shortened per #340 (see above).
         audit = pages["/audit/"]
         self.assertEqual(audit.count('<nav class="audit-toc"'), 1)
         toc = audit[audit.index('<nav class="audit-toc"'):
                     audit.index("</nav>")]
         self.assertEqual(toc.count("<li>"), 7)
         self.assertIn(
-            '<li><a href="#track-record">Track record — 41 entries</a>'
+            '<li><a href="#track-record">Track record (41)</a>'
             '</li>\n</ul>', audit)
 
     def test_verdict276_unstyled_spots_are_styled(self):
