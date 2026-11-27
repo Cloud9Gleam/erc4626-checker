@@ -9653,13 +9653,14 @@ class TestChecker(unittest.TestCase):
             "line-height:1.45;text-wrap:balance}",
             build.CSS)
         # Exactly one .hero-checks-note rule, and the pretty count
-        # elsewhere is unchanged (this fix adds a balance, not a
-        # fifth pretty). The selector carries .hero-top on purpose:
+        # elsewhere is unchanged by THIS fix (it adds a balance, not
+        # a pretty — the fifth pretty is #337's wide-prose rule).
+        # The selector carries .hero-top on purpose:
         # ".hero-top p" is (0,1,1) and beats a bare class (0,1,0),
         # so a bare rule loses and the computed style stays pretty
         # — measured on the first build of this round.
         self.assertEqual(build.CSS.count(".hero-checks-note{"), 1)
-        self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
+        self.assertEqual(build.CSS.count("text-wrap:pretty"), 5)
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         # The structural facts: (a) the aside sits INSIDE .hero-top
         # — the segment from its open tag to the aside has one more
@@ -9681,6 +9682,56 @@ class TestChecker(unittest.TestCase):
         note = ('<p class="hero-checks-note">Exact integers only — '
                 'no floats, no rounding, no live chain read.</p>')
         self.assertIn(note, home)
+
+    def test_verdict337_wide_prose_fills_the_card(self):
+        # Visual verdict #337 item 1 (2026-11-27, checker-improvement):
+        # the full-width result cards read half-empty — the Rounding
+        # and Donation blurbs sit at ~440-600px lines inside a 946px
+        # card, and the shares-note legend at three ~480px lines.
+        # The site-wide main p{max-width:80ch} cap clamps the element
+        # to ~715px, and the desktop main p{text-wrap:balance} rule
+        # evens the two lines instead of filling the box — lifting the
+        # cap alone changes nothing (probe-verdict337c.py). The fix
+        # lifts BOTH, scoped to the wide cards and the shares-note:
+        # max-width:none lets the element span the card,
+        # text-wrap:pretty lets the first line run to the card edge.
+        # Measured hidden_files/probe-verdict337e.py at 1919px:
+        # shares-note 480/492/454 -> 935/495; Rounding desc 441/484
+        # -> 853/72 ("every call." tail, two words, accepted);
+        # Donation desc 601/602 -> 872/331 (noprot BREACH 698/710 ->
+        # 872/536); half-width descs byte-identical. Copy unchanged.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        rule = (".check-card--wide .check-desc,.check-card--wide "
+                ".check-rule,main p.shares-note{max-width:none;"
+                "text-wrap:pretty}")
+        self.assertIn(rule, build.CSS)
+        # The override is scoped: no bare .check-desc / .check-rule
+        # rule lifts the cap for every card — the four half-width
+        # cards keep balance and their even lines. The only
+        # "shares-note{max-width:none" occurrence is inside this
+        # combined rule.
+        joined = "".join(build.CSS)
+        self.assertEqual(joined.count(".check-desc{max-width:none"), 0)
+        self.assertEqual(joined.count(".check-rule{max-width:none"), 0)
+        self.assertEqual(joined.count("shares-note{max-width:none"), 1)
+        # Exactly one wide-prose rule; the pretty count grows 4 -> 5
+        # (hero-top, audit, research, the #258 query, this rule)
+        # while balance stays 4 and the 80ch cap itself is untouched.
+        self.assertEqual(build.CSS.count(rule), 1)
+        self.assertEqual(build.CSS.count("text-wrap:pretty"), 5)
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 4)
+        self.assertIn("main p{max-width:80ch}", build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(rule, worker)
+        # Exactly two wide cards on the checker page (Rounding and
+        # Donation); the other four stay half-width.
+        page = dict((p, b) for p, t, d, k, b in build.PAGES)["/checker/"]
+        self.assertEqual(page.count("check-card check-card--wide"), 2)
+        self.assertIn("class='shares-note'", page)
 
     def test_hero_stats_strip_spans_full_hero_width(self):
         # Visual verdict #173 (2026-11-24): the strip moves OUT of
@@ -13675,16 +13726,19 @@ class TestChecker(unittest.TestCase):
         # No unscoped global text-wrap rule: balance occurs exactly
         # four times (the h1 heading rule, this media query, the
         # #329 pay-note rule, and the #336 hero-checks-note rule)
-        # and pretty exactly four times
-        # (hero-top, audit, research, this query).
+        # and pretty exactly five times
+        # (hero-top, audit, research, this query, the #337
+        # wide-prose rule).
         # Verdict #278 (2026-11-26): main .notice joined both selectors — the rollout
         # had covered only p/li, so the /patterns/ amber .notice div (direct text, not
         # a <p>) wrapped unbalanced and its last line dangled at 0.215 in the real browser.
         # The counts above are unchanged: the selectors grew, no new rule was added.
         # Checker-improvement #336 adds a fourth balance occurrence
-        # (the hero-checks-note rule); pretty stays at four.
+        # (the hero-checks-note rule); #337 adds a fifth pretty
+        # occurrence (the wide-prose rule), so the counts below
+        # are 4 and 5.
         self.assertEqual(build.CSS.count("text-wrap:balance"), 4)
-        self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
+        self.assertEqual(build.CSS.count("text-wrap:pretty"), 5)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn(balance, worker)
@@ -13726,9 +13780,11 @@ class TestChecker(unittest.TestCase):
         # The selectors grew; no new text-wrap rule was added.
         # Checker-improvement #329 adds a third balance occurrence
         # (the /audit/ pay-note rule); #336 adds a fourth
-        # (the hero-checks-note rule), so the count below is 4.
+        # (the hero-checks-note rule), so the balance count below
+        # is 4. #337 adds a fifth pretty occurrence (the wide-prose
+        # rule), so the pretty count below is 5.
         self.assertEqual(build.CSS.count("text-wrap:balance"), 4)
-        self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
+        self.assertEqual(build.CSS.count("text-wrap:pretty"), 5)
         balance = ("@media (min-width:641px){main p,main li,main .notice,"
                    "footer p{text-wrap:balance}}")
         pretty = ("@media (max-width:640px){main p,main li,main .notice,"
