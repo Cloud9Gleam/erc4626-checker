@@ -16870,7 +16870,11 @@ class TestChecker(unittest.TestCase):
             "padding:.05em 0 .05em .55em;margin:1.8em 0 .6em}",
             build.CSS)
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
-        self.assertTrue(audit.startswith('<div class="audit-page">'))
+        # Checker-improvement #356 (2026-11-28): the wrapper carries a
+        # second class, audit-sales, scoping the prose-width lift — the
+        # other .audit-page pages (gate checks, poc-packaging) keep the
+        # plain wrapper and the 80ch cap.
+        self.assertTrue(audit.startswith('<div class="audit-page audit-sales">'))
         self.assertTrue(audit.rstrip().endswith("</div>"))
         self.assertEqual(audit.count("<h2 "), 7)
         worker = build.worker_js(
@@ -16878,7 +16882,54 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".audit-page h2{font-size:1.45em;", worker)
         # Pages ride in worker.js JSON-escaped, so the wrapper's
         # quotes appear backslash-escaped there.
-        self.assertIn('<div class=\\"audit-page\\">', worker)
+        self.assertIn('<div class=\\"audit-page audit-sales\\">', worker)
+
+    def test_verdict356_audit_sales_prose_fills_the_card(self):
+        # Visual verdict #356 item 1 (2026-11-28, checker-improvement):
+        # /audit/ prose ran at the site-wide 80ch cap (~778px) inside a
+        # 946px card — a 168px dead strip on the right of every
+        # paragraph, while the form inputs in the same card run 896px.
+        # Measured with hidden_files/measure-verdict356-audit.py at
+        # 1919px: intro 778, Start 778, Scope li 778, pay-box clock p
+        # 778, track-intro 814 border-box; card 946, inputs 896. The
+        # cap is lifted for this page's prose only, via the audit-sales
+        # class on the /audit/ wrapper. text-wrap stays pretty (the
+        # .audit-page rule): pretty fills each line to the card edge,
+        # so no balance change is needed — contrast #337, where the
+        # checker cards also needed the balance lift.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        rule = ".audit-sales p,.audit-sales li{max-width:none}"
+        self.assertIn(rule, build.CSS)
+        self.assertEqual("".join(build.CSS).count(rule), 1)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(rule, worker)
+        # The lift is scoped: only /audit/ carries audit-sales. The
+        # other .audit-page pages are long-form reading pages where
+        # the 80ch cap stays — their wrappers keep the plain class.
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        self.assertTrue(pages["/audit/"].startswith(
+            '<div class="audit-page audit-sales">'))
+        for path in ("/poc-packaging/", "/gate-check/robinhood/",
+                     "/gate-check/ondo-perps/", "/gate-check/usdai/",
+                     "/gate-brief/issue-1/"):
+            self.assertIn('<div class="audit-page">', pages[path])
+            self.assertNotIn("audit-sales", pages[path])
+        # The /audit/ wrapper appears once in the worker (JSON-escaped
+        # quotes); the rule itself rides once per inlined page, counted
+        # by the verdict356 harness, not here.
+        self.assertEqual(
+            worker.count('<div class=\\"audit-page audit-sales\\">'), 1)
+        # The site-wide 80ch cap itself is untouched, and the
+        # .audit-page pretty rule still governs the wrapping.
+        self.assertIn("main p{max-width:80ch}", build.CSS)
+        self.assertIn("main li{max-width:80ch}", build.CSS)
+        self.assertIn(
+            ".audit-page p,.audit-page li,.audit-page .track-lead,"
+            ".audit-page .track-detail{text-wrap:pretty}", build.CSS)
 
     def test_audit_trailing_list_has_no_bottom_margin(self):
         # Visual verdict #112/#113 (2026-11-19): the /audit/ main card
