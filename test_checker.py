@@ -5550,7 +5550,12 @@ class TestChecker(unittest.TestCase):
             "var m=btn.parentElement.querySelector('[role=status]');",
             audit)
         self.assertIn(
-            "var setPayStatus=function(t){if(m)m.textContent=t;};", audit)
+            # Checker-improvement #349: the feedback now also clears
+            # itself after 3000ms (see test_verdict349).
+            "var setPayStatus=function(t){if(m){m.textContent=t;"
+            "if(m._ct)clearTimeout(m._ct);"
+            "m._ct=setTimeout(function(){m.textContent='';},3000);}};",
+            audit)
         self.assertNotIn(
             "var m=document.getElementById('pay-copy-status');", audit)
         self.assertNotIn(
@@ -5589,6 +5594,97 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             "var a=el?(el.getAttribute('data-full')||el.textContent.trim()):'';",
             audit)
+
+    def test_verdict349_copy_feedback_clears_after_three_seconds(self):
+        # Checker-improvement #349 (2026-11-27, visual verdict #348
+        # residual): copy feedback used to stay lit forever -- click
+        # Copy in the Price box, scroll back later, "Payment address
+        # copied." is still there (and after #348, two buttons can be
+        # lit at once). All three span-writing copy functions now
+        # clear their span after 3000ms, the same rule
+        # copyResultsLink's show() already uses: the timer id rides
+        # on the span (_ct), cleared before a new one is set, so a
+        # re-click restarts the countdown. Success and failure
+        # messages share the one timer rule; the delay is 3000ms in
+        # all four functions.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        body = build.checker_body()
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # copyPayAddr: setPayStatus writes the span, schedules a
+        # 3000ms clear on the span's own _ct timer, clearTimeout
+        # first so a re-click restarts the countdown.
+        self.assertIn(
+            "var setPayStatus=function(t){if(m){m.textContent=t;"
+            "if(m._ct)clearTimeout(m._ct);"
+            "m._ct=setTimeout(function(){m.textContent='';},3000);}};",
+            audit)
+        self.assertNotIn(
+            "var setPayStatus=function(t){if(m)m.textContent=t;};", audit)
+        self.assertEqual(worker.count(
+            "var setPayStatus=function(t){if(m){m.textContent=t;"
+            "if(m._ct)clearTimeout(m._ct);"
+            "m._ct=setTimeout(function(){m.textContent='';},3000);}};"), 1)
+        # copyCodeBlock: the same helper shape, all three writes
+        # (success + both failure paths) routed through it.
+        self.assertIn(
+            "var setCodeStatus=function(t){if(m){m.textContent=t;"
+            "if(m._ct)clearTimeout(m._ct);"
+            "m._ct=setTimeout(function(){m.textContent='';},3000);}};",
+            body)
+        self.assertIn(
+            "var done=function(){setCodeStatus('Copied.');};", body)
+        self.assertIn(
+            "setCodeStatus('Copy failed \\u2014 select the text manually.');}",
+            body)
+        self.assertIn(
+            "if(!t){setCodeStatus('Copy failed \\u2014 select the text manually.');return;}",
+            body)
+        self.assertNotIn("if(m)m.textContent='Copied.';", body)
+        self.assertNotIn(
+            "if(m)m.textContent='Copy failed \\u2014 select the text manually.';",
+            body)
+        # The checker body (and its copyCodeBlock) is embedded twice
+        # in the Worker: the static page and the dynamic template.
+        self.assertEqual(worker.count(
+            "var setCodeStatus=function(t){if(m){m.textContent=t;"
+            "if(m._ct)clearTimeout(m._ct);"
+            "m._ct=setTimeout(function(){m.textContent='';},3000);}};"), 2)
+        self.assertNotIn("if(m)m.textContent='Copied.';", worker)
+        # copyAuditRequest: the same helper shape on #audit-copy-status.
+        self.assertIn(
+            "var setAuditStatus=function(t){if(status){status.textContent=t;"
+            "if(status._ct)clearTimeout(status._ct);"
+            "status._ct=setTimeout(function(){status.textContent='';},3000);}};",
+            audit)
+        self.assertIn(
+            "var done=function(){setAuditStatus('Request text copied — paste it into an email to outreach@n1netw3n.live.');};",
+            audit)
+        self.assertIn(
+            "setAuditStatus('Copy failed — select the form text manually.');",
+            audit)
+        self.assertNotIn(
+            "if(status)status.textContent='Request text copied", audit)
+        self.assertNotIn(
+            "if(status)status.textContent='Copy failed", audit)
+        self.assertEqual(worker.count(
+            "var setAuditStatus=function(t){if(status){status.textContent=t;"
+            "if(status._ct)clearTimeout(status._ct);"
+            "status._ct=setTimeout(function(){status.textContent='';},3000);}};"), 1)
+        # copyResultsLink is the precedent, untouched: its show()
+        # still restores the button label after 3000ms.
+        self.assertIn(
+            "btn._ct=setTimeout(function(){btn.textContent=btn._label;},3000);",
+            worker)
+        # One delay everywhere: six 3000ms copy timers in the Worker
+        # (pay 1 + code 2 + audit 1 + link 2 -- code and link are each
+        # embedded twice, static page + dynamic template).
+        self.assertEqual(worker.count("},3000);"), 6)
 
     def test_verdict321_audit_after_pay_link_nowrap(self):
         # Checker-improvement #321 (2026-11-27, visual verdict #320
