@@ -13265,9 +13265,12 @@ class TestChecker(unittest.TestCase):
         # keeps its margin only; the bar and the indent are gone
         # in both render paths, and the tables still render.
         # The Share-price "(unchanged)" wrap narrows with the
-        # reclaimed 17px (about 21px short to about 5px) but does
-        # not close on the default preset -- a pixel property,
-        # pinned by measure-verdict339.py, not here.
+        # reclaimed 17px: the headless shell still wraps it by
+        # about 5px (about 277px of text in a 272px cell), but
+        # the real browser fits it on one line with about 9-10px
+        # spare -- the known shell-runs-wider difference (#181).
+        # The wrap is closed where users see it; the shell
+        # number is pinned by measure-verdict339.py, not here.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
