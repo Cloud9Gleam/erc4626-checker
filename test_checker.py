@@ -5379,6 +5379,53 @@ class TestChecker(unittest.TestCase):
         self.assertIn(">Copy address</button>", audit)
         self.assertIn("https://basescan.org/address/" + build.PAY_ADDR, audit)
         self.assertIn("Double-check the address before sending", audit)
+    def test_verdict363_pay_qr_caption_fills_qr_height(self):
+        # Checker-improvement #363 (2026-11-28, visual verdict #362
+        # item 4): the caption column (~136px: scan text + warning
+        # note) was centred against the 200px QR, leaving ~32px of
+        # empty green below the note on the right while the QR ran to
+        # 16px above the pay-box bottom -- a 48px dead band at the box
+        # bottom, ragged against the QR edge. Desktop only (the mobile
+        # stacked column is taller than the QR and has no band): the
+        # figure stretches the caption to the QR height and the note
+        # is pinned to the caption bottom, so the note bottom lands on
+        # the QR bottom and the box bottom edge is even. The pin is
+        # absolute positioning, not a flex column: the first attempt
+        # made the figcaption display:flex, which turned the inline
+        # <strong>50 USDC</strong> into its own flex item and orphaned
+        # it on a line of its own (scan text went from 2 to 4 lines).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Base rules untouched: centred row, 200px QR, stacked mobile.
+        self.assertIn(".pay-qr{display:flex;gap:1em;align-items:center;",
+                      build.CSS)
+        self.assertIn(".pay-qr svg{flex:0 0 auto;width:200px;height:200px;",
+                      build.CSS)
+        self.assertIn("@media (max-width:640px){.pay-qr{flex-direction:column;",
+                      build.CSS)
+        # Desktop pin: exactly one min-width rule, all three parts,
+        # and no flex-column fragment anywhere (the orphaning attempt).
+        self.assertEqual(build.CSS.count("@media (min-width:641px){.pay-qr{"), 1)
+        self.assertIn("@media (min-width:641px){.pay-qr{align-items:stretch}",
+                      build.CSS)
+        self.assertIn(".pay-qr figcaption{position:relative}", build.CSS)
+        self.assertIn(".pay-qr figcaption .pay-note{position:absolute;left:0;right:0;"
+                      "bottom:0;margin-top:0}}", build.CSS)
+        self.assertNotIn(".pay-qr figcaption{display:flex", build.CSS)
+        # The note keeps its base .6em top margin outside the desktop
+        # rule, so the mobile stacked layout still separates scan text
+        # from the note.
+        self.assertIn(".pay-qr figcaption .pay-note{display:block;margin-top:.6em;",
+                      build.CSS)
+        # The pin must not leak into the mobile query: the
+        # max-width:640px block still holds only the column direction.
+        m = build.CSS
+        mob = m[m.index("@media (max-width:640px){.pay-qr"):
+                m.index("@media (max-width:640px){.pay-qr") + 120]
+        self.assertNotIn("stretch", mob)
+        self.assertNotIn("position:absolute", mob)
 
     def test_verdict279_pay_area_has_visual_weight(self):
         # Checker-improvement #279 (2026-11-26, visual verdict #278
