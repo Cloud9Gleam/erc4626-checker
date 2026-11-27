@@ -6292,22 +6292,26 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn('Full payment details, including the QR code, '
                          'are in', worker)
 
-    def test_verdict368_audit_after_pay_same_address_note(self):
-        # Checker-improvement #368 (2026-11-28, visual verdict #365
-        # item 7): the same PAY_ADDR is shown twice on /audit/ -- in
+    def test_verdict369_audit_after_pay_button_on_own_line(self):
+        # Checker-improvement #369 (2026-11-28, visual verdict #369
+        # item 1): the same PAY_ADDR is shown twice on /audit/ -- in
         # the form's "After you pay" block (#319) and in the Price
         # pay-row -- with a "Copy address" button each, and a payer
         # could reasonably wonder which copy to use, or whether the
         # two are different addresses. The duplication stays (#319:
         # the form asks for the hash before the pay-box, so the
-        # address must be visible in the form), but the form block
-        # now says "(same address)" right after its Copy button, so
-        # either copy works without comparing 42 hex chars. The note
-        # is a nowrap span: at 360px it drops to its own line rather
-        # than splitting mid-phrase (baseline
-        # measure-verdict368b.py: 1919px the note rides on the button
-        # line; 360px the button line has ~105px free and the note
-        # needs ~100px, so nowrap keeps it whole either way).
+        # address must be visible in the form), and the form block
+        # says "(same address)" right after its Copy button (#368),
+        # so either copy works without comparing 42 hex chars. The
+        # note is a nowrap span: at 360px it drops to its own line
+        # rather than splitting mid-phrase. #369's change: the
+        # button used to share line 1 with the address only when
+        # font metrics allowed (a real browser measured address +
+        # button at ~864/866px of inner width, so the button
+        # squeezed onto line 1 flush to the box edge and the note
+        # orphaned onto line 2). The break is now in the markup:
+        # line 1 is intro + address, line 2 is button + status +
+        # note, line 3 is the second sentence.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -6317,8 +6321,9 @@ class TestChecker(unittest.TestCase):
         block = audit[audit.index('class="audit-after-pay"'):]
         block = block[:block.index('</p>')]
         # The note is inside the block, after the button and its
-        # status span, before the <br> that starts the second
-        # sentence.
+        # status span. The block has exactly two <br>s: one after
+        # the address (line 1 = intro + address, line 2 = button +
+        # status + note) and one before the second sentence.
         self.assertIn('<span class="nowrap">(same address)</span>',
                       block)
         self.assertLess(
@@ -6327,9 +6332,19 @@ class TestChecker(unittest.TestCase):
         self.assertLess(
             block.index('<span id="audit-pay-copy-status" role="status"></span>'),
             block.index('<span class="nowrap">(same address)</span>'))
+        self.assertEqual(block.count('<br>'), 2)
+        self.assertLess(
+            block.index('</code><br>'),
+            block.index('onclick="copyPayAddr(this)">Copy address</button>'))
+        self.assertLess(
+            block.index('</code><br>'),
+            block.index('<span class="nowrap">(same address)</span>'))
         self.assertLess(
             block.index('<span class="nowrap">(same address)</span>'),
-            block.index('<br>'))
+            block.index('Then paste the transaction hash below.'))
+        self.assertLess(
+            block.index('<span class="nowrap">(same address)</span>'),
+            block.rindex('<br>'))
         # The note's claim is true: both displayed addresses are the
         # same PAY_ADDR constant, and both buttons copy the same
         # #pay-addr data-full.
