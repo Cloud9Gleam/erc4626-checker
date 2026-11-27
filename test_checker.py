@@ -2716,6 +2716,12 @@ class TestChecker(unittest.TestCase):
         import build
         js = build.checker_results_html_js()
         # B. Pass bound: bound tail in, plain tail out, both renderers.
+        # Checker-improvement #355 (2026-11-28, visual verdict #352
+        # item 3): the legend's red clause now branches on whether
+        # any row breaches -- noprot keeps "values in red breach
+        # it.", a clean table says "nothing in this table breaches
+        # it." instead (full branch matrix in
+        # test_verdict355_pass_bound_legend_branches_on_breach).
         for label, run in (
                 ("default", run_all(Vault(decimals_offset=6,
                                           min_deposit=1_000_000,
@@ -2726,10 +2732,19 @@ class TestChecker(unittest.TestCase):
                 run, vic=100_000_000_000, off=6 if label == "default" else 0,
                 mn=1_000_000 if label == "default" else 0,
                 fee=1000 if label == "default" else 0)
-            self.assertIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.", html)
+            if label == "noprot":
+                self.assertIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.", html)
+                self.assertNotIn("nothing in this table breaches", html)
+            else:
+                self.assertIn("nothing in this table breaches&nbsp;it.",
+                              html)
+                self.assertNotIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.",
+                                 html)
             self.assertNotIn("values in red breach it.", html)
         self.assertIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.", js)
         self.assertNotIn("values in red breach it.", js)
+        self.assertIn("nothing in this table breaches&nbsp;it.", js)
+        self.assertNotIn("nothing in this table breaches it.", js)
         # C + D. Notice CTA anchors, bound in, plain out, both renderers.
         self.assertIn("See what a failing&nbsp;vault&nbsp;looks&nbsp;like</a>",
                       js)
@@ -2753,6 +2768,74 @@ class TestChecker(unittest.TestCase):
                       html_noprot)
         self.assertNotIn("gridlines at 25%, 50%, 75%.", html_noprot)
 
+
+
+    def test_verdict355_pass_bound_legend_branches_on_breach(self):
+        # Checker-improvement #355 (2026-11-28, visual verdict #352
+        # item 3): the donation table's Pass bound legend used to say
+        # "values in red breach it." on every page -- including the
+        # default ALL PASS page, where nothing is red. The clause now
+        # branches on the exact condition that paints a cell red
+        # (attacker profits, or victim loss over the bound): a
+        # breaching table keeps the red clause, a clean table says
+        # "nothing in this table breaches it." Error rows carry no
+        # values, so a table of only errors takes the clean clause
+        # even though the check fails -- the branch keys on red
+        # cells, not on pass/fail. Both renderers (Python
+        # results_html, Worker resultsHTML) change together.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        js = build.checker_results_html_js()
+        cases = (
+            ("default", run_all(Vault(decimals_offset=6,
+                                      min_deposit=1_000_000,
+                                      perf_fee_bps=1000)),
+             6, 1_000_000, 1000, "clean"),
+            ("noprot", run_all(Vault(decimals_offset=0, min_deposit=0,
+                                     perf_fee_bps=0)),
+             0, 0, 0, "red"),
+            ("offset18", run_all(Vault(decimals_offset=18,
+                                       min_deposit=1_000_000,
+                                       perf_fee_bps=1000)),
+             18, 1_000_000, 1000, "clean"),
+        )
+        for label, run, off, mn, fee, want in cases:
+            html = build.results_html(
+                run, vic=100_000_000_000, off=off, mn=mn, fee=fee)
+            self.assertEqual(html.count("Pass bound:"), 1, label)
+            if want == "red":
+                self.assertIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.",
+                              html)
+                self.assertNotIn("nothing in this table breaches", html)
+                # The breaching rows really are marked red.
+                self.assertIn("class='breach'", html)
+            else:
+                self.assertIn("nothing in this table breaches&nbsp;it.",
+                              html)
+                self.assertNotIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.",
+                                 html)
+                self.assertNotIn("class='breach'", html)
+        # Error rows only: check fails, no value is red, clean clause.
+        errored = build.results_html(
+            [{"name": "donation_inflation", "pass": False, "detail": [
+                {"donation": 1_000_000, "victim_loss": None,
+                 "attacker_net": None, "error": "below minimum deposit"},
+                {"donation": 1_000_000_000, "victim_loss": None,
+                 "attacker_net": None, "error": "below minimum deposit"}]}],
+            vic=500_000, off=0, mn=1_000_000, fee=0)
+        self.assertIn("nothing in this table breaches&nbsp;it.", errored)
+        self.assertNotIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.", errored)
+        self.assertNotIn("class='breach'", errored)
+        # Worker JS renderer: one branch, both clause strings, the
+        # exact red-cell condition (attacker profit OR victim loss
+        # over the bound) -- same condition as the Python renderer.
+        self.assertEqual(js.count("_anyBreach"), 2)
+        self.assertIn("values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.", js)
+        self.assertIn("nothing in this table breaches&nbsp;it.", js)
+        self.assertIn("BigInt(row.attacker_net)>0n", js)
+        self.assertIn("BigInt(row.victim_loss)>1000n", js)
     def test_verdict248_notice_tails_are_bound(self):
         # Checker-improvement 2026-11-25 (#248, visual verdict #248
         # item 2): the "What to do next" first paragraph ended on a
@@ -15880,8 +15963,16 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("Breaches pass bound", js)
         self.assertIn("\\u2713", js)
         self.assertIn("class='ok' title='Within pass bound'", js)
-        self.assertIn("\\u2713 means within the pass bound; values&nbsp;in&nbsp;"
-                      "red&nbsp;breach&nbsp;it.", js)
+        # Checker-improvement #355 (2026-11-28, visual verdict
+        # #352 item 3): the legend's red clause now branches on
+        # _anyBreach, so the JS template no longer carries the
+        # sentence contiguously -- prefix and both clause
+        # strings are pinned instead (render-time branches are
+        # pinned in test_verdict355_...).
+        self.assertIn("\\u2713 means within the pass bound; \"+(_anyBreach?"
+                      "\"values&nbsp;in&nbsp;red&nbsp;breach&nbsp;it.\":"
+                      "\"nothing in this table breaches&nbsp;it.\")",
+                      js)
         self.assertIn(".ok{color:#0a7d2c;font-weight:700}", build.CSS)
 
     def test_donation_note_column_is_capped(self):
