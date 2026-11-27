@@ -9622,6 +9622,66 @@ class TestChecker(unittest.TestCase):
         self.assertLess(aside.index("Minimum viable deposit"),
                         aside.index("hero-checks-note"))
 
+    def test_verdict336_hero_checks_note_uses_balance_wrap(self):
+        # Visual verdict #336 (2026-11-27, measured
+        # hidden_files/measure-verdict336-hero.py at 1919px): the
+        # hero checks panel's note ended "no live chain read." alone
+        # on line 2 — 122.6px under a 303.3px first line.
+        # text-wrap:pretty does NOT fix this: the aside sits INSIDE
+        # .hero-top (its close comes after </aside>), so ".hero-top
+        # p{text-wrap:pretty}" already applies — computed style
+        # verified "pretty" on the pre-change build — and pretty
+        # only guards a lone-word last line, not a four-word one.
+        # The global desktop "main p{text-wrap:balance}" never
+        # reaches it either: the hero sits OUTSIDE <main>. Balance
+        # is right HERE despite the #117 lesson: #117's objection
+        # was the 634px left column, where balance shrank every
+        # line and left a ~240px empty band — the note is a two-line
+        # tail element in a fixed 320px panel, so balance only evens
+        # its two lines with no band cost. The selector carries
+        # .hero-top on purpose: ".hero-top p" is (0,1,1) and beats a
+        # bare class (0,1,0), so a bare rule loses and the computed
+        # style stays pretty — measured on the first build of this
+        # round. Copy is unchanged.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            ".hero-top .hero-checks-note{margin:.7em 0 0;padding-top:.7em;"
+            "border-top:1px solid rgba(255,255,255,.28);font-size:.92em;"
+            "line-height:1.45;text-wrap:balance}",
+            build.CSS)
+        # Exactly one .hero-checks-note rule, and the pretty count
+        # elsewhere is unchanged (this fix adds a balance, not a
+        # fifth pretty). The selector carries .hero-top on purpose:
+        # ".hero-top p" is (0,1,1) and beats a bare class (0,1,0),
+        # so a bare rule loses and the computed style stays pretty
+        # — measured on the first build of this round.
+        self.assertEqual(build.CSS.count(".hero-checks-note{"), 1)
+        self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        # The structural facts: (a) the aside sits INSIDE .hero-top
+        # — the segment from its open tag to the aside has one more
+        # <div than </div>, and hero-top's close follows </aside> —
+        # so ".hero-top p{text-wrap:pretty}" already reaches the note.
+        seg_start = home.index('<div class="hero-top">')
+        seg_end = home.index('<aside class="hero-checks">')
+        seg = home[seg_start:seg_end]
+        self.assertEqual(seg.count("<div"), seg.count("</div>") + 1)
+        self.assertLess(home.index("</aside>"),
+                        home.index("</div>", home.index("</aside>")))
+        # (b) page() renders the hero before <main>, so the global
+        # "main p{text-wrap:balance}" cannot reach it either.
+        rendered = build.page("T", "d", "k", "<p>x</p>", "/", h1=False,
+                              hero='<div class="hero-top"><p>y</p></div>'
+                              '<aside class="hero-checks">z</aside>')
+        self.assertLess(rendered.index("hero-checks"),
+                        rendered.index("<main"))
+        note = ('<p class="hero-checks-note">Exact integers only — '
+                'no floats, no rounding, no live chain read.</p>')
+        self.assertIn(note, home)
+
     def test_hero_stats_strip_spans_full_hero_width(self):
         # Visual verdict #173 (2026-11-24): the strip moves OUT of
         # the left column. The #64/#71 placement (strip at the column
@@ -13613,14 +13673,17 @@ class TestChecker(unittest.TestCase):
                       build.CSS)
         self.assertIn(".hero-top p{text-wrap:pretty}", build.CSS)
         # No unscoped global text-wrap rule: balance occurs exactly
-        # three times (the h1 heading rule, this media query, and the
-        # #329 pay-note rule) and pretty exactly four times
+        # four times (the h1 heading rule, this media query, the
+        # #329 pay-note rule, and the #336 hero-checks-note rule)
+        # and pretty exactly four times
         # (hero-top, audit, research, this query).
         # Verdict #278 (2026-11-26): main .notice joined both selectors — the rollout
         # had covered only p/li, so the /patterns/ amber .notice div (direct text, not
         # a <p>) wrapped unbalanced and its last line dangled at 0.215 in the real browser.
         # The counts above are unchanged: the selectors grew, no new rule was added.
-        self.assertEqual(build.CSS.count("text-wrap:balance"), 3)
+        # Checker-improvement #336 adds a fourth balance occurrence
+        # (the hero-checks-note rule); pretty stays at four.
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 4)
         self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
@@ -13662,8 +13725,9 @@ class TestChecker(unittest.TestCase):
         self.assertIn("review prompts, not findings", page)
         # The selectors grew; no new text-wrap rule was added.
         # Checker-improvement #329 adds a third balance occurrence
-        # (the /audit/ pay-note rule), so the count below is 3.
-        self.assertEqual(build.CSS.count("text-wrap:balance"), 3)
+        # (the /audit/ pay-note rule); #336 adds a fourth
+        # (the hero-checks-note rule), so the count below is 4.
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 4)
         self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
         balance = ("@media (min-width:641px){main p,main li,main .notice,"
                    "footer p{text-wrap:balance}}")
