@@ -64,6 +64,12 @@ class TestChecker(unittest.TestCase):
         price = results["share_price_sanity"]["detail"][0]
         self.assertEqual(
             price, "1\u00a0USDC buys 1,000,000,000,000\u00a0shares (unchanged)")
+        # Checker-improvement #326: second probe row — what a plain
+        # 100,000 USDC deposit buys (the deposits the Pass rule
+        # names). Exact integers, NBSP-bound units, same as row 1.
+        big = results["share_price_sanity"]["detail"][1]
+        self.assertEqual(
+            big, "100,000\u00a0USDC buys 100,000,000,000,000,000\u00a0shares (unchanged)")
         for r in results.values():
             for line in r["detail"]:
                 if isinstance(line, str):
@@ -12703,7 +12709,8 @@ class TestChecker(unittest.TestCase):
         # Visual verdict #149 supersedes the hairline-only rows: the
         # table now carries the donation table's #e5e7eb grid, so the
         # desktop row-separator rule is deleted, not kept alongside.
-        self.assertIn(".check-table{margin:0;font-size:1em}", build.CSS)
+        self.assertIn(".check-table{margin:0;font-size:1em;width:100%}",
+                      build.CSS)
         self.assertIn(
             ".check-table td{border:1px solid #e5e7eb;"
             "padding:.28em .5em;vertical-align:top}", build.CSS)
@@ -12720,12 +12727,13 @@ class TestChecker(unittest.TestCase):
         # Row counts per preset: rounding renders as a plain sentence
         # paragraph, not a table row (visual verdict #158); MVD 4 rows
         # on the default preset (floor-binds line) vs 3 on noprot;
-        # preview 3; fee 1 line becomes 3 rows; share price 1.
+        # preview 3; fee 1 line becomes 3 rows; share price 2
+        # (checker-improvement #326: second probe row).
         for v, kwargs, n_rows in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
-                       perf_fee_bps=1000), {}, 11),
+                       perf_fee_bps=1000), {}, 12),
                 (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
-                 {"off": 0, "mn": 0, "fee": 0}, 10)):
+                 {"off": 0, "mn": 0, "fee": 0}, 11)):
             results = run_all(v)
             html = build.results_html(results, **kwargs)
             self.assertEqual(html.count("<p class='check-detail'>"), 0)
@@ -12951,6 +12959,10 @@ class TestChecker(unittest.TestCase):
             # shorten one step further — the card title, blurb and
             # Pass rule all say "preview" already.
             "no zero-share deposit": "no zero-share",
+            # Checker-improvement #326: the 16-char label starved
+            # the value column and wrapped "(unchanged)"; the verb
+            # is supplied by the row above ("1 USDC buys").
+            "100,000 USDC buys": "100,000\u00a0USDC",
         }
         # "min-deposit floor binds" only exists on the default preset
         # (noprot's min_deposit is 0, so the floor never binds) —
@@ -12964,8 +12976,16 @@ class TestChecker(unittest.TestCase):
                  {"off": 0, "mn": 0, "fee": 0})):
             html = build.results_html(run_all(v), **kwargs)
             for long_label, short_label in short.items():
-                self.assertIn(
-                    f"<td class='check-label'>{short_label}</td>", html)
+                if "\u00a0" in short_label:
+                    # NBSP-bound short labels render inside a nowrap
+                    # span (nbsp_units), not bare in the cell.
+                    self.assertIn(
+                        "<td class='check-label'><span class='nowrap'>"
+                        f"{short_label.replace(chr(160), ' ')}</span></td>",
+                        html)
+                else:
+                    self.assertIn(
+                        f"<td class='check-label'>{short_label}</td>", html)
                 self.assertNotIn(f"{long_label}</td>", html)
             if v.decimals_offset == 6:
                 for long_label, short_label in short_default_only.items():
@@ -13037,24 +13057,35 @@ class TestChecker(unittest.TestCase):
             f"yield 10,000.000000{NB}USDC, fee 1,000.000000{NB}USDC")
         # The model still emits exact integers; the share-price line
         # is now in buys units on every preset.
-        for off, want in ((0, "1,000,000"), (6, "1,000,000,000,000"),
-                          (18, "1,000,000,000,000,000,000,000,000")):
+        for off, want, big_want in (
+                (0, "1,000,000", "100,000,000,000"),
+                (6, "1,000,000,000,000", "100,000,000,000,000,000"),
+                (18, "1,000,000,000,000,000,000,000,000",
+                 "100,000,000,000,000,000,000,000,000,000")):
             v = Vault(decimals_offset=off,
                       min_deposit=1_000_000 if off else 0,
                       perf_fee_bps=1000 if off else 0)
-            price = {r["name"]: r for r in run_all(v)
-                     }["share_price_sanity"]["detail"][0]
+            detail = {r["name"]: r for r in run_all(v)
+                      }["share_price_sanity"]["detail"]
+            self.assertEqual(len(detail), 2)
+            price = detail[0]
             self.assertEqual(
                 price, f"1{NB}USDC buys {want}{NB}shares (unchanged)")
+            # Checker-improvement #326: second probe row, same
+            # unchanged form, exact integers on every preset.
+            big = detail[1]
+            self.assertEqual(
+                big, f"100,000{NB}USDC buys {big_want}{NB}shares (unchanged)")
         # Rendered HTML on all three presets: compact forms in,
         # digit walls and the old price line out. Assertions run on
         # the tag-stripped text: bolding splits the compact forms
         # ("<strong>1</strong>T shares") and nbsp_units wraps the
         # label ("<span class='nowrap'>1 USDC</span> buys").
-        for off, mn, fee, compact in (
-                (0, 0, 0, "10 billion shares"),
-                (6, 1_000_000, 1000, "1 trillion shares"),
-                (18, 1_000_000, 1000, "1×10²⁴ shares")):
+        for off, mn, fee, compact, big_compact in (
+                (0, 0, 0, "10 billion shares", "100 billion shares"),
+                (6, 1_000_000, 1000, "1 trillion shares",
+                 "100 quadrillion shares"),
+                (18, 1_000_000, 1000, "1×10²⁴ shares", "1×10²⁹ shares")):
             v = Vault(decimals_offset=off, min_deposit=mn,
                       perf_fee_bps=fee)
             html = build.results_html(
@@ -13062,6 +13093,13 @@ class TestChecker(unittest.TestCase):
             plain = re.sub(r"<[^>]+>", "", html)
             self.assertIn(compact, plain)
             self.assertIn("1 USDC buys", plain)
+            # Checker-improvement #326: second row compacts the same
+            # way (exact multiples spelled out, powers of ten as
+            # 1×10^N); the rendered label is the shortened "100,000
+            # USDC" (LABEL_SHORT drops the verb), directly abutting
+            # the compact value in tag-stripped text.
+            self.assertIn(big_compact, plain)
+            self.assertIn(f"100,000 USDC{big_compact}", plain)
             self.assertNotIn("price per 1,000,000", plain)
             self.assertNotIn("1,000,000,000,000,000,000,000,000", plain)
             if off == 6:
@@ -33412,6 +33450,17 @@ class TestChecker(unittest.TestCase):
                 self.assertIn("fee 1,000.000000", fee_detail)
                 self.assertIn("holder gain 9,000.000000", fee_detail)
             price_detail = results["share_price_sanity"]["detail"][0]
+            # Checker-improvement #326: the second probe row is
+            # preset-dependent the same way (100,000x the 1-USDC
+            # figure — the same price at deposit scale, unchanged
+            # across the second deposit in all three).
+            big_detail = results["share_price_sanity"]["detail"][1]
+            self.assertIn({0: "100,000,000,000",
+                           6: "100,000,000,000,000,000",
+                           18: "100,000,000,000,000,000,000,000,000,000"}[off],
+                          big_detail)
+            self.assertIn("(unchanged)", big_detail)
+            self.assertTrue(big_detail.startswith("100,000\u00a0USDC buys "))
             # What 1 USDC buys is preset-dependent: 1,000,000 shares
             # at offset 0, 1,000,000,000,000 at offset 6, and
             # 1,000,000,000,000,000,000,000,000 at offset 18 -- the
@@ -33430,6 +33479,64 @@ class TestChecker(unittest.TestCase):
             self.assertIn("1,000,000", min_detail[0])
             self.assertIn("1 base unit mints 1 share",
                           min_detail[2])
+
+    def test_verdict326_share_price_second_probe_row(self):
+        # Checker-improvement #326 (visual verdict #326 item 1):
+        # the Fee card (3 detail rows) sat ~51px taller than the
+        # Share-price card (1 row) on the default preset, tops
+        # aligned — the worst visual issue on the results page. The
+        # Share-price card gains a second probe row from the check's
+        # own run: what a plain 100,000 USDC deposit buys before and
+        # after the second deposit. Deliberately NOT the asset-price
+        # probe (price_before/price_after): at offset 6 it reads
+        # 0.000001 USDC per 1,000,000 shares and at offset 18 it
+        # reads 0.000000 — the zero-price unit visual verdict #174
+        # retired. The verdict still follows the asset-price probe;
+        # only the display stays in buys units, now at two sizes.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        NB = "\u00a0"
+        for off, mn, fee in ((0, 0, 0), (6, 1_000_000, 1000),
+                             (18, 1_000_000, 1000)):
+            v = Vault(decimals_offset=off, min_deposit=mn,
+                      perf_fee_bps=fee)
+            detail = {r["name"]: r for r in run_all(v)
+                      }["share_price_sanity"]["detail"]
+            self.assertEqual(len(detail), 2)
+            self.assertTrue(detail[0].startswith(f"1{NB}USDC buys "))
+            self.assertTrue(detail[1].startswith(
+                f"100,000{NB}USDC buys "))
+            self.assertIn("(unchanged)", detail[1])
+        # Rendered card (Python path): exactly two table rows, the
+        # new label bound as one nowrap span, Fee still three rows.
+        v = Vault(decimals_offset=6, min_deposit=1_000_000,
+                  perf_fee_bps=1000)
+        html = build.results_html(run_all(v))
+        share = html.split("Share-price sanity")[1].split("</section>")[0]
+        self.assertEqual(share.count("<tr>"), 2)
+        self.assertIn(
+            "<td class='check-label'><span class='nowrap'>1 USDC</span> buys</td>",
+            share)
+        self.assertIn(
+            "<td class='check-label'><span class='nowrap'>100,000 USDC</span></td>",
+            share)
+        # Checker-improvement #326 (label shortening): the full
+        # 16-char label starved the value column and wrapped
+        # "(unchanged)" to a second line; only the shortened label
+        # renders, the model string keeps "buys".
+        self.assertIn("100 quadrillion shares", re.sub(r"<[^>]+>", "", share))
+        fee = html.split("Fee conservation")[1].split("</section>")[0]
+        self.assertEqual(fee.count("<tr>"), 3)
+        # The changed-price form splits on the same generic branch:
+        # a synthetic "->" second row renders as label + value.
+        split = build.split_detail_line(
+            f"100,000{NB}USDC buys 100,000,000,000{NB}shares -> "
+            f"99,999,999,999{NB}shares")
+        self.assertEqual(split, [(f"100,000{NB}USDC buys",
+                                  f"100,000,000,000{NB}shares -> 99,999,999,999{NB}shares")])
 
     def test_vault_share_price_manipulation_guide_page(self):
         # Pins the guide page: the add() must exist with the claims
