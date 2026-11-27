@@ -12052,6 +12052,79 @@ class TestChecker(unittest.TestCase):
         # The span rides on the existing .nowrap rule; no new CSS.
         self.assertIn(".nowrap{white-space:nowrap}", build.CSS)
 
+    def test_verdict360_toc_hides_on_scroll_down(self):
+        # Checker-improvement #360 (2026-11-28, visual verdict #360
+        # item 1): during free scrolling the sticky "On this page"
+        # bar sliced text lines in half at its bottom edge -- 15 of
+        # 31 sampled scroll stops on /audit/ and 6 of 31 on /checker/
+        # parked a line half-cut under the 43px bar
+        # (hidden_files/measure-verdict360b.py). Un-sticking would
+        # reopen #328 (the TOC scrolling away on a 4948px page), so
+        # the bar instead slides away behind the header while the
+        # visitor scrolls down and returns on scroll up, near the
+        # top, or when keyboard focus enters it. The slide is
+        # transform-only: .toc-hidden tucks the bar -110% up, fully
+        # behind the 71px (or 107px) header at every width tier.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        # CSS: the slide lives on the sticky rule (desktop only),
+        # the hidden rule tucks the bar behind the header, reduced
+        # motion kills the transition; the sticky rule, the anchor
+        # clearance and the count of sticky elements are untouched
+        # -- still exactly three site-wide.
+        self.assertIn(
+            "font-size:.95em;transition:transform .2s ease}", build.CSS)
+        self.assertIn(
+            ".audit-toc.toc-hidden,.checker-toc.toc-hidden"
+            "{transform:translateY(-110%)}", build.CSS)
+        self.assertIn(
+            "@media (prefers-reduced-motion:reduce)"
+            "{.audit-toc,.checker-toc{transition:none}}", build.CSS)
+        self.assertIn(
+            "@media (min-width:641px){.audit-toc,.checker-toc{"
+            "position:sticky;top:71px;z-index:5;display:flex;", build.CSS)
+        self.assertIn(
+            ".audit-page [id],.checker-page [id]"
+            "{scroll-margin-top:131px}", build.CSS)
+        self.assertEqual(build.CSS.count("position:sticky"), 3)
+        # The script ships on the two pages that carry a TOC, once
+        # each, and nowhere else among the static pages; the worker
+        # carries a third copy inside CHECKER_TEMPLATE (the template
+        # behind every dynamic /checker/ render).
+        script = build.TOC_HIDE_SCRIPT
+        self.assertIn("toc-hidden", script)
+        self.assertEqual(pages["/audit/"].count(script), 1)
+        self.assertEqual(pages["/checker/"].count(script), 1)
+        self.assertEqual(pages["/"].count(script), 0)
+        self.assertEqual(worker.count(script), 3)
+        # The script's moving parts, pinned as strings: desktop-only
+        # gate (same 641px as the sticky rule), stick point from the
+        # computed top (71px/107px tiers stay exact), hide only once
+        # stuck, 8px dead zone on direction changes, show on scroll
+        # up / near the top / focus-in, re-measure on resize.
+        for frag in (
+                "matchMedia('(min-width:641px)')",
+                "getComputedStyle(b).top",
+                "toc-hidden",
+                "dirY",
+                "y-dirY>8",
+                "dirY-y>8",
+                "y<=80",
+                "addEventListener('scroll',onScroll,{passive:true})",
+                "addEventListener('resize'",
+                "addEventListener('focusin',show)",
+                "b.style.position='static'"):
+            self.assertIn(frag, script)
+        # Worker copy carries the CSS rules too.
+        for frag in ("transition:transform .2s ease",
+                     "transform:translateY(-110%)",
+                     "prefers-reduced-motion:reduce"):
+            self.assertIn(frag, worker)
+
     def test_footer_closes_the_page_tightly(self):
         # Visual verdict #69: the page ending felt loose -- the small
         # grey footer text floated ~34px below the white card and the
@@ -17217,7 +17290,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             "@media (min-width:641px){.audit-toc,.checker-toc{position:sticky;"
             "top:71px;z-index:5;display:flex;flex-wrap:wrap;"
-            "align-items:baseline;gap:.1em 1.1em;padding:.45em 1em;font-size:.95em}",
+            "align-items:baseline;gap:.1em 1.1em;padding:.45em 1em;font-size:.95em;"
+            "transition:transform .2s ease}",
             build.CSS)
         self.assertEqual(build.CSS.count(".audit-toc,.checker-toc{position:sticky"), 1)
         self.assertIn(".audit-toc p,.checker-toc p{margin:0}", build.CSS)
