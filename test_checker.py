@@ -5333,6 +5333,58 @@ class TestChecker(unittest.TestCase):
         self.assertIn('.audit-after-pay a{white-space:nowrap}', worker)
         self.assertNotIn('.audit-toc a{white-space:nowrap}', worker)
 
+    def test_verdict322_header_brand_mark_and_sticky(self):
+        # Checker-improvement #322 (2026-11-27, visual verdict #322
+        # item 2): the nav brand was plain ~20px "Hatch Worker" text
+        # with no mark anywhere on the page, and the header was not
+        # sticky -- after one screen of scroll the nav was gone
+        # (baseline measure-verdict322.py: header top -1000 after
+        # scrollTo(0,1000); anchor jumps landed flush at 0.2px).
+        # The header now carries the favicon mark and stays pinned.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # The mark IS the favicon geometry: same green rounded square
+        # + white check, only re-quoted and aria-hidden.
+        mark = build.BRAND_MARK_SVG
+        self.assertEqual(
+            mark.replace(' aria-hidden="true"', "").replace('"', "'"),
+            build.FAVICON_SVG)
+        # The mark sits inside the .brand link, exactly once, before
+        # the text; the brand text itself is unchanged.
+        self.assertEqual(build.NAV.count(mark), 1)
+        self.assertIn('class="brand" href="/">' + mark + 'Hatch Worker</a>',
+                      build.NAV)
+        self.assertEqual(build.NAV.count('Hatch Worker</a>'), 1)
+        # Sticky header + anchored-section clearance + mark sizing.
+        self.assertIn('position:sticky;top:0;z-index:10', build.CSS)
+        self.assertIn('[id]{scroll-margin-top:84px}', build.CSS)
+        self.assertIn('.brand svg{width:1.3em;height:1.3em;'
+                      'vertical-align:-.22em;margin-right:.45em}', build.CSS)
+        # Exactly two sticky elements site-wide: the header and the
+        # bottom-sticky run bar (z-index 5) -- the header paints
+        # above it.
+        self.assertEqual(build.CSS.count('position:sticky'), 2)
+        self.assertIn('.run-bar{grid-column:1 / -1;position:sticky;'
+                      'top:calc(100vh - 89px);z-index:5;', build.CSS)
+        # Worker copy carries the rules and the mark (the /checker/
+        # page is served by the worker, not a static file).
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('position:sticky;top:0;z-index:10', worker)
+        self.assertIn('[id]{scroll-margin-top:84px}', worker)
+        self.assertIn('.brand svg{width:1.3em;height:1.3em;', worker)
+        # The mark is in the worker too, JS-escaped: PAGES HTML is
+        # embedded as a JS string with double quotes escaped, so the
+        # literal mark never appears -- the served-page literal is
+        # pinned by the verdict322 Worker harness, not here.
+        self.assertIn(mark.replace('"', '\\"'), worker)
+        # Served pages still carry the numbers (spot check here; the
+        # Worker harness pins the per-page mark counts).
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        self.assertIn('0.000900', pages['/checker/'])
+
     def test_audit_pay_address_shown_in_full_by_default(self):
         # Visual verdict #110 (2026-11-19): the 42-char address was
         # hidden behind "Show full address" while the same row warned
