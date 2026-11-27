@@ -5493,12 +5493,18 @@ class TestChecker(unittest.TestCase):
         # (#230: no shortened display anywhere on the page).
         self.assertIn('<code id="audit-pay-addr">' + build.PAY_ADDR + '</code>',
                       block)
-        # copyPayAddr reports into both status spans.
-        self.assertIn(
-            "var m2=document.getElementById('audit-pay-copy-status');", audit)
-        self.assertIn(
+        # copyPayAddr reports into the clicked button's own status
+        # span only (#348: the dual write is retired -- clicking
+        # Copy in the Price box also filled in "Payment address
+        # copied." next to the form button, and vice versa).
+        self.assertNotIn(
+            "var m2=document.getElementById('audit-pay-copy-status');",
+            audit)
+        self.assertNotIn(
             "var setPayStatus=function(t){if(m)m.textContent=t;"
             "if(m2)m2.textContent=t;};", audit)
+        self.assertNotIn(
+            "var m=document.getElementById('pay-copy-status');", audit)
         self.assertIn(
             "var done=function(){setPayStatus('Payment address copied.');};",
             audit)
@@ -5521,6 +5527,68 @@ class TestChecker(unittest.TestCase):
         self.assertIn(build.PAY_ADDR, worker)
         self.assertNotIn('{PAY_ADDR}', worker)
         self.assertIn('audit-pay-copy-status', worker)
+
+    def test_verdict348_copy_feedback_scoped_to_clicked_button(self):
+        # Checker-improvement #348 (2026-11-27, visual verdict #348
+        # item 1): copyPayAddr used to write "Payment address
+        # copied." into BOTH status spans -- clicking Copy in the
+        # Price box also filled in the feedback next to the form
+        # button the visitor never clicked, and vice versa. At the
+        # money step that reads as "did I click the other one".
+        # The feedback now goes to the clicked button's own sibling
+        # [role=status] span only, the same pattern copyCodeBlock
+        # already uses. Each button's parent holds exactly one such
+        # span, so the lookup is unambiguous.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        # The scoped lookup, in the built page and in the Worker.
+        self.assertIn(
+            "var m=btn.parentElement.querySelector('[role=status]');",
+            audit)
+        self.assertIn(
+            "var setPayStatus=function(t){if(m)m.textContent=t;};", audit)
+        self.assertNotIn(
+            "var m=document.getElementById('pay-copy-status');", audit)
+        self.assertNotIn(
+            "var m2=document.getElementById('audit-pay-copy-status');",
+            audit)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(
+            "var m=btn.parentElement.querySelector('[role=status]');",
+            worker)
+        self.assertNotIn(
+            "var m2=document.getElementById('audit-pay-copy-status');",
+            worker)
+        # Both buttons still call copyPayAddr(this); both spans still
+        # exist with role=status.
+        self.assertEqual(
+            audit.count('onclick="copyPayAddr(this)">Copy address</button>'),
+            2)
+        self.assertIn('<span id="pay-copy-status" role="status"></span>',
+                      audit)
+        self.assertIn(
+            '<span id="audit-pay-copy-status" role="status"></span>', audit)
+        # Each button's parent holds exactly one [role=status] span,
+        # so the sibling lookup cannot land on the wrong one.
+        row = audit[audit.index('<div class="pay-row">'):]
+        row = row[:row.index('</div>')]
+        self.assertEqual(row.count('role="status"'), 1)
+        self.assertIn('id="pay-copy-status"', row)
+        block = audit[audit.index('class="audit-after-pay"'):]
+        block = block[:block.index('</p>')]
+        self.assertEqual(block.count('role="status"'), 1)
+        self.assertIn('id="audit-pay-copy-status"', block)
+        # What is copied is unchanged: #pay-addr's data-full.
+        self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
+                      audit)
+        self.assertIn(
+            "var a=el?(el.getAttribute('data-full')||el.textContent.trim()):'';",
+            audit)
 
     def test_verdict321_audit_after_pay_link_nowrap(self):
         # Checker-improvement #321 (2026-11-27, visual verdict #320
