@@ -11922,8 +11922,8 @@ class TestChecker(unittest.TestCase):
         note = ("Double-check the address before sending — USDC sent "
                 "to the wrong address cannot be recovered.")
         strong = ("<strong>Double-check the address before sending"
-                  "</strong> — USDC sent to the wrong address "
-                  "cannot be recovered.")
+                  "</strong> <span class=\"nowrap\">— USDC sent</span>"
+                  " to the wrong address cannot be recovered.")
         self.assertIn(strong, audit)
         self.assertNotIn(
             '<span class="pay-note">Double-check the address before '
@@ -11983,7 +11983,8 @@ class TestChecker(unittest.TestCase):
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
         self.assertIn(
             "<strong>Double-check the address before sending</strong>"
-            " — USDC sent to the wrong address cannot be recovered.",
+            " <span class=\"nowrap\">— USDC sent</span> to the wrong"
+            " address cannot be recovered.",
             audit)
 
     def test_verdict220_pay_note_lead_is_bold(self):
@@ -12006,8 +12007,9 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("pay-note\">Double-check", audit)
         # The consequence is NOT bold: the em-dash and the rest of
         # the sentence follow the closing </strong> tag.
-        self.assertIn("</strong> — USDC sent to the wrong address "
-                      "cannot be recovered.", audit)
+        self.assertIn("</strong> <span class=\"nowrap\">— USDC sent"
+                      "</span> to the wrong address cannot be recovered.",
+                      audit)
         # The .pay-note rule lives in the figcaption now (#309 move);
         # still no font-weight added: the bold comes from the
         # <strong> element alone.
@@ -12016,6 +12018,39 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("font-weight", m.group(0))
         # No global strong reset that would cancel the bold.
         self.assertNotIn("strong{font-weight", build.CSS)
+
+    def test_verdict359_pay_note_dash_rides_with_usdc_sent(self):
+        # Checker-improvement #359 (2026-11-28, visual verdict #358
+        # item 5): at 1919px the pay-note broke after "USDC" -- the
+        # em-dash and "USDC" ended line 1, "sent" started line 2
+        # (360px: the same split across lines 2/3). The #353 pattern
+        # binds the dash to the phrase that follows it: "— USDC
+        # sent" rides in one nowrap span, so the break can only land
+        # before the dash or after "sent". A bare nbsp between
+        # "USDC" and "sent" alone would still let the dash dangle at
+        # a line end, so the span carries the dash too. The sentence
+        # itself is unchanged -- de-tagged text is identical -- and
+        # text-wrap:balance (#329) still evens the two lines.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        bound = '<span class="nowrap">— USDC sent</span>'
+        self.assertEqual(audit.count(bound), 1)
+        self.assertNotIn("</strong> — USDC sent", audit)
+        fig = re.search(r'<figure class="pay-qr">.*?</figure>', audit, re.S)
+        self.assertIsNotNone(fig, "pay-qr figure not found")
+        self.assertIn(bound, fig.group(0))
+        # The plain sentence is unchanged: de-tagging the note
+        # still yields the original wording.
+        self.assertIn(
+            "Double-check the address before sending — USDC sent "
+            "to the wrong address cannot be recovered.",
+            re.sub(r"<[^>]+>", "", fig.group(0)))
+        # The span rides on the existing .nowrap rule; no new CSS.
+        self.assertIn(".nowrap{white-space:nowrap}", build.CSS)
 
     def test_footer_closes_the_page_tightly(self):
         # Visual verdict #69: the page ending felt loose -- the small
