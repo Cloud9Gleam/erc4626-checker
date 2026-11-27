@@ -10765,6 +10765,27 @@ class TestChecker(unittest.TestCase):
         self.assertIn("flex:0 0 100%", m2.group(0))
         self.assertNotIn("flex:0 1 auto", m2.group(0))
 
+    def test_verdict329_pay_note_lines_balanced(self):
+        # Checker-improvement #329 (2026-11-27, visual verdict #328
+        # item 4): the pay-note wrapped to two lines at 1919px with
+        # the second only "cannot be recovered." (~159px of a ~660px
+        # line) -- a dangling last line. text-wrap:balance evens the
+        # lines at every width instead of trimming copy, so the
+        # precise "cannot be recovered" claim stays verbatim.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        m = re.search(r"\.pay-qr figcaption \.pay-note\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(m, ".pay-qr figcaption .pay-note rule not found")
+        self.assertIn("text-wrap:balance", m.group(0))
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        self.assertIn(
+            "<strong>Double-check the address before sending</strong>"
+            " — USDC sent to the wrong address cannot be recovered.",
+            audit)
+
     def test_verdict220_pay_note_lead_is_bold(self):
         # Visual verdict #220 (2026-11-25): the pay-row warning
         # "Double-check the address before sending — USDC sent to
@@ -11751,8 +11772,11 @@ class TestChecker(unittest.TestCase):
         # gridlines + legend. The generic .loss-track rule already
         # carries #f3f4f6 (guide charts); the bare override used to
         # clear it to transparent. .loss-track--empty (guide rows)
-        # stays transparent, and the gridline ::after + #164
-        # first-row top:0 are untouched.
+        # stays transparent. The #164 first-row top:0 cap is
+        # retired with the extension (#328): the ::after is
+        # now inset:0 behind the fills, and the grey track
+        # still shows through the empty track right of
+        # each bar.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -11763,8 +11787,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-track{flex:1;height:1.7em;background:#f3f4f6;"
                       "border-radius:3px;overflow:hidden}", build.CSS)
         self.assertIn(".loss-track--empty{background:transparent}", build.CSS)
-        self.assertIn(".loss-chart--bare .loss-row:first-of-type "
-                      ".loss-track::after{top:0}", build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-row:first-of-type "
+                         ".loss-track::after{top:0}", build.CSS)
         # The chart still renders with the same bar widths.
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
@@ -11786,8 +11810,10 @@ class TestChecker(unittest.TestCase):
         # red — but only when that row breaches: red is the site's
         # breach colour, and the default preset's worst row passes
         # (green bar), so a red value there would contradict the
-        # verdict. The numbers themselves do not move: noprot worst
-        # 0.909091, default worst 0.000900.
+        # verdict. The numbers themselves do not move — they leave
+        # the label for the table and the banner
+        # (checker-improvement #330): noprot worst 0.909091,
+        # default worst 0.000900.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -11806,7 +11832,7 @@ class TestChecker(unittest.TestCase):
                       build.CSS)
         # Noprot: exactly two drawable rows — the worst one carries
         # the class, the other bar does not; the class sits on the
-        # row whose value is 0.909091. (Checker-improvement #313:
+        # row whose share is 909× the bound. (Checker-improvement #313:
         # the two tiny rows are folded out of the chart now, so the
         # plain-row count is one — the folded rows carry no worst
         # class either, since the worst row is always drawable.)
@@ -11818,10 +11844,10 @@ class TestChecker(unittest.TestCase):
         worst = html.index("class='loss-row worst'")
         plain = html.index("class='loss-row'>", worst + 1)
         self.assertLess(worst, html.index(
-            "0.909091 USDC &middot; 909&times; the bound"))
+            "909&times; the bound"))
         self.assertLess(html.index(
-            "0.909091 USDC &middot; 909&times; the bound"), plain)
-        self.assertIn("0.099890 USDC &middot; 99.9&times; the bound", html)
+            "909&times; the bound"), plain)
+        self.assertIn("99.9&times; the bound", html)
         # Default: the worst row passes, so no worst class — the
         # value stays bold black, never red on a green bar. One bar
         # only (checker-improvement #313: the three tiny rows are
@@ -11832,7 +11858,7 @@ class TestChecker(unittest.TestCase):
             vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
         self.assertEqual(html.count("class='loss-row worst'"), 0)
         self.assertEqual(html.count("class='loss-row'>"), 1)
-        self.assertIn("0.000900 USDC &middot; 90% of the bound", html)
+        self.assertIn("90% of the bound", html)
         # The Worker-side template renders the same rule: the class
         # is conditional on the row being the worst AND breaching.
         js = build.checker_results_html_js()
@@ -11871,12 +11897,14 @@ class TestChecker(unittest.TestCase):
         # the short red bar is not misread as a small loss — the worst
         # row is 909091/1000 = 909x, the 1B row 99890/1000 = 99.9x.
         # Visual verdict #123 new finding ③ (2026-11-20): the label
-        # carries its unit and the multiple's referent inline, so it
-        # no longer duplicates the table's bare number.
+        # carries the multiple's referent inline ("909× the bound")
+        # and no longer carries the loss value at all
+        # (checker-improvement #330), so it duplicates nothing in
+        # the table — the value lives there and in the banner.
         self.assertIn("<div class='loss-row worst'><span class='loss-key'>"
                       "<span class='loss-label'>"
                       "1,000,000 USDC</span><span class='loss-value'>"
-                      "0.909091 USDC &middot; 909&times; the bound</span></span>"
+                      "909&times; the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:90.9%'></span></span></div>", html)
         # Short bar: same value position, still dark — only the
@@ -11884,7 +11912,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<div class='loss-row'><span class='loss-key'>"
                       "<span class='loss-label'>"
                       "1,000,000,000 USDC</span><span class='loss-value'>"
-                      "0.099890 USDC &middot; 99.9&times; the bound</span></span>"
+                      "99.9&times; the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill fail' "
                       "style='width:10.0%'></span></span></div>", html)
         # Visual verdict #124 new finding ③ (2026-11-20): the
@@ -11941,9 +11969,15 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("pct>=60", js)
         self.assertIn("<span class='loss-value'>", js)
         # Worker-side multiple: same rule as the Python renderer.
-        self.assertIn("&middot;", js)
+        # Checker-improvement #330: the " &middot; " separator is
+        # gone with the loss value — the share stands alone — so
+        # no &middot; remains in the template at all.
+        self.assertNotIn("&middot;", js)
         self.assertIn("&times;", js)
         self.assertIn("boundB", js)
+        self.assertIn('mult=(m>=100?m.toFixed(0):m.toFixed(1))+"&times; the bound"', js)
+        self.assertIn('mult=share+" of the bound"', js)
+        self.assertIn('(mult||usdc(row.victim_loss)+" USDC")', js)
         # Short-bar case: seeded vault, losses [1, 1, 1, 13] — nothing
         # breaches, so no chart is drawn at all (visual verdict #137,
         # 2026-11-21) and there are no bar values to position; the
@@ -11974,8 +12008,10 @@ class TestChecker(unittest.TestCase):
         # rows already carry their meaning inline ("909x the bound");
         # a passing row now carries its share of the pass bound
         # whenever that share is >= 1%: the default preset's worst
-        # row reads "0.000900 USDC · 90% of the bound" — even the
-        # worst case is a tenth short of failing. The 1% floor keeps
+        # row reads "90% of the bound" — even the worst case is a
+        # tenth short of failing (checker-improvement #330: the loss
+        # value left the label for the table and the banner, so the
+        # label is the share alone). The 1% floor keeps
         # tiny passing rows plain (noprot's 0 and 0.000006 would read
         # "0.0006% of the bound", noise), and passing means loss <=
         # bound, so the share never exceeds 100%.
@@ -12015,7 +12051,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<div class='loss-row'><span class='loss-key'>"
                       "<span class='loss-label'>"
                       "1,000,000,000 USDC</span><span class='loss-value'>"
-                      "0.000900 USDC &middot; 90% of the bound</span></span>"
+                      "90% of the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill pass' "
                       "style='width:90.0%'></span></span></div>", html)
         self.assertEqual(html.count("loss-row"), 1)
@@ -12028,7 +12064,7 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("Red bars:", html)
         # The bar-label rule itself still lives on breaching charts: a
         # passing drawable row next to a breaching one carries its
-        # share of the bound ("90% of the bound"), not a bare number.
+        # share of the bound ("90% of the bound"), not the loss value.
         # Losses 900 / 100000 base units: the 900 row is 0.9% of the
         # worst row (drawable) and 90% of the bound (passing); the
         # 100000 row breaches at 100x the bound.
@@ -12041,16 +12077,16 @@ class TestChecker(unittest.TestCase):
         self.assertIn("<div class='loss-row'><span class='loss-key'>"
                       "<span class='loss-label'>"
                       "1,000 USDC</span><span class='loss-value'>"
-                      "0.000900 USDC &middot; 90% of the bound</span></span>"
+                      "90% of the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill pass' "
                       "style='width:0.9%'></span></span></div>", html)
-        self.assertIn("0.100000 USDC &middot; 100&times; the bound", html)
+        self.assertIn("100&times; the bound", html)
         # Noprot: breaching multiples intact, no bound share anywhere
         # (the two tiny passing rows are folded out of the chart now).
         html = build.results_html(
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=0, fee=0)
-        self.assertIn("0.909091 USDC &middot; 909&times; the bound", html)
+        self.assertIn("909&times; the bound", html)
         self.assertEqual(html.count("% of the bound"), 0)
         # Offset 18: no loss anywhere, no chart, no bound share.
         html = build.results_html(
@@ -12065,6 +12101,103 @@ class TestChecker(unittest.TestCase):
         # Format guard: 99.5%+ never rounds up to "100%" unless the
         # loss is exactly at the bound.
         self.assertIn("Math.min(pctB,99.9)", js)
+
+    def test_verdict330_chart_label_is_share_only(self):
+        # Checker-improvement #330 (visual verdict #330 item 3,
+        # 2026-11-27): the key column ran ~250px (27% of the chart)
+        # because the second line of each key repeated the loss
+        # number the table already shows ("0.000900 USDC · 90% of
+        # the bound"). The label now carries ONLY the severity
+        # share the table does NOT have ("90% of the bound" /
+        # "909× the bound", visual verdict #307 item 5's form); the
+        # loss value lives in the table and the banner. The multiple
+        # itself stays inline (#106/#123 stand). A row with no share
+        # (below the 1% floor) keeps its plain loss value, so the
+        # line is never empty.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        # Default: the single green bar's label is the share alone,
+        # and the old "value · share" form is gone from the page.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn("<span class='loss-value'>90% of the bound</span>", html)
+        self.assertNotIn("0.000900 USDC &middot;", html)
+        self.assertNotIn("USDC &middot;", html)
+        # ...while the value itself is still on the page (table + banner).
+        self.assertIn("0.000900", html)
+        # Noprot: both breaching rows are multiples alone.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<span class='loss-value'>909&times; the bound</span>", html)
+        self.assertIn("<span class='loss-value'>99.9&times; the bound</span>", html)
+        self.assertNotIn("0.909091 USDC &middot;", html)
+        self.assertNotIn("0.099890 USDC &middot;", html)
+        self.assertIn("0.909091", html)
+        # Plain row: losses [8, 1500] against a 1000-unit bound — the
+        # 8-unit row is drawable (0.53% of the worst row) but its share
+        # is 0.8% of the bound, below the 1% floor, so it keeps its
+        # plain loss value; the 1500-unit row breaches at 1.5x.
+        plain = [{"name": "donation_inflation", "pass": False, "detail": [
+            {"donation": 1_000_000, "victim_loss": 8,
+             "attacker_net": -1},
+            {"donation": 1_000_000_000, "victim_loss": 1500,
+             "attacker_net": -1}]}]
+        html = build.results_html(plain, vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<span class='loss-value'>0.000008 USDC</span>", html)
+        self.assertIn("<span class='loss-value'>1.5&times; the bound</span>", html)
+        # The Worker-side template renders the same rule.
+        js = build.checker_results_html_js()
+        self.assertIn('mult=share+" of the bound"', js)
+        self.assertIn('(mult||usdc(row.victim_loss)+" USDC")', js)
+        self.assertNotIn("&middot;", js)
+
+    def test_verdict331_source_label_bound_to_link(self):
+        # Checker-improvement #331 (visual verdict #330 item 9,
+        # 2026-11-27): the checker top notice ended a line with the
+        # bare label "Source:" (1919px: label top 233.6, left 1277.6
+        # -- last word of line 2) while its link started the next
+        # line (top 261.7) -- the label hung at the line end,
+        # detached from what it labels. The link itself was already
+        # nowrap (.notice a), so only the label could stray. The fix
+        # wraps label + link in <span class="nowrap"> (the existing
+        # build.py:641 rule) so they move as one unit; the unit is
+        # ~406px against a ~913px notice content width, so it fits
+        # on one line at desktop. At 360px .notice-extra is
+        # display:none, so mobile is unaffected. Copy, model,
+        # numbers, API JSON untouched.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".nowrap{white-space:nowrap}", build.CSS)
+        html = build.checker_body()
+        unit = ('<span class="nowrap">Source: <a href="https://github.com/'
+                'Cloud9Gleam/erc4626-checker">github.com/Cloud9Gleam/'
+                'erc4626-checker</a></span>')
+        self.assertEqual(html.count(unit), 1)
+        # The label appears exactly once, inside that unit -- no bare
+        # "Source:" left to hang at a line end.
+        self.assertEqual(html.count("Source:"), 1)
+        # The notice copy is otherwise untouched.
+        self.assertIn("OpenZeppelin math with a decimals offset", html)
+        self.assertIn("amounts are USDC at 6 decimals", html)
+        self.assertIn("How to use the checker", html)
+        # The Worker embeds the checker page twice (PAGES +
+        # CHECKER_TEMPLATE) and the notice sits in neither replaced
+        # block, so the unit appears in both -- JSON-escaped there.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertEqual(
+            worker.count('<span class=\\"nowrap\\">Source:'), 2)
+        # Total 3: the two notice units above plus the /patterns/
+        # page attribution ("Source: the author's audit pattern
+        # playbook ..."), which is unrelated to this notice.
+        self.assertEqual(worker.count("Source:"), 3)
 
     def test_verdict295_pass_state_draws_bound_scaled_chart(self):
         # Visual verdict #295 (2026-11-26, checker-improvement):
@@ -12103,7 +12236,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn("loss-chart loss-chart--bare", html)
         self.assertEqual(html.count("loss-row"), 1)
         self.assertEqual(html.count("loss-track--empty"), 0)
-        self.assertIn("0.000250 USDC &middot; 25% of the bound", html)
+        self.assertIn("25% of the bound", html)
         self.assertIn("width:25.0%", html)
         self.assertIn("Bars are scaled to the pass bound (0.001 USDC)", html)
         self.assertIn("<span style='left:100%'>0.001</span>", html)
@@ -12143,19 +12276,21 @@ class TestChecker(unittest.TestCase):
         # did not fix noticeability, so alpha goes .5 -> .8 here;
         # the red-bar lines go near-black, which is their already
         # accepted look, not a regression.
-        # Visual verdict #140 item 2 (2026-11-21, REVERSED by #189
-        # 2026-11-24): #120 drew the lines ABOVE the fills so they
-        # stayed visible across a 100% bar — and the near-black
-        # lines cut every long red bar into segments, so #140 put
-        # the lines BEHIND the fills (fill z-index:1 over the
-        # z-index:auto ::after). Two later real-browser verdicts
-        # (#177, #189) read the result the other way: with 26.6px
-        # bars and 8.5px gaps the only visible fragments are the
-        # stubs in the gaps, which read as stray ticks, not a grid.
-        # The ::after now carries z-index:2, so the lines run
-        # continuously across the bars. Alpha and width are
+        # Visual verdict #328 item 1 (2026-11-27,
+        # checker-improvement): the gridlines go BEHIND the fills
+        # again — but this is NOT a re-flip of #189. #140's
+        # behind-bars version kept the -1.15em extensions, so the
+        # only visible fragments were the ~8px stubs in the gaps,
+        # which #177/#189 read as stray ticks. The ::after is now
+        # clipped to its own track box (inset:0, z-index:0 under
+        # the fill's z-index:1): no gap fragments exist to misread
+        # as ticks, and no line crosses a bar (pixel-measured,
+        # hidden_files/measure-verdict328.py: 29/27 non-fill rows
+        # across the top bar -> 0). The lines stay visible in the
+        # empty track right of each bar. Alpha and width are
         # untouched (.8, 2px) — lightening them would reopen
-        # #121–#123.
+        # #121-#123, and #159 showed alpha cuts do not cure
+        # cut-readings anyway.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -12163,18 +12298,18 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-track{position:relative;"
                       "grid-column:2;background:#f3f4f6;border:0}",
                       build.CSS)
-        # The fill keeps its positioning (z-index:1), but the
-        # gridlines now sit above it: the ::after carries
-        # z-index:2 (pinned in full below), which beats the fill's
-        # 1. Scoped to --bare: guide charts have no gridlines, so
-        # their fills stay unpositioned.
+        # The fill keeps its positioning (z-index:1); the
+        # gridlines now sit BEHIND it: the ::after carries
+        # z-index:0 (pinned in full below), which loses to the
+        # fill's 1. Scoped to --bare: guide charts have no
+        # gridlines, so their fills stay unpositioned.
         self.assertIn(".loss-chart--bare .loss-fill{position:relative;"
                       "z-index:1}", build.CSS)
         self.assertNotIn(".loss-chart .loss-fill{position:relative",
                          build.CSS)
         self.assertIn(
             ".loss-chart--bare .loss-track::after{content:\"\";"
-            "position:absolute;inset:-1.15em 0;z-index:2;"
+            "position:absolute;inset:0;z-index:0;"
             "pointer-events:none;"
             "background-image:linear-gradient(to right,transparent "
             "calc(25% - 1px),rgba(17,24,39,.8) calc(25% - 1px),"
@@ -12211,75 +12346,67 @@ class TestChecker(unittest.TestCase):
         # browser read it as cracks; #160 still read cracks, so
         # a third alpha cut is not the lever — no seam over a bar
         # at any alpha.
-        # Visual verdict #189 (2026-11-24, checker-improvement):
-        # the gridlines now cross the fills instead of living
-        # under them (see the #140 reversal above), and the
-        # ::after extends 1.15em each side of the track so the
-        # lines run down the chart across bars and gaps alike.
-        # The .325em extension assumed single-line rows; #172's
-        # two-line key made each row 52px tall (inter-track gap
-        # 33.5px), so .325em left a ~23px white band mid-gap.
-        # The bare track drops overflow:hidden for the extension
-        # to paint, and the fill carries the 3px corner radius
-        # itself. Mobile pulls the extension back to .15em (half
-        # the .3em gap) so it cannot poke into the stacked
-        # label/value rows.
+        # Visual verdict #328 (2026-11-27, checker-improvement):
+        # #189's above-bars lines are reversed (see the #140 note
+        # above): the ::after is inset:0 now, so there is no
+        # extension to bridge any gap — the lines live only inside
+        # each track, behind that row's fill. The bare track falls
+        # back to the base overflow:hidden (the extension was the
+        # only reason for the override), and the fill keeps the
+        # 3px corner radius itself. Mobile has no pull-back rule
+        # any more: inset:0 holds on every viewport, so the lines
+        # cannot poke into the stacked label/value rows.
         self.assertNotIn(".loss-chart--bare .loss-track::before",
                          build.CSS)
         self.assertNotIn(".loss-chart .loss-track::before", build.CSS)
-        self.assertIn(".loss-chart--bare .loss-track{overflow:visible}",
-                      build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-track{overflow:visible}",
+                         build.CSS)
         self.assertIn(".loss-chart--bare .loss-fill{border-radius:3px}",
                       build.CSS)
-        self.assertIn(
+        self.assertNotIn(
             ".loss-chart--bare .loss-track::after{inset:-.15em 0}",
             build.CSS)
-        # Visual verdict #163 item 1 (2026-11-24,
-        # checker-improvement): the ::after extends .2em above every
-        # track, so the first row's gridlines poked ~3px above the top
-        # bar — three 2px stubs floating between the peak line and the
-        # first bar (pixel-measured 1543-1545 against bar top 1546).
-        # The first row's ::after is capped at top:0; the bottom
-        # extension stays, so the lines still run down to the axis
-        # and the inter-row seams keep bridging.
-        self.assertIn(
+        # Visual verdict #328 item 1 (2026-11-27,
+        # checker-improvement): the #163/#164 first-row cap
+        # (top:0) is RETIRED with the extension — the ::after is
+        # inset:0, so there is nothing above the top bar to cap
+        # and no bottom extension to run down to the axis.
+        self.assertNotIn(
             ".loss-chart--bare .loss-row:first-of-type "
             ".loss-track::after{top:0}",
             build.CSS)
-        # The selector's premise: the title and the peak line are
-        # <p>, so the first <div> child of the chart is the first
-        # row — :first-of-type can only match a row. Only the
-        # chart's own opening <div> precedes the first row.
-        chart = html[html.index("<div class='loss-chart "
-                                 "loss-chart--bare'>"):]
-        # The marker drops the closing quote: the first row may
-        # carry the worst class now (visual verdict #304).
-        seg = chart[:chart.index("<div class='loss-row")]
-        self.assertEqual(seg.count("<div"), 1)
+        # The title still leads the chart, in both renderers
+        # (the :first-of-type premise that used to sit here
+        # retired with the #164 cap).
         self.assertIn("<p class='loss-title'>", html)
-        # Same premise in the Worker-side template: title and peak
-        # are <p>, rows are <div>.
         js = build.checker_results_html_js()
         self.assertIn("c+=\"<p class='loss-title'>", js)
         # The Worker-side row div carries the same conditional
         # worst class (visual verdict #304).
         self.assertIn('c+="<div class=\'loss-row"+(isWorst?" worst":"")', js)
 
-    def test_verdict189_gridlines_cross_bars(self):
-        # Visual verdict #189 (2026-11-24, checker-improvement):
-        # two real-browser verdicts (#177, #189) read the
-        # behind-bars gridlines as stray ticks — with 26.6px bars
-        # and 8.5px gaps only the stubs in the gaps showed. The
-        # ::after now sits ABOVE the fills (z-index:2 beats the
-        # fill's z-index:1, reversing #140), and its desktop
-        # extension grows .325em -> 1.15em so the lines bridge the
-        # 33.5px inter-track gap #172's two-line key leaves
-        # (pixel-measured, hidden_files/measure-verdict189.py:
-        # pitch 60.1px, key 51.6px, track font 15.64px; needed
-        # 16.8px = 1.07em per side). Mobile keeps -.15em (stacked
-        # rows) and the #164 first-row cap (top:0) still holds.
-        # Render-time only: the model, the numbers and the API
-        # JSON are untouched.
+    def test_verdict328_gridlines_behind_bars_clipped(self):
+        # Visual verdict #328 item 1 (2026-11-27,
+        # checker-improvement): the live browser ranked the
+        # donation chart's gridlines #1 — the 2px near-black lines
+        # cut the long red bar into segments (pixel-measured,
+        # hidden_files/measure-verdict328.py: 29/27 non-fill rows
+        # across the top bar at 25/50/75%, 35/35 gap rows). This
+        # reverses #189, but NOT by re-flipping to #140: #140's
+        # behind-bars version kept the -1.15em extensions, so only
+        # the gap stubs showed and #177/#189 read those as stray
+        # ticks. The ::after is now clipped to its own track box
+        # (inset:0) AND behind the fills (z-index:0 under the
+        # fill's z-index:1): no gap fragments exist to misread as
+        # ticks, no line crosses a bar, and the lines stay visible
+        # in the empty track right of each bar. The #164 cap and
+        # the mobile -.15em pull-back retire with the extension,
+        # and the bare track falls back to the base overflow:hidden.
+        # The axis keeps its .9em (the verdict's "~12px, ~30%
+        # smaller" read was a misread: computed 15.3px vs label
+        # 15.64px — cap-height against full glyph extent). The
+        # legend wording stands; the model, the numbers and the
+        # API JSON are untouched.
         import re
         import sys
         from pathlib import Path
@@ -12289,23 +12416,50 @@ class TestChecker(unittest.TestCase):
             r"\.loss-chart--bare \.loss-track::after\{[^}]*\}",
             build.CSS)
         self.assertIsNotNone(after)
-        self.assertIn("z-index:2", after.group(0))
-        self.assertIn("inset:-1.15em 0", after.group(0))
+        self.assertIn("inset:0;", after.group(0))
+        self.assertIn("z-index:0", after.group(0))
+        self.assertNotIn("z-index:2", after.group(0))
+        self.assertNotIn("inset:-1.15em 0", after.group(0))
         self.assertIn("rgba(17,24,39,.8)", after.group(0))
-        # The fill keeps its own z-index:1 — the ::after's 2 is
-        # what wins, not the fill losing its positioning.
+        # The fill keeps its own z-index:1 — the ::after's 0 is
+        # what loses, not the fill losing its positioning.
         self.assertIn(".loss-chart--bare .loss-fill{position:relative;"
                       "z-index:1}", build.CSS)
-        # First-row cap and mobile pull-back are unchanged.
-        self.assertIn(
+        # Retired with the extension: first-row cap, mobile
+        # pull-back, overflow:visible override.
+        self.assertNotIn(
             ".loss-chart--bare .loss-row:first-of-type "
             ".loss-track::after{top:0}",
             build.CSS)
-        self.assertIn(
+        self.assertNotIn(
             ".loss-chart--bare .loss-track::after{inset:-.15em 0}",
             build.CSS)
+        self.assertNotIn(
+            ".loss-chart--bare .loss-track{overflow:visible}",
+            build.CSS)
+        # The bare track falls back to the base overflow:hidden
+        # (the fill keeps its own 3px radius).
+        self.assertIn(".loss-track{flex:1;height:1.7em;background:#f3f4f6;"
+                      "border-radius:3px;overflow:hidden}", build.CSS)
+        # Axis labels keep .9em — see the comment above.
+        self.assertIn("height:1.6em;font-size:.9em;color:#374151",
+                      build.CSS)
         # Guide charts (plain .loss-chart) get no gridlines.
         self.assertNotIn(".loss-chart .loss-track::after", build.CSS)
+        # Numbers and bars are untouched: noprot 90.9%/10.0% with
+        # worst loss 0.909091, default 90.0% with 0.000900.
+        html = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<span class='loss-fill fail' style='width:90.9%'></span>", html)
+        self.assertIn("<span class='loss-fill fail' style='width:10.0%'></span>", html)
+        self.assertIn("0.909091", html)
+        self.assertIn("gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.", html)
+        html = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn("<span class='loss-fill pass' style='width:90.0%'></span>", html)
+        self.assertIn("0.000900", html)
 
     def test_loss_chart_row_gap_wide(self):
         # Visual verdict #163 item 3 (2026-11-24,
@@ -12315,16 +12469,14 @@ class TestChecker(unittest.TestCase):
         # so the two red bars read as one block. The bare-chart
         # row-gap doubles .25em -> .5em desktop (~8px, about 30%
         # of the bar height) and .15em -> .3em below 640px.
-        # The gridline ::after extension must bridge the
-        # inter-track gap so the 25/50/75% lines stay continuous:
-        # desktop -1.15em (18.0px per side) covers the 33.5px gap
-        # #172's two-line key leaves between tracks (needed 16.8px
-        # = 1.07em; ~2.4px overlap, slit-proof per #160/#165);
-        # mobile -.15em is exactly half the .3em gap, so it still
-        # cannot poke into the stacked label/value rows. The #164
-        # first-row cap (top:0) is unchanged and still beats both
-        # inset rules. Guide charts (plain .loss-chart) keep their
-        # .25em flex-row margins.
+        # Visual verdict #328 item 1 (2026-11-27): the gridline
+        # ::after no longer bridges the gap — it is inset:0
+        # inside each track, behind that row's fill — so the gap
+        # holds no line fragments at all (nothing to misread as
+        # stray ticks, #177/#189's old objection), and the #164
+        # first-row cap is retired with the extension. Guide
+        # charts (plain .loss-chart) keep their .25em flex-row
+        # margins.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -12336,8 +12488,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare{grid-template-columns:1fr;"
                       "row-gap:.3em}",
                       build.CSS)
-        self.assertIn("inset:-1.15em 0", build.CSS)
-        self.assertIn(
+        self.assertNotIn("inset:-1.15em 0", build.CSS)
+        self.assertNotIn(
             ".loss-chart--bare .loss-track::after{inset:-.15em 0}",
             build.CSS)
         self.assertIn(".loss-row{display:flex;align-items:center;"
@@ -12355,7 +12507,12 @@ class TestChecker(unittest.TestCase):
         # chart read as a text list. The donation and its loss now
         # share one auto key column (.loss-key): label over value,
         # both right-aligned to the track edge, sized by the longer
-        # line (~245px); the track takes the rest (~646px, 72%).
+        # line. Checker-improvement #330 (2026-11-27): the longer
+        # line used to be the second line (~245px — the loss value
+        # plus its share), so the track took only ~646px (72%); with
+        # the loss value out of the label, the label line
+        # ("1,000,000,000 USDC") sizes the column (~147px at 1919px,
+        # 16% of the chart) and the track takes the rest (~744px, 82%).
         # History: #124 cut the 22em label column to 8em (the
         # longest label was ~102px of text); #140 widened it to
         # 10em when the label gained its "USDC" unit (~137px of
@@ -12395,7 +12552,7 @@ class TestChecker(unittest.TestCase):
         # Row markup: key wrapper (label over value), then track.
         self.assertIn("<div class='loss-row worst'><span class='loss-key'>"
                       "<span class='loss-label'>1,000,000 USDC</span>"
-                      "<span class='loss-value'>0.909091 USDC &middot; 909&times; the bound</span></span>"
+                      "<span class='loss-value'>909&times; the bound</span></span>"
                       "<span class='loss-track'><span class='loss-fill fail' style='width:90.9%'></span></span></div>",
                       html)
 
@@ -12500,7 +12657,7 @@ class TestChecker(unittest.TestCase):
         # of the bound — the bound-scaled chart is drawn (visual
         # verdict #295, 2026-11-26, overturning #137 for this case):
         # axis 0–0.001 USDC, the bound as the last tick, title in
-        # place, bar label carrying the worst loss and its share.
+        # place, bar label carrying the worst row's share.
         html = build.results_html(
             run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
                           perf_fee_bps=1000)))
@@ -12514,7 +12671,7 @@ class TestChecker(unittest.TestCase):
                       "<span style='left:50%'>0.0005</span>"
                       "<span style='left:75%'>0.00075</span>"
                       "<span style='left:100%'>0.001</span></div>", html)
-        self.assertIn("0.000900 USDC &middot; 90% of the bound", html)
+        self.assertIn("90% of the bound", html)
         self.assertNotIn("Within the bound:", html)
         # Noprot: axis maximum 1 USDC — round quarter ticks, all
         # five bare (visual verdict #250 reverses #140: the unit
@@ -12639,7 +12796,7 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-track--empty"), 0)
         self.assertEqual(html.count("loss-too-small"), 0)
         self.assertIn("width:90.0%", html)
-        self.assertIn("0.000900 USDC &middot; 90% of the bound", html)
+        self.assertIn("90% of the bound", html)
         self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the pass bound (1, 1K, 1M USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
         self.assertNotIn("Within the bound:", html)
         self.assertNotIn("Red bars:", html)
@@ -12665,8 +12822,8 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(html.count("loss-too-small"), 0)
         self.assertIn("width:40.0%", html)
         self.assertIn("width:90.0%", html)
-        self.assertIn("0.000400 USDC &middot; 40% of the bound", html)
-        self.assertIn("0.000900 USDC &middot; 90% of the bound", html)
+        self.assertIn("40% of the bound", html)
+        self.assertIn("90% of the bound", html)
         self.assertIn("<ul class='loss-head'><li><strong>Not drawn:</strong> under 0.5% of the pass bound (1 USDC) — see the table.</li><li><strong>Scale:</strong> Bars are scaled to the pass bound (0.001 USDC); gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%.</li></ul>", html)
         self.assertNotIn("Within the bound:", html)
         self.assertNotIn("Red bars breach the pass bound", html)
@@ -13368,13 +13525,14 @@ class TestChecker(unittest.TestCase):
                       build.CSS)
         self.assertIn(".hero-top p{text-wrap:pretty}", build.CSS)
         # No unscoped global text-wrap rule: balance occurs exactly
-        # twice (the h1 heading rule plus this media query) and pretty
-        # exactly four times (hero-top, audit, research, this query).
+        # three times (the h1 heading rule, this media query, and the
+        # #329 pay-note rule) and pretty exactly four times
+        # (hero-top, audit, research, this query).
         # Verdict #278 (2026-11-26): main .notice joined both selectors — the rollout
         # had covered only p/li, so the /patterns/ amber .notice div (direct text, not
         # a <p>) wrapped unbalanced and its last line dangled at 0.215 in the real browser.
         # The counts above are unchanged: the selectors grew, no new rule was added.
-        self.assertEqual(build.CSS.count("text-wrap:balance"), 2)
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 3)
         self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
@@ -13415,7 +13573,9 @@ class TestChecker(unittest.TestCase):
                       page.replace("&nbsp;", " "))
         self.assertIn("review prompts, not findings", page)
         # The selectors grew; no new text-wrap rule was added.
-        self.assertEqual(build.CSS.count("text-wrap:balance"), 2)
+        # Checker-improvement #329 adds a third balance occurrence
+        # (the /audit/ pay-note rule), so the count below is 3.
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 3)
         self.assertEqual(build.CSS.count("text-wrap:pretty"), 4)
         balance = ("@media (min-width:641px){main p,main li,main .notice,"
                    "footer p{text-wrap:balance}}")
@@ -14319,18 +14479,18 @@ class TestChecker(unittest.TestCase):
 
     def test_verdict160_gridline_seam_removed(self):
         # Visual verdict #160 item (4) (2026-11-23,
-        # checker-improvement): the live browser still read the
-        # #157/#159 over-fill seam as cracks on the 90.9% red bar,
-        # so the seam is deleted outright — no ::before rule at
-        # all — instead of a third alpha cut. Headless pixel
-        # sampling (hidden_files/measure-verdict160d.py) confirms
-        # the result: the long bar's centre line is pure red
-        # (220,38,38) at 25/50/75%, the row gap carries dark
-        # gridline pixels at 25/50/75% (the ::after now extends
-        # past mid-gap), the short bar's white-space lines stay
-        # dark, and the bar's top-left corner stays rounded (not
-        # pure red). Render-time only: the model, the numbers and
-        # the API JSON are untouched.
+        # checker-improvement), updated by #328 (2026-11-27): the
+        # live browser still read the #157/#159 over-fill seam as
+        # cracks on the 90.9% red bar, so the seam is deleted
+        # outright — no ::before rule at all — instead of a third
+        # alpha cut. #328 then also takes the gridlines behind
+        # the fills AND clips them to each track (inset:0): the
+        # long bar's centre line is pure red (220,38,38) at
+        # 25/50/75% (hidden_files/measure-verdict328.py), the row
+        # gap carries no line fragments at all, and the bar's
+        # top-left corner stays rounded (not pure red).
+        # Render-time only: the model, the numbers and the API
+        # JSON are untouched.
         import re
         import sys
         from pathlib import Path
@@ -14343,17 +14503,17 @@ class TestChecker(unittest.TestCase):
             r"\.loss-chart--bare \.loss-track::after\{[^}]*\}",
             build.CSS)
         self.assertIsNotNone(after)
-        self.assertIn("inset:-1.15em 0", after.group(0))
+        self.assertIn("inset:0;", after.group(0))
+        self.assertIn("z-index:0", after.group(0))
+        self.assertNotIn("z-index:2", after.group(0))
         self.assertIn("rgba(17,24,39,.8)", after.group(0))
-        # The extension must bridge the inter-track gap (33.5px
-        # with #172's two-line key), or subpixel rounding leaves
-        # a white band mid-gap (measured with .325em: a ~23px
-        # white band). 1.15em (18.0px per side) covers the gap
-        # with ~2.4px overlap.
-        self.assertIn("row-gap:.5em", build.CSS)
-        # Mobile: half the .3em gap, so the extension cannot poke
-        # into the stacked label/value rows.
-        self.assertIn(
+        # No extension any more: the ::after is inset:0, so
+        # there is nothing to bridge and no white band to leave
+        # mid-gap — the gap is plain card background now. The
+        # row-gap itself (.5em desktop) is unchanged.
+        # Mobile: no -.15em pull-back any more — inset:0 holds
+        # on every viewport.
+        self.assertNotIn(
             ".loss-chart--bare .loss-track::after{inset:-.15em 0}",
             build.CSS)
         self.assertIn(".loss-chart--bare{grid-template-columns:1fr;"
@@ -15288,14 +15448,17 @@ class TestChecker(unittest.TestCase):
         # green above and below its 2 lines. The note is still a
         # tinted box spanning its column end to end; only its home
         # changed. font-size is 1em because the figcaption is
-        # already .95em.
+        # already .95em. Checker-improvement #329 (2026-11-27,
+        # visual verdict #328 item 4) adds text-wrap:balance: the
+        # note wrapped with only "cannot be recovered." on its
+        # second line, and balance evens the lines at every width.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
             ".pay-qr figcaption .pay-note{display:block;margin-top:.6em;"
-            "font-size:1em;color:#374151;background:#dcfce7;"
+            "font-size:1em;text-wrap:balance;color:#374151;background:#dcfce7;"
             "border:1px solid #bbe0c6;border-radius:8px;"
             "padding:.55em .8em;box-sizing:border-box}",
             build.CSS)
@@ -27171,7 +27334,7 @@ class TestChecker(unittest.TestCase):
         # bound-scaled chart for the passing case; visual verdict
         # #295 (2026-11-26) restores it — the chart is drawn again
         # when the worst loss is at least 25% of the bound, and the
-        # head names the worst-row value in the bar label.
+        # head names the worst row's share in the bar label.
         import importlib.util
         from pathlib import Path
         spec = importlib.util.spec_from_file_location(
@@ -27192,8 +27355,9 @@ class TestChecker(unittest.TestCase):
         # Offset 6: nothing breaches, but the worst loss is 90% of
         # the bound — the bound-scaled chart is drawn again (visual
         # verdict #295, 2026-11-26): the Scale line names the bound
-        # and the bar label carries the worst-row value (0.000900
-        # USDC, 90% of the bound). No Within sentence on this branch.
+        # and the bar label carries the worst row's share (90% of
+        # the bound); the value (0.000900 USDC) lives in the table
+        # and the banner. No Within sentence on this branch.
         v = Vault(decimals_offset=6, min_deposit=1_000_000, perf_fee_bps=1000)
         html = build.results_html(run_all(v), off=6, mn=1_000_000, fee=1000)
         self.assertIn(
@@ -27202,7 +27366,7 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("<p class='loss-note'>", html)
         self.assertNotIn("Victim loss peaks at", html)
         self.assertIn("<div class='loss-chart loss-chart--bare'>", html)
-        self.assertIn("0.000900 USDC &middot; 90% of the bound</span>", html)
+        self.assertIn("90% of the bound</span>", html)
     def test_donation_loss_recognition_guide_numbers(self):
         # Pins /guides/erc4626-donation-loss-recognition/ to its
         # model: a donation into a vault carrying an unrecognised
