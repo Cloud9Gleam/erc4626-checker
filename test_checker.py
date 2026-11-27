@@ -1653,6 +1653,58 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("s+=\" · <span class='nowrap'>\"+usdcTrim(BigInt(second.donation))",
                          worker)
 
+    def test_verdict351_drawn_rows_chip_in_title(self):
+        # Checker-improvement #351 (2026-11-27, visual verdict #350
+        # item 1): the default page draws one bar of four tested
+        # donations, and first-time readers took the single bar for
+        # a single test — the "Not drawn" legend line below the axis
+        # names the missing rows, but it sits where the eye lands
+        # last. The chart title now carries the count as a chip at
+        # its right end ("1 of 4 rows drawn"), counted from the same
+        # drawable / omitted lists as the legend, so the two can
+        # never disagree. Shown only when rows are omitted. The
+        # Worker JS renderer mirrors the chip and is verified by the
+        # verdict351 node harness, not by this suite.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        passed = build.results_html(
+            run_all(Vault(decimals_offset=6, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=6, mn=1_000_000, fee=1000)
+        self.assertIn("<p class='loss-title'>Victim loss by donation size&nbsp;(USDC)"
+                      "<span class='loss-drawn'>1 of 4 rows drawn</span></p>",
+                      passed)
+        self.assertIn("<strong>Not drawn:</strong> under 0.5% of the pass bound "
+                      "(1, 1K, 1M USDC)", passed)
+        failed = build.results_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)),
+            vic=100_000_000_000, off=0, mn=0, fee=0)
+        self.assertIn("<span class='loss-drawn'>2 of 4 rows drawn</span>", failed)
+        self.assertIn("<strong>Not drawn:</strong> under 0.5% of the worst row "
+                      "(1, 1K USDC)", failed)
+        # No chart at all on the zero-loss run: no title, no chip.
+        zero = build.results_html(
+            run_all(Vault(decimals_offset=18, min_deposit=1_000_000,
+                          perf_fee_bps=1000)),
+            vic=100_000_000_000, off=18, mn=1_000_000, fee=1000)
+        self.assertNotIn("Victim loss by donation size", zero)
+        self.assertNotIn("loss-drawn", zero)
+        # The Worker template carries the same chip behind the
+        # omitted.length guard, and the CSS lays the title out as a
+        # flex row with the chip at its right end.
+        src = open(Path(__file__).parent.parent / "site" / "build.py").read()
+        self.assertIn("(omitted.length?\"<span class='loss-drawn'>\"+drawable.length"
+                      "+\" of \"+(drawable.length+omitted.length)+\" rows drawn</span>\":\"\")",
+                      src)
+        self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;font-weight:600;"
+                      "margin:0 0 .1em;display:flex;justify-content:space-between;"
+                      "align-items:baseline;gap:.2em .7em;flex-wrap:wrap}", src)
+        self.assertIn(".loss-chart--bare .loss-drawn{font-weight:400;font-size:.85em;"
+                      "color:#4b5563;border:1px solid #d1d5db;border-radius:999px;"
+                      "padding:.05em .6em;white-space:nowrap}", src)
+
     def test_verdict335_fail_strip_names_second_breach(self):
         # Visual verdict #335 (2026-11-27) item 1: the noprot strip
         # named only the worst breaching row, so a scanner read two
@@ -13403,7 +13455,14 @@ class TestChecker(unittest.TestCase):
                       "margin:.45em 0 0}",
                       build.CSS)
         self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;"
-                      "font-weight:600;margin:0 0 .1em}",
+                      # Checker-improvement #351 (2026-11-27, visual
+                      # verdict #350 item 1): the title is a flex row
+                      # now — it carries the "N of M rows drawn" chip
+                      # at its right end. See test_verdict351 for the
+                      # chip itself.
+                      "font-weight:600;margin:0 0 .1em;display:flex;"
+                      "justify-content:space-between;align-items:baseline;"
+                      "gap:.2em .7em;flex-wrap:wrap}",
                       build.CSS)
         # Visual verdict #141 (2026-11-21): the axis was bare
         # numbers floating under the bars — no baseline, no drawn
