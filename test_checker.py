@@ -2125,7 +2125,7 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("Result: SOME FAILED", half)
         self.assertIn("incomplete vault state", half)
         self.assertNotIn("Run the same checks&nbsp;with&nbsp;offset&nbsp;6</a>", half)
-        self.assertNotIn("see whether a decimals offset fixes it", half)
+        self.assertNotIn("see whether offset 6 fixes it", half)
         self.assertIn("Get the vault micro-audit</a>", half)
         self.assertIn("/guides/erc4626-slippage-bounds/", half)
         # Mirror image: shares without assets refuses the same way.
@@ -2145,7 +2145,7 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=0)),
             vic=100_000_000_000, off=0, mn=10**15, fee=0)
         self.assertIn("Run the same checks&nbsp;with&nbsp;offset&nbsp;6</a>", giant)
-        self.assertIn("see whether a decimals offset fixes it", giant)
+        self.assertIn("see whether offset 6 fixes it", giant)
         # Worker JS renderer: the same guard, in both gates.
         js = build.checker_results_html_js()
         fn = js[js.index("function resultsHTML"):]
@@ -2482,8 +2482,11 @@ class TestChecker(unittest.TestCase):
         # is a different element and stays plain.
         # D. Fail notice offset-6 CTA, @360 last line "offset 6"
         # frac 0.228 — bind inside the anchor only; the <p>
-        # sentence "run the same checks with offset 6 (your other
-        # parameters unchanged)" stays plain.
+        # sentence stays plain. Visual verdict #343 item 2
+        # (2026-11-27) reworded it to one line ("Or first see
+        # whether offset 6 fixes it — same checks, your other
+        # parameters unchanged."); the old parenthetical form
+        # is gone from both renderers.
         # E. Donation-chart legend Scale line, @360 last line
         # "50%, 75%." frac 0.277 — bind the shared suffix in all
         # four Python branches and both JS branches.
@@ -2517,8 +2520,8 @@ class TestChecker(unittest.TestCase):
         # The <p> sentences that share the words stay plain.
         self.assertIn("See what a failing vault looks like \u2014 run the "
                       "same checks with no protection", js)
-        self.assertIn("run the same checks with offset 6 (your other "
-                      "parameters&nbsp;unchanged)", js)
+        self.assertIn("Or first see whether offset 6 fixes it \u2014 "
+                      "same checks, your other parameters unchanged.", js)
         # E. Legend suffix, bound in, plain out, both renderers.
         self.assertEqual(js.count("gridlines at&nbsp;25%,&nbsp;50%,&nbsp;75%."),
                          4)
@@ -3541,13 +3544,17 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(worker.count("plain&nbsp;deposit"), 2)
         self.assertEqual(worker.count("donation&nbsp;involved)."), 2)
         self.assertEqual(worker.count("Victim loss by donation size&nbsp;(USDC)"), 2)
-        self.assertEqual(worker.count("(your other parameters&nbsp;unchanged)."), 1)
+        # Visual verdict #343 item 2 (2026-11-27): the offset-6
+        # sentence was reworded to one line ("(your" orphaned at a
+        # line end); the bundle count stays 1, template only.
+        self.assertEqual(worker.count("your other parameters unchanged."), 1)
         self.assertEqual(worker.count("twelve measured&nbsp;scenarios."), 1)
         # Old forms are gone from the bundle (the guide pages reuse
         # "plain deposit" as prose, so the desc's plain form is not
         # asserted absent here).
         self.assertNotIn("Victim loss by donation size (USDC)", worker)
         self.assertNotIn("(your other parameters unchanged).", worker)
+        self.assertNotIn("(your other parameters&nbsp;unchanged).", worker)
         self.assertNotIn("twelve measured scenarios.</p>", worker)
 
     def test_exit_fee_guide_numbers(self):
