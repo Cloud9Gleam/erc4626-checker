@@ -12197,6 +12197,64 @@ class TestChecker(unittest.TestCase):
                      "prefers-reduced-motion:reduce"):
             self.assertIn(frag, worker)
 
+    def test_verdict362_toc_settle_nudge(self):
+        # Checker-improvement #362 (2026-11-28, visual verdict #362
+        # item 1, the #360 honest residual): the bar's RETURN on
+        # scroll up re-opens the same cut at its bottom edge -- 8 of
+        # 15 sampled up-scroll stops on /audit/ and 4 of 15 on
+        # /checker/ park a line half-cut under the reappearing bar
+        # (hidden_files/measure-verdict362.py). The fix is a settle
+        # nudge: 180ms after scrolling stops, if a bar is stuck and
+        # shown, any main-text line straddling the bar's bottom edge
+        # is moved fully below it by scrolling the page up by exactly
+        # the overlap. Post-fix the probe reads 0 TOC-seam clips on
+        # both pages' up-stops; header-seam clips remain (accepted
+        # #360 remainder -- clearing both seams cannot converge in a
+        # uniform paragraph, the seams are 44px apart).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        worker = build.worker_js(pages)
+        script = build.TOC_HIDE_SCRIPT
+        # The settle's moving parts, pinned as strings: 180ms
+        # debounce re-armed on every scroll event, stuck-ness from
+        # the scroll position (not the live rect -- the settle can
+        # fire mid-slide-in), the seam from the bar's final geometry
+        # (sticky top + rect height), a line counts as straddling
+        # only past a 0.5px tolerance on both sides, the nudge is an
+        # up-scroll by exactly the overlap, at most 3 passes, and
+        # the TOC bar itself is excluded from the line walk.
+        for frag in (
+                "var settleTimer=null;",
+                "setTimeout(settle,180)",
+                "function settle()",
+                "function seamNudge(seam)",
+                "createTreeWalker(main,NodeFilter.SHOW_TEXT)",
+                "closest('.audit-toc,.checker-toc')",
+                "rc.top<seam-0.5&&rc.bottom>seam+0.5",
+                "pin(b)+b.getBoundingClientRect().height",
+                "window.scrollBy(0,-n)",
+                "if(n<=0.5)break;",
+                "for(var k=0;k<3;k++)",
+                "if(y<=stick[i]+2)break;"):
+            self.assertIn(frag, script)
+        # The settle ships with the hide script: once on each TOC
+        # page, three times in the worker (audit + checker +
+        # CHECKER_TEMPLATE); the home page carries neither.
+        self.assertEqual(pages["/audit/"].count(script), 1)
+        self.assertEqual(pages["/checker/"].count(script), 1)
+        self.assertEqual(pages["/"].count(script), 0)
+        self.assertEqual(worker.count(script), 3)
+        # The #360 hide/show behaviour is untouched: the dead zone,
+        # the show triggers and the sticky rules are all still there.
+        for frag in ("y-dirY>8", "dirY-y>8", "y<=80",
+                     "addEventListener('focusin',show)"):
+            self.assertIn(frag, script)
+        self.assertEqual(build.CSS.count("position:sticky"), 3)
+        self.assertIn("transform:translateY(-110%)", build.CSS)
+
     def test_footer_closes_the_page_tightly(self):
         # Visual verdict #69: the page ending felt loose -- the small
         # grey footer text floated ~34px below the white card and the
