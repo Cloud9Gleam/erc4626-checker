@@ -9234,6 +9234,104 @@ class TestChecker(unittest.TestCase):
             home.count(".home-intro p{max-width:none;text-wrap:pretty}"), 1)
         self.assertNotIn(".home-intro p{max-width:80ch}", home)
 
+    def test_verdict342_checker_toc(self):
+        # Checker-improvement #342 (2026-11-27, visual verdict #341
+        # item 2): /checker/ is ~5,000px at 1919px with no in-page
+        # navigation -- a visitor hunting for one of the six checks
+        # or the API scrolled past the ~534px form. A sticky "On
+        # this page" nav now sits between the verdict strip and the
+        # form, reusing the /audit/ .audit-toc bar (shared selectors,
+        # same 71px pin, same 131px anchor clearance under
+        # .checker-page). It links to Parameters, Results, the six
+        # checks (ids on the card sections, both renderers) and the
+        # API h2. No copy or numbers change; the strip stays above
+        # the form and the form above the results.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        body = build.checker_body()
+        self.assertEqual(body.count('<nav class="checker-toc"'), 1)
+        self.assertEqual(body.count('aria-label="On this page"'), 1)
+        toc = body[body.index('<nav class="checker-toc"'):
+                   body.index('</nav>')]
+        hrefs = [t.split('href="')[1].split('"')[0]
+                 for t in toc.split("<a ")[1:]]
+        self.assertEqual(hrefs, ["#checker-form", "#results",
+                                 "#check-rounding", "#check-donation",
+                                 "#check-minimum", "#check-preview",
+                                 "#check-fee", "#check-share-price",
+                                 "#api"])
+        self.assertEqual(toc.count("<li>"), 9)
+        # Shorthand labels (the #340 audit precedent): nine links
+        # fit one desktop row only as "Params" / "Price" -- the full
+        # "Parameters" / "Share-price" folded the bar to two rows
+        # (measured 71px; probe342d). The hrefs above are the contract.
+        self.assertIn('<li><a href="#checker-form">Params</a></li>', toc)
+        self.assertIn('<li><a href="#check-share-price">Price</a></li>', toc)
+        # Order on the page: strip, TOC, form, results banner.
+        self.assertLess(body.index("verdict-strip"),
+                        body.index('<nav class="checker-toc"'))
+        self.assertLess(body.index('<nav class="checker-toc"'),
+                        body.index('<form id="checker-form"'))
+        self.assertLess(body.index('<form id="checker-form"'),
+                        body.index('<h2 id="results"'))
+        # The .checker-page wrapper scopes the 131px clearance.
+        self.assertTrue(body.startswith('<div class="checker-page">'))
+        self.assertTrue(body.rstrip().endswith("</div>"))
+        self.assertEqual(body.count('<h2 id="api">Use it as an API</h2>'), 1)
+        # Six card ids, both presets: the failing-first sort moves
+        # Donation first on noprot, but the ids travel with the cards.
+        for kwargs in ({}, {"off": 0, "mn": 0, "fee": 0}):
+            html = build.results_html(
+                run_all(Vault(decimals_offset=kwargs.get("off", 6),
+                              min_deposit=kwargs.get("mn", 1_000_000),
+                              perf_fee_bps=kwargs.get("fee", 1000))),
+                **kwargs)
+            self.assertEqual(html.count("<section class='check-card"), 6)
+            for slug in ("rounding", "donation", "minimum", "preview",
+                         "fee", "share-price"):
+                self.assertEqual(
+                    html.count(f" id='check-{slug}'"), 1, slug)
+        self.assertEqual(build.CHECK_ANCHORS, {
+            "rounding": "rounding",
+            "donation_inflation": "donation",
+            "minimum_viable_deposit": "minimum",
+            "preview_consistency": "preview",
+            "fee_conservation": "fee",
+            "share_price_sanity": "share-price"})
+        # The JS renderer carries the same map and the same ids.
+        js = build.checker_results_html_js()
+        self.assertIn(
+            'const CHECK_ANCHOR={rounding:"rounding",'
+            'donation_inflation:"donation",'
+            'minimum_viable_deposit:"minimum",'
+            'preview_consistency:"preview",fee_conservation:"fee",'
+            'share_price_sanity:"share-price"};', js)
+        self.assertIn("id='check-\"+(CHECK_ANCHOR[r.name]||r.name)", js)
+        # Shared bar rules + checker clearance, in CSS and the Worker.
+        for css in (build.CSS, build.worker_js(
+                dict((p, b) for p, t, d, k, b in build.PAGES))):
+            self.assertIn(
+                ".audit-toc,.checker-toc{background:#f9fafb;", css)
+            self.assertIn(
+                "@media (min-width:641px){.audit-toc,.checker-toc{"
+                "position:sticky;top:71px;z-index:5;display:flex;", css)
+            self.assertIn(
+                ".audit-page [id],.checker-page [id]"
+                "{scroll-margin-top:131px}", css)
+            # The checker bar's own gap override (9 links vs the
+            # audit bar's 7): 1em -> .8em, without which the bar
+            # folded to two rows even with the shorthand labels.
+            self.assertIn(".checker-toc ul{gap:.1em .8em}", css)
+        # The global 84px clearance still covers mobile + other pages.
+        self.assertIn("[id]{scroll-margin-top:84px}", build.CSS)
+        # The Worker embeds the checker page twice (PAGES +
+        # CHECKER_TEMPLATE) and the nav is static markup in both.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertEqual(worker.count('<nav class=\\"checker-toc\\"'), 2)
+
     def test_copy_link_button_fills_banner_on_mobile(self):
         # Verdict #100 minor observation: whitespace around the
         # "Copy link to these results" button. Desktop falsified
@@ -9836,7 +9934,11 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("<p", page[top_start:top_end])
         # The four half-width cards keep their own (classed) descs
         # and are not matched by a bare-<p> selector.
-        self.assertEqual(page.count("<section class='check-card'>"), 4)
+        # Checker-improvement #342 (2026-11-27): the cards now
+        # carry id='check-<slug>' after the class, so the bare
+        # "<section class='check-card'>" form is gone; the four
+        # half-width cards are the ones whose class list ends there.
+        self.assertEqual(page.count("<section class='check-card' id='check-"), 4)
         self.assertIn("class='loss-title'", page)
         self.assertIn("class='twrap-hint'", page)
 
@@ -16159,7 +16261,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<body id=\\"top\\">', worker)
         self.assertIn('<nav class=\\"audit-toc\\"', worker)
         self.assertIn(
-            ".audit-toc{background:#f9fafb;border:1px solid #d1d5db;"
+            ".audit-toc,.checker-toc{background:#f9fafb;border:1px solid #d1d5db;"
             "border-left:4px solid #0a7d2c;border-radius:10px;"
             "padding:.7em 1em .8em;margin:1em 0}",
             build.CSS)
@@ -16211,27 +16313,27 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            ".audit-toc{background:#f9fafb;border:1px solid #d1d5db;"
+            ".audit-toc,.checker-toc{background:#f9fafb;border:1px solid #d1d5db;"
             "border-left:4px solid #0a7d2c;border-radius:10px;"
             "padding:.7em 1em .8em;margin:1em 0}",
             build.CSS)
         self.assertNotIn(
             ".audit-toc{background:#f9fafb;border:1px solid #e5e7eb;",
             build.CSS)
-        self.assertIn(".audit-toc a{font-weight:600}", build.CSS)
+        self.assertIn(".audit-toc,.checker-toc a{font-weight:600}", build.CSS)
         self.assertIn(
-            "@media (min-width:641px){.audit-toc{position:sticky;"
+            "@media (min-width:641px){.audit-toc,.checker-toc{position:sticky;"
             "top:71px;z-index:5;display:flex;flex-wrap:wrap;"
             "align-items:baseline;gap:.1em 1.1em;padding:.45em 1em;font-size:.95em}",
             build.CSS)
-        self.assertEqual(build.CSS.count(".audit-toc{position:sticky"), 1)
-        self.assertIn(".audit-toc p{margin:0}", build.CSS)
+        self.assertEqual(build.CSS.count(".audit-toc,.checker-toc{position:sticky"), 1)
+        self.assertIn(".audit-toc,.checker-toc p{margin:0}", build.CSS)
         self.assertIn(
-            ".audit-toc ul{flex:1;min-width:0;display:flex;flex-wrap:wrap;"
+            ".audit-toc,.checker-toc ul{flex:1;min-width:0;display:flex;flex-wrap:wrap;"
             "gap:.1em 1em}",
             build.CSS)
-        self.assertIn(".audit-toc li{margin:0}", build.CSS)
-        self.assertIn(".audit-page [id]{scroll-margin-top:131px}",
+        self.assertIn(".audit-toc,.checker-toc li{margin:0}", build.CSS)
+        self.assertIn(".audit-page [id],.checker-page [id]{scroll-margin-top:131px}",
                       build.CSS)
         self.assertNotIn(".audit-page [id]{scroll-margin-top:177px}",
                          build.CSS)
@@ -16249,15 +16351,15 @@ class TestChecker(unittest.TestCase):
         self.assertEqual(build.CSS.count("position:sticky"), 3)
         pages = dict((p, b) for p, t, d, k, b in build.PAGES)
         worker = build.worker_js(pages)
-        self.assertIn(".audit-toc{background:#f9fafb;", worker)
+        self.assertIn(".audit-toc,.checker-toc{background:#f9fafb;", worker)
         self.assertIn(
-            "@media (min-width:641px){.audit-toc{position:sticky;"
+            "@media (min-width:641px){.audit-toc,.checker-toc{position:sticky;"
             "top:71px;z-index:5;display:flex;",
             worker)
-        self.assertIn(".audit-page [id]{scroll-margin-top:131px}", worker)
+        self.assertIn(".audit-page [id],.checker-page [id]{scroll-margin-top:131px}", worker)
         self.assertNotIn("scroll-margin-top:177px", worker)
         self.assertNotIn("scroll-margin-top:163px", worker)
-        self.assertIn(".audit-toc a{font-weight:600}", worker)
+        self.assertIn(".audit-toc,.checker-toc a{font-weight:600}", worker)
         self.assertNotIn("scroll-margin-top:288px", worker)
         # Markup: still one nav, 7 links, same order, the Track
         # record link still the last li; the four long labels are
@@ -16296,19 +16398,19 @@ class TestChecker(unittest.TestCase):
         # 1. TOC: light-box background, no disc bullets, green
         # chevron markers on the items.
         self.assertIn(
-            ".audit-toc{background:#f9fafb;border:1px solid #d1d5db;"
+            ".audit-toc,.checker-toc{background:#f9fafb;border:1px solid #d1d5db;"
             "border-left:4px solid #0a7d2c;border-radius:10px;"
             "padding:.7em 1em .8em;margin:1em 0}",
             build.CSS)
         self.assertNotIn(".audit-toc{background:#fff;", build.CSS)
-        self.assertIn(".audit-toc ul{margin:0;padding-left:0;list-style:none}",
+        self.assertIn(".audit-toc,.checker-toc ul{margin:0;padding-left:0;list-style:none}",
                       build.CSS)
         self.assertIn(
-            ".audit-toc li{margin:.15em 0;position:relative;padding-left:1em}",
+            ".audit-toc,.checker-toc li{margin:.15em 0;position:relative;padding-left:1em}",
             build.CSS)
         self.assertNotIn(".audit-toc li{margin:.15em 0}", build.CSS)
         self.assertIn(
-            '.audit-toc li::before{content:"\u203a";position:absolute;'
+            '.audit-toc,.checker-toc li::before{content:"\u203a";position:absolute;'
             "left:0;top:0;color:#0a7d2c;font-weight:700}",
             build.CSS)
         self.assertEqual(audit.count('<nav class="audit-toc"'), 1)
@@ -16334,8 +16436,8 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         # The deployed worker carries all three rules.
         worker = build.worker_js(pages)
-        for rule in (".audit-toc{background:#f9fafb;",
-                     ".audit-toc li::before{content:",
+        for rule in (".audit-toc,.checker-toc{background:#f9fafb;",
+                     ".audit-toc,.checker-toc li::before{content:",
                      ".loss-head{font-size:.92em;color:#374151;margin:0 0 .5em;"
                      "padding:.6em .9em;list-style:none;background:#f9fafb;",
                      ".track-intro{background:#f9fafb;"):
@@ -31239,12 +31341,12 @@ class TestChecker(unittest.TestCase):
             self.assertEqual(html.count('<div class="check-grid">'), 1)
             self.assertEqual(html.count("<section class='check-card"), 6)
             self.assertEqual(
-                html.count("<section class='check-card check-card--wide'>"),
+                html.count("<section class='check-card check-card--wide'"),
                 2)
             wide_titles = [
                 s.split("</h3>", 1)[0].split("</span> ", 1)[1]
                 for s in html.split(
-                    "<section class='check-card check-card--wide'>")[1:]]
+                    "<section class='check-card check-card--wide'")[1:]]
             self.assertEqual(sorted(wide_titles),
                              ["Donation inflation", "Rounding directions"])
             # The grid opens before the first card and closes after
@@ -31411,7 +31513,7 @@ class TestChecker(unittest.TestCase):
         )
         for v, kwargs in cases:
             html = build.results_html(run_all(v), **kwargs)
-            cards = [s.startswith(" check-card--wide'>")
+            cards = [s.startswith(" check-card--wide'")
                      for s in html.split("<section class='check-card")[1:]]
             self.assertEqual(len(cards), 6)
             self.assertEqual(sum(cards), 2)
