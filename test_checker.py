@@ -9306,7 +9306,7 @@ class TestChecker(unittest.TestCase):
         # phones it follows hero-top in normal flow like the stats
         # strip — no order rule.
         for rule in (
-                ".hero-compare{display:flex;gap:.75em;max-width:1024px;margin:.9em auto 0}",
+                ".hero-compare{display:flex;gap:.75em;max-width:1024px;margin:.6em auto 0}",
                 ".hero-compare-cell{flex:1 1 0;min-width:0;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.28);border-radius:10px;padding:.7em .8em;display:flex;flex-direction:column}",
                 ".hero-compare-label{display:block;font-size:.82em;color:#cfe8d6;min-height:2.5em;line-height:1.25}",
                 ".hero-compare-cell strong{display:block;font-size:1.35em;color:#fff;line-height:1.15;margin:.15em 0 .25em}",
@@ -9538,7 +9538,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".hero-bleed .hero{background:transparent;max-width:1280px;"
             "margin:0 auto;border-radius:0;box-shadow:none;"
-            "padding:1.5em 1.25em .9em}", build.CSS)
+            "padding:1.5em 1.25em .6em}", build.CSS)
         # Only the homepage has a hero band: the shared CSS is inlined
         # on every page, so assert on the markup, not the class name.
         self.assertNotIn('<div class="hero-bleed">', pages["/checker/"])
@@ -10418,13 +10418,18 @@ class TestChecker(unittest.TestCase):
         # so there is no column foot to pin to: it spans the full
         # 1024px hero-top row as a direct child of .hero, with its
         # own 1024px cap, margin-top clearing the taller column and
-        # margin-bottom 0 handing the gap to the hero's own .9em
-        # bottom padding (#325: the flow moved out of the band).
+        # margin-bottom 0 handing the gap to the hero's own .6em
+        # bottom padding (#325: the flow moved out of the band;
+        # #361: .9em -> .6em).
         # The column keeps justify-content:space-between —
         # it now spreads the intro/CTA slack across the column's gaps
-        # (measured 1919px: left column 317.8 vs panel 305.6, the CTA
-        # ends 1.2px above the panel bottom). The base p margin rule
-        # is unchanged.
+        # (measured 1919px at #173: left column 317.8 vs panel 305.6,
+        # the CTA ends 1.2px above the panel bottom; re-measured at
+        # #361: column 284.0 == panel 284.0, the CTA ends ~11px above
+        # the panel bottom — the #173 1.2px alignment was already
+        # gone before #361, when the lead/proof became one line each
+        # in #357, and #361 preserves the ~11px relationship). The
+        # base p margin rule is unchanged.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -10437,7 +10442,7 @@ class TestChecker(unittest.TestCase):
         start = build.CSS.index(".hero-stats{display:flex;")
         rule = build.CSS[start:build.CSS.index("}", start) + 1]
         self.assertNotIn("margin-top:auto", rule)
-        self.assertIn("max-width:1024px;margin:1em auto 0", rule)
+        self.assertIn("max-width:1024px;margin:.7em auto 0", rule)
         # Markup: the strip is a direct child of .hero, after
         # hero-top closes — it is now the hero's last row (#325) —
         # not inside the left column, whose last child is now the
@@ -10462,6 +10467,69 @@ class TestChecker(unittest.TestCase):
         # aside closes, while the strip sits after it.
         self.assertLess(hero.index('<p class="hero-cta">'), col_end)
 
+    def test_verdict361_hero_rhythm_is_tight(self):
+        # Visual verdict #361 (2026-11-28, checker-improvement,
+        # measured hidden_files/measure-verdict361.py at 1919px):
+        # the hero's vertical rhythm was loose — h1->lead 53px,
+        # lead->proof 49px, proof->CTA 40px, CTA->compare 27px,
+        # compare->stats 15px, stats->intro 42px, band 559px tall.
+        # The trim is spacing values only: the checks panel gives
+        # back ~34px (padding, li/ul/strong/note margins), h1
+        # margin-bottom .4em->.25em, compare margin-top .9em->.6em,
+        # stats margin-top 1em->.7em and padding-top .9em->.7em,
+        # hero bottom padding .9em->.6em. Two invariants hold: the
+        # left column keeps justify-content:space-between (the slack
+        # still spreads evenly, it is only smaller now), and the
+        # compare label keeps min-height:2.5em (#297: the numbers
+        # stay aligned if the longest label wraps near 700px).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        for rule in (
+                ".hero h1{color:#fff;font-size:1.9em;"
+                "line-height:1.25;margin:0 0 .25em}",
+                ".hero{background:linear-gradient(135deg,#0c3b2e,#0a5c38);"
+                "color:#d7f0dd;border:0;border-radius:10px;"
+                "padding:1.5em 1.75em .6em;",
+                ".hero-bleed .hero{background:transparent;max-width:1280px;"
+                "margin:0 auto;border-radius:0;box-shadow:none;"
+                "padding:1.5em 1.25em .6em}",
+                ".hero-checks{flex:0 0 320px;background:rgba(255,255,255,.09);"
+                "border:1px solid rgba(255,255,255,.28);border-radius:10px;"
+                "padding:.8em 1.1em;",
+                ".hero-checks strong{display:block;color:#fff;margin-bottom:.25em}",
+                ".hero-checks ul{margin:.15em 0 .35em;padding-left:1.2em}",
+                ".hero-checks li{margin:.2em 0}",
+                ".hero-top .hero-checks-note{margin:.5em 0 0;padding-top:.5em;",
+                ".hero-compare{display:flex;gap:.75em;max-width:1024px;"
+                "margin:.6em auto 0}",
+                ".hero-stats{display:flex;gap:1.5em;padding-top:.7em;"
+                "border-top:1px solid rgba(255,255,255,.28);font-size:.9em;"
+                "color:#e6f5ea;max-width:1024px;margin:.7em auto 0}"):
+            self.assertIn(rule, build.CSS)
+        # Kept invariants: the column still spreads its slack evenly
+        # (space-between), and the compare labels still reserve two
+        # lines so the numbers stay aligned near 700px (#297).
+        col = build.CSS.index(".hero-top>div{")
+        self.assertIn("justify-content:space-between",
+                      build.CSS[col:build.CSS.index("}", col) + 1])
+        self.assertIn(
+            ".hero-compare-label{display:block;font-size:.82em;"
+            "color:#cfe8d6;min-height:2.5em;line-height:1.25}",
+            build.CSS)
+        # The old loose values are gone from the hero rules.
+        for old in ("margin:0 0 .4em}",
+                    "padding:1.5em 1.75em .9em",
+                    "padding:1.5em 1.25em .9em",
+                    "padding:1em 1.1em;font-size:.92em",
+                    ".hero-checks li{margin:.3em 0}",
+                    "margin:.7em 0 0;padding-top:.7em",
+                    "margin:.9em auto 0}",
+                    "padding-top:.9em;border-top:1px solid rgba(255,255,255,.28);"
+                    "font-size:.9em;color:#e6f5ea;max-width:1024px;margin:1em auto 0"):
+            self.assertNotIn(old, build.CSS)
+
     def test_hero_checks_panel_note_fills_right_column(self):
         # Visual verdict #65: the stats strip fixed the left column,
         # but the blank band moved to the right — the panel ended
@@ -10477,7 +10545,7 @@ class TestChecker(unittest.TestCase):
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn(
-            ".hero-checks-note{margin:.7em 0 0;padding-top:.7em;"
+            ".hero-checks-note{margin:.5em 0 0;padding-top:.5em;"
             "border-top:1px solid rgba(255,255,255,.28);",
             build.CSS)
         start = home.index('<div class="hero">')
@@ -10521,7 +10589,7 @@ class TestChecker(unittest.TestCase):
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
         self.assertIn(
-            ".hero-top .hero-checks-note{margin:.7em 0 0;padding-top:.7em;"
+            ".hero-top .hero-checks-note{margin:.5em 0 0;padding-top:.5em;"
             "border-top:1px solid rgba(255,255,255,.28);font-size:.92em;"
             "line-height:1.45;text-wrap:balance}",
             build.CSS)
@@ -10759,9 +10827,9 @@ class TestChecker(unittest.TestCase):
         import build
         home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
         self.assertIn(
-            ".hero-stats{display:flex;gap:1.5em;padding-top:.9em;"
+            ".hero-stats{display:flex;gap:1.5em;padding-top:.7em;"
             "border-top:1px solid rgba(255,255,255,.28);font-size:.9em;"
-            "color:#e6f5ea;max-width:1024px;margin:1em auto 0}",
+            "color:#e6f5ea;max-width:1024px;margin:.7em auto 0}",
             build.CSS)
         self.assertIn(".hero-stats strong{display:block;font-size:1.5em;",
                       build.CSS)
@@ -11717,6 +11785,10 @@ class TestChecker(unittest.TestCase):
         # hero's own 1.5em bottom padding (~24px plus line-box leading).
         # Trim the bottom padding to .9em (~14px); top padding stays
         # 1.5em and the sides 1.75em.
+        # Visual verdict #361 (2026-11-28, checker-improvement): the
+        # hero rhythm trim takes the bottom padding one step further,
+        # .9em -> .6em (~10px), as part of tightening every hero group
+        # by 10-20px; the bleed variant carries the same .6em.
         import re
         import sys
         from pathlib import Path
@@ -11724,7 +11796,7 @@ class TestChecker(unittest.TestCase):
         import build
         m = re.search(r"\.hero\{[^}]*padding:([^;]+);", build.CSS)
         self.assertIsNotNone(m, "hero padding rule not found")
-        self.assertEqual(m.group(1), "1.5em 1.75em .9em")
+        self.assertEqual(m.group(1), "1.5em 1.75em .6em")
 
     def test_h1_uses_balanced_text_wrap(self):
         # Visual verdict #58 remainder: at narrower viewports the home
@@ -11773,7 +11845,7 @@ class TestChecker(unittest.TestCase):
         # The hero h1 is white on the dark hero, same size as other
         # pages' h1s on desktop, same size as the mobile h1 at <=640px.
         self.assertIn(".hero h1{color:#fff;font-size:1.9em;"
-                      "line-height:1.25;margin:0 0 .4em}", build.CSS)
+                      "line-height:1.25;margin:0 0 .25em}", build.CSS)
         self.assertIn(".hero h1{font-size:1.55em}", build.CSS)
         # Other pages are untouched: their title is still the h1.
         other = build.page("ERC-4626 checker — donation-inflation model",
