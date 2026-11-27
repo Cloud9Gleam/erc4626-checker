@@ -28796,6 +28796,32 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             'Six checks run on your parameters — the donation '
             'check shows the next depositor\'s&nbsp;loss.', build_text)
+        # Visual verdict #345 (2026-11-27, checker-improvement):
+        # the real browser measures the gaps above the links at
+        # 23/45/46px (Free/Paid/Research) — Free's body is one
+        # line longer than the other two in real Chrome (intros
+        # 6/4/5 there, 6/5/6 in headless; bullets wrap
+        # identically in both renderers, #181). So Paid service
+        # and Research each gain one honest one-line bullet,
+        # both restating copy already on the site: "We never
+        # hold your funds." (/audit/ limits: "No custody: we
+        # never hold your funds and never ask for keys.") and
+        # "199 patterns in the library." (/patterns/ has 199
+        # sections, pinned by the patterns tests). Measured in
+        # headless first (hidden_files/probe-verdict346
+        # -candidates.py, 1919px): both new bullets render as
+        # exactly one line; cards 583.5px, link tops spread 0.0
+        # — headless now reads the Free blank as 46.7px because
+        # headless counts the two intros one line longer, which
+        # is the known renderer offset; the real-browser balance
+        # is verified live after deploy.
+        self.assertIn(
+            '<li>No guaranteed findings.</li>\n'
+            '<li>We never hold your funds.</li>', build_text)
+        self.assertIn(
+            '<li>New guides appear as the research grows.</li>\n'
+            '<li><a href="/patterns/">199 patterns</a> in the '
+            'library.</li>', build_text)
         # Visual verdict #301 (2026-11-26, checker-improvement):
         # the Research card's last bullet was a fragment, so it is
         # now a complete sentence; bullet 1 is trimmed one line in
@@ -28865,6 +28891,59 @@ class TestChecker(unittest.TestCase):
                       '</a> walks through a run.', build_text)
         self.assertIn('<li>New guides appear as the research grows.'
                       '</li>', build_text)
+
+    def test_verdict346_home_cards_gain_one_bullet_each(self):
+        # Visual verdict #345 (2026-11-27, checker-improvement):
+        # the real browser measures the gaps above the links at
+        # 23/45/46px (Free/Paid/Research). The gap is one intro
+        # line in real Chrome (6/4/5 vs headless 6/5/6), so Paid
+        # service and Research each gain exactly one bullet and
+        # Free tool gains none. Both new bullets are one line at
+        # 1919px (probe: hidden_files/probe-verdict346
+        # -candidates.py) and restate copy already on the site —
+        # "We never hold your funds." from /audit/ limits, "199
+        # patterns in the library." from the /patterns/ index
+        # (199 sections, pinned by the patterns tests). The
+        # bullets sit inside their trust/growth clusters, not at
+        # the end of the lists: the Paid bullet follows "No
+        # guaranteed findings." and precedes the Hunters
+        # cross-sell; the Research bullet follows "New guides
+        # appear as the research grows." and precedes the
+        # closing "Every review ends with findings" sentence.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        self.assertIn("/patterns/", pages)
+        home = pages["/"]
+        cards = re.findall(
+            r'<section class="card"><h2>([^<]*)</h2>(.*?)<p class="card-link">',
+            home, re.S)
+        self.assertEqual(len(cards), 3)
+        bullets = {}
+        for title, body in cards:
+            bullets[title] = body.count("<li>")
+        self.assertEqual(bullets["Free tool"], 3)
+        self.assertEqual(bullets["Paid service"], 5)
+        self.assertEqual(bullets["Research"], 5)
+        paid = dict(cards)["Paid service"]
+        self.assertIn("<li>We never hold your funds.</li>", paid)
+        self.assertLess(paid.index("No guaranteed findings."),
+                        paid.index("We never hold your funds."))
+        self.assertLess(paid.index("We never hold your funds."),
+                        paid.index("Hunters:"))
+        research = dict(cards)["Research"]
+        self.assertIn(
+            '<li><a href="/patterns/">199 patterns</a> in the '
+            'library.</li>', research)
+        self.assertLess(
+            research.index("New guides appear as the research grows."),
+            research.index("199 patterns</a> in the library."))
+        self.assertLess(
+            research.index("199 patterns</a> in the library."),
+            research.index("Every review ends with findings"))
 
     def test_verdict183_orphan_words_are_kept_together(self):
         # Visual verdict #183 (2026-11-24, checker-improvement):
