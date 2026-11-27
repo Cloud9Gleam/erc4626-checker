@@ -1446,7 +1446,7 @@ class TestChecker(unittest.TestCase):
         # rides in a nowrap span (same span in the JS lossSentenceShort).
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
                       "worst loss <strong>0.909091</strong> of 0.001 USDC"
-                      " · 1,000,000,000 USDC also over the bound: 0.099890 USDC",
+                      " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
                       failed)
         self.assertNotIn("victim loses", failed)
         custom = build.verdict_strip_html(
@@ -1577,6 +1577,36 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<span class="verdict-strip__verdict">× SOME FAILED</span>',
                       failed)
 
+    def test_verdict344_second_breach_donation_is_nowrap(self):
+        # Checker-improvement #344 (2026-11-27, visual verdict #343
+        # item 7): the second breaching row's donation was bare text,
+        # so at 1919px "1,000,000,000" ended line 1 and "USDC" opened
+        # line 2 — the number split from its unit. It rides in the
+        # same nowrap span the first clause already uses, so the
+        # break moves to before the number instead. The first
+        # clause, the loss values and the "and N more" tail are
+        # unchanged; a single-breach run still has no second clause.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        failed = build.verdict_strip_html(
+            run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
+        self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC</span>"
+                      " also over the bound: 0.099890 USDC", failed)
+        self.assertNotIn(" · 1,000,000,000 USDC also over the bound",
+                         failed)
+        self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
+                      "worst loss <strong>0.909091</strong> of 0.001 USDC",
+                      failed)
+        # The Worker renderer mirrors the span (single quotes there).
+        worker = open(Path(__file__).parent.parent
+                      / "site" / "build.py").read()
+        self.assertIn("s+=\" · <span class='nowrap'>\"+usdcTrim(BigInt(second.donation))",
+                      worker)
+        self.assertNotIn("s+=\" · \"+usdcTrim(BigInt(second.donation))+\" USDC also",
+                         worker)
+
     def test_verdict335_fail_strip_names_second_breach(self):
         # Visual verdict #335 (2026-11-27) item 1: the noprot strip
         # named only the worst breaching row, so a scanner read two
@@ -1595,7 +1625,7 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             "<span class=\"nowrap\">1,000,000 USDC donation</span>: "
             "worst loss <strong>0.909091</strong> of 0.001 USDC"
-            " · 1,000,000,000 USDC also over the bound: 0.099890 USDC",
+            " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
             failed)
         self.assertNotIn("victim loses", failed)
         # The helper itself: worst first, only rows over the bound.
@@ -1613,7 +1643,7 @@ class TestChecker(unittest.TestCase):
                              {"donation": 1_000_000_000_000_000, "victim_loss": 99890}]}]
         self.assertIn(
             "worst loss <strong>0.909091</strong> of 0.001 USDC"
-            " · 1,000,000,000 USDC also over the bound: 0.099890 USDC"
+            " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC"
             " · and 1 more over the bound",
             build.verdict_strip_html(three))
         # One breaching row only: no second clause at all.
@@ -1748,7 +1778,7 @@ class TestChecker(unittest.TestCase):
                           perf_fee_bps=0)))
         self.assertIn("worst loss <strong>0.909091</strong> of 0.001 USDC",
                       failed)
-        self.assertIn("1,000,000,000 USDC also over the bound: 0.099890 USDC",
+        self.assertIn("<span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
                       failed)
         self.assertNotIn("victim loses", failed)
         # The Worker JS renderer computes the same effective bound.
@@ -1818,7 +1848,7 @@ class TestChecker(unittest.TestCase):
                       strip)
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
                       "worst loss <strong>0.909091</strong> of 0.001 USDC"
-                      " · 1,000,000,000 USDC also over the bound: 0.099890 USDC",
+                      " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
                       strip)
         self.assertNotIn("100,000 USDC deposit loses", strip)
         self.assertNotIn("1 of 6 failed", strip)
@@ -1888,7 +1918,7 @@ class TestChecker(unittest.TestCase):
                                 perf_fee_bps=0))
         strip = build.verdict_strip_html(results)
         self.assertIn("worst loss <strong>0.909091</strong> of 0.001 USDC"
-                      " · 1,000,000,000 USDC also over the bound: 0.099890 USDC",
+                      " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
                       strip)
         self.assertNotIn("victim loses", strip)
         self.assertNotIn("deposit loses", strip)
@@ -1948,7 +1978,7 @@ class TestChecker(unittest.TestCase):
             run_all(Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)))
         self.assertIn("<span class=\"nowrap\">1,000,000 USDC donation</span>: "
                       "worst loss <strong>0.909091</strong> of 0.001 USDC"
-                      " · 1,000,000,000 USDC also over the bound: 0.099890 USDC",
+                      " · <span class=\"nowrap\">1,000,000,000 USDC</span> also over the bound: 0.099890 USDC",
                       strip)
         self.assertNotIn("100,000 USDC deposit loses", strip)
         self.assertIn("0.909091", failed)
