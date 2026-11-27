@@ -11805,6 +11805,16 @@ class TestChecker(unittest.TestCase):
         # the shortened display is gone for good and the row holds
         # only address, copy, and BaseScan; #309 moves the note
         # into the QR figure below the row.
+        # Checker-improvement #358 (2026-11-28, visual verdict #358
+        # item 3): the full-width box was still half empty —
+        # measure-verdict358.py put the address at 492px in a 903px
+        # box at 1919px, ~45% blank white, reading as an unfilled
+        # field. The visible box moves from the code to the
+        # #pay-addr span, which shrink-wraps to the address; the
+        # code keeps flex:0 0 100% (its own full-width line, the
+        # actions still on the line below) but is now visually
+        # bare — transparent, no border, no padding. The 2026-11-23
+        # line decision stands; only the box hugs.
         import re
         import sys
         from pathlib import Path
@@ -11816,10 +11826,21 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("flex:0 1 auto", m.group(0))
         self.assertIn("box-sizing:border-box", m.group(0))
         self.assertIn("font-size:1.15em", m.group(0))
-        self.assertIn("border:1px solid #9ca3af", m.group(0))
         self.assertIn("max-width:100%", m.group(0))
         self.assertIn("word-break:break-all", m.group(0))
         self.assertNotIn("text-overflow:ellipsis", m.group(0))
+        self.assertIn("background:transparent", m.group(0))
+        self.assertIn("border:0", m.group(0))
+        self.assertIn("padding:0", m.group(0))
+        self.assertNotIn("border:1px solid #9ca3af", m.group(0))
+        s = re.search(r"\.pay-row #pay-addr\{[^}]*\}", build.CSS)
+        self.assertIsNotNone(s, ".pay-row #pay-addr rule not found")
+        self.assertIn("display:inline-block", s.group(0))
+        self.assertIn("background:#fff", s.group(0))
+        self.assertIn("border:1px solid #9ca3af", s.group(0))
+        self.assertIn("padding:.45em .7em", s.group(0))
+        self.assertIn("max-width:100%", s.group(0))
+        self.assertIn("box-sizing:border-box", s.group(0))
         self.assertIn(".pay-row{display:flex", build.CSS)
         self.assertIn("flex-wrap:wrap", build.CSS)
         audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
@@ -11828,6 +11849,35 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("Show shortened address", audit)
         self.assertNotIn("togglePayAddr", audit)
         self.assertIn(">Copy address</button>", audit)
+
+    def test_verdict358_pay_addr_box_hugs_address(self):
+        # Checker-improvement #358 (2026-11-28, visual verdict #358
+        # item 3): the address box was 903px wide with 492px of
+        # address in it at 1919px (measure-verdict358.py) — ~45%
+        # blank white, reading as an unfilled field at the money
+        # step. The visible box now sits on the #pay-addr span,
+        # which shrink-wraps to the address; the code element stays
+        # a bare full-width line so the 2026-11-23 layout (address
+        # on its own line, Copy + BaseScan on the line below) is
+        # untouched. The verdict's "no copy button" claim is wrong —
+        # the pay-row has carried one since #279 — so this test also
+        # pins the button's presence in the row.
+        import re
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        row = re.search(r'<div class="pay-row">.*?</div>', audit, re.S)
+        self.assertIsNotNone(row, "pay-row not found")
+        self.assertIn('<code><span id="pay-addr"', row.group(0))
+        self.assertIn(">Copy address</button>", row.group(0))
+        self.assertIn("basescan-link", row.group(0))
+        self.assertLess(row.group(0).index('id="pay-addr"'),
+                        row.group(0).index(">Copy address</button>"))
+        self.assertLess(row.group(0).index(">Copy address</button>"),
+                        row.group(0).index("basescan-link"))
+        self.assertNotIn("Show shortened address", row.group(0))
 
     def test_verdict309_pay_note_attached_to_qr_figure(self):
         # Visual verdict #67 put a payment-safety note in the
@@ -11906,7 +11956,10 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn("flex:0 0 100%", m.group(0))
         self.assertNotIn("max-width:26em", m.group(0))
         self.assertNotIn("font-weight", m.group(0))
-        # The address box is now the full-width field from 2026-11-23.
+        # The address line is still the full-width field from
+        # 2026-11-23; checker-improvement #358 (2026-11-28) moves
+        # only the visible box onto the #pay-addr span, which hugs
+        # the address, while the code stays a bare full-width line.
         m2 = re.search(r"\.pay-row code\{[^}]*\}", build.CSS)
         self.assertIsNotNone(m2)
         self.assertIn("flex:0 0 100%", m2.group(0))
