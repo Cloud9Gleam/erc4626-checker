@@ -11589,11 +11589,19 @@ class TestChecker(unittest.TestCase):
         # glyph the nav CTA, hero CTA and card links use for
         # internal links, so the strip reads as internal
         # navigation. Glyph only; the #202/#281 synthesis stands.
+        # #377 (2026-11-28, checker-improvement): visual verdict
+        # #375 item 3, re-raised from #373 item 7 — the small
+        # raised arrow read as an EXPONENT (number 22.95px, arrow
+        # 12.62px, its bottom floating 9.9px above the number's
+        # line bottom). The arrow is now full-size (1em, same as
+        # the number) on the number's baseline: an inline "go"
+        # arrow, never a superscript. Colour, position inside the
+        # strong, glyph, and aria-hidden are unchanged.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        arrow_rule = ".hero-stats .hero-stat-arrow{font-size:.55em;color:#cfe8d6;vertical-align:.55em;margin-left:.25em}"
+        arrow_rule = ".hero-stats .hero-stat-arrow{font-size:1em;color:#cfe8d6;vertical-align:baseline;margin-left:.25em}"
         self.assertIn(arrow_rule, build.CSS)
         self.assertNotIn("text-decoration", arrow_rule)
         # The #281 invariants still hold: no static underline on the
@@ -11624,6 +11632,45 @@ class TestChecker(unittest.TestCase):
                         strip.index("checks per run</span></a>"))
         self.assertLess(strip.index("checks per run</span></a>"),
                         strip.index("to run the checker</span></a>"))
+
+    def test_verdict377_hero_stat_arrow_is_inline_not_superscript(self):
+        # Visual verdict #377 (2026-11-28, checker-improvement):
+        # #375 item 3, re-raised from #373 item 7 — the hero stat
+        # arrow read as an exponent. Pixel baseline (1919px,
+        # measure-verdict377.py): number 22.95px, arrow 12.62px
+        # (0.55em), arrow bottom 9.9px above the number's line
+        # bottom, arrow top 5.1px below the number's line top —
+        # a small glyph tucked at the upper right, exactly where
+        # a superscript sits. The fix is placement only: the
+        # arrow is now the same size as the number (1em of the
+        # strong) and sits on the number's baseline, so it reads
+        # as an inline "go" arrow. Pin the new geometry in the
+        # rule text (a .55em size or a .55em raise must never
+        # come back), and pin that the arrow is still inside the
+        # strong, still muted, still aria-hidden, still &rarr;.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        start = build.CSS.index(".hero-stats .hero-stat-arrow{")
+        rule = build.CSS[start:build.CSS.index("}", start) + 1]
+        self.assertIn("font-size:1em", rule)
+        self.assertIn("vertical-align:baseline", rule)
+        self.assertNotIn(".55em", rule)
+        self.assertNotIn("vertical-align:.55em", rule)
+        self.assertIn("color:#cfe8d6", rule)
+        self.assertIn("margin-left:.25em", rule)
+        # The strong is 1.5em and the arrow is 1em of it: the
+        # arrow's computed size equals the number's size.
+        self.assertIn(".hero-stats strong{display:block;font-size:1.5em;",
+                      build.CSS)
+        home = dict((p, b) for p, t, d, k, b in build.PAGES)["/"]
+        s = home.index('<p class="hero-stats">')
+        strip = home[s:home.index("</p>", s)]
+        self.assertEqual(strip.count('class="hero-stat-arrow"'), 3)
+        self.assertEqual(strip.count("&rarr;"), 3)
+        self.assertEqual(
+            strip.count('aria-hidden="true">&rarr;</span></strong>'), 3)
 
     def test_verdict314_hero_stat_arrow_points_right_not_out(self):
         # Visual verdict #314 (2026-11-27, checker-improvement):
