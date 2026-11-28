@@ -11074,6 +11074,62 @@ class TestChecker(unittest.TestCase):
         self.assertIn("class='loss-title'", page)
         self.assertIn("class='twrap-hint'", page)
 
+    def test_verdict372_wide_prose_paragraph_spacing(self):
+        # Checker-improvement #372 (2026-11-28, visual verdict #371
+        # item 2): the Donation card's post-table prose reads as one
+        # ~180px dense block — "Pass bound:" and "Why a bigger
+        # donation..." sit 11.8px apart (measured
+        # hidden_files/measure-verdict372.py, noprot 1919px: the bare
+        # <p> margins are .35em = 5.95px top + 5.95px bottom under
+        # .check-card p:not(.check-desc):not(.check-guide)). The .35em
+        # rule is the tight exception for short card lines; the
+        # multi-sentence explanatory prose gets the site-wide
+        # paragraph rhythm (p{margin:.65em 0}) back, scoped to the
+        # bare paragraphs of wide cards. The Rounding card carries no
+        # bare <p> (measure-verdict372.py: roundingBareP [] on all
+        # three presets), so the rule touches only the Donation prose
+        # (Pass bound, the two Why paragraphs, Vault state). Copy and
+        # numbers unchanged.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        rule = (".check-card.check-card--wide p:not([class])"
+                "{margin:.65em 0}")
+        self.assertIn(rule, build.CSS)
+        self.assertEqual(build.CSS.count(rule), 1)
+        # The .35em exception itself is untouched — the four
+        # half-width cards keep their tight lines.
+        tight = (".check-card p:not(.check-desc):not(.check-guide)"
+                 "{margin:.35em 0}")
+        self.assertIn(tight, build.CSS)
+        self.assertEqual(build.CSS.count(tight), 1)
+        # Specificity tie (three class-level selectors each), so the
+        # new rule must come AFTER the .35em rule in the stylesheet
+        # or it loses. The #338 max-width/text-wrap rule (two
+        # class-level selectors) cannot carry the margin — it loses
+        # to the .35em rule whatever its position.
+        joined = "".join(build.CSS)
+        self.assertLess(joined.index(tight), joined.index(rule))
+        self.assertIn("p{margin:.65em 0}", build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(rule, worker)
+        # The static checker page renders the bare "Pass bound:"
+        # paragraph inside the wide Donation card, and the card
+        # closes with the classed guide line — a bare <p> is never
+        # the card's last child, so the .check-card
+        # p:last-child{margin-bottom:0} rule needs no companion.
+        page = dict((p, b) for p, t, d, k, b in build.PAGES)["/checker/"]
+        self.assertIn("<p>Pass bound:", page)
+        start = page.index("<section class='check-card check-card--wide' id='check-donation'")
+        end = page.index("</section>", start)
+        card = page[start:end]
+        self.assertIn("<p>Pass bound:", card)
+        self.assertIn("Guide: Donation inflation", card)
+        last_p = card.rindex("<p")
+        self.assertTrue(card[last_p:].startswith("<p class='check-guide'>"))
+
     def test_hero_stats_strip_spans_full_hero_width(self):
         # Visual verdict #173 (2026-11-24): the strip moves OUT of
         # the left column. The #64/#71 placement (strip at the column
