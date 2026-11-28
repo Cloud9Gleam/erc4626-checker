@@ -14568,6 +14568,21 @@ class TestChecker(unittest.TestCase):
         # flush left (transform:none above the base rule).
         self.assertNotIn(".loss-axis span:last-child{transform:"
                          "translateX(-100%)}", build.CSS)
+        # Checker-improvement #374 (visual verdict #373 item 5,
+        # 2026-11-28): the centred last tick overhangs the axis
+        # end by half its width — on the default gauge "0.001"
+        # stopped 1.9px from the card's right border. A quarter
+        # shift pulls it back to ~11.6px clearance at 1919px and
+        # ~11.0px at 360px while its centre stays ~9.8px from the
+        # tick (well under #250's 26px charting-error reading).
+        # The rule must sit after :first-child so it wins on a
+        # degenerate single-tick axis.
+        self.assertIn(".loss-axis span:last-child{transform:"
+                      "translateX(-75%)}", build.CSS)
+        self.assertGreater(
+            build.CSS.index(".loss-axis span:last-child{transform:"
+                            "translateX(-75%)}"),
+            build.CSS.index(".loss-axis span:first-child{transform:none}"))
         self.assertIn(".loss-axis{background-image:"
                       "linear-gradient(#9ca3af,#9ca3af),"
                       "linear-gradient(#9ca3af,#9ca3af);"
