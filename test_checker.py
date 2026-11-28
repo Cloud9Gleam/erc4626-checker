@@ -11250,11 +11250,12 @@ class TestChecker(unittest.TestCase):
         # Exactly one wide-prose rule; the pretty count grows 4 -> 5
         # with this rule (hero-top, audit, research, the #258 query,
         # this rule) and 5 -> 6 with #338's bare-prose rule, and
-        # 6 -> 7 with #341's home-intro rule, while balance stays 4
+        # 6 -> 7 with #341's home-intro rule; balance grows 4 -> 5
+        # with #386's audit short-lines rule (see test_verdict386),
         # and the 80ch cap itself is untouched.
         self.assertEqual(build.CSS.count(rule), 1)
         self.assertEqual(build.CSS.count("text-wrap:pretty"), 7)
-        self.assertEqual(build.CSS.count("text-wrap:balance"), 4)
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 5)
         self.assertIn("main p{max-width:80ch}", build.CSS)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
@@ -11290,8 +11291,9 @@ class TestChecker(unittest.TestCase):
         self.assertIn(rule, build.CSS)
         # Exactly one bare-prose rule; the pretty count grows 5 -> 6
         # (this rule is the sixth; #341's home-intro rule is the
-        # seventh) while balance stays 4 and the 80ch cap itself is
-        # untouched. The rule lifts the cap only for
+        # seventh) while balance grows 4 -> 5 with #386's audit
+        # short-lines rule (see test_verdict386) and the 80ch cap
+        # itself is untouched. The rule lifts the cap only for
         # bare paragraphs in wide cards and notice body paragraphs:
         # it carries no .check-desc / .check-rule / .loss-title /
         # .loss-peak / .twrap-hint selector, so the classed lines and
@@ -11299,7 +11301,7 @@ class TestChecker(unittest.TestCase):
         joined = "".join(build.CSS)
         self.assertEqual(build.CSS.count(rule), 1)
         self.assertEqual(build.CSS.count("text-wrap:pretty"), 7)
-        self.assertEqual(build.CSS.count("text-wrap:balance"), 4)
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 5)
         self.assertIn("main p{max-width:80ch}", build.CSS)
         self.assertNotIn(".check-desc{", rule)
         self.assertNotIn(".check-rule{", rule)
@@ -15907,8 +15909,9 @@ class TestChecker(unittest.TestCase):
                       build.CSS)
         self.assertIn(".hero-top p{text-wrap:pretty}", build.CSS)
         # No unscoped global text-wrap rule: balance occurs exactly
-        # four times (the h1 heading rule, this media query, the
-        # #329 pay-note rule, and the #336 hero-checks-note rule)
+        # five times (the h1 heading rule, this media query, the
+        # #329 pay-note rule, the #336 hero-checks-note rule, and
+        # the #386 audit short-lines rule)
         # and pretty exactly six times
         # (hero-top, audit, research, this query, the #337
         # wide-prose rule, the #338 bare-prose rule).
@@ -15917,11 +15920,12 @@ class TestChecker(unittest.TestCase):
         # a <p>) wrapped unbalanced and its last line dangled at 0.215 in the real browser.
         # The counts above are unchanged: the selectors grew, no new rule was added.
         # Checker-improvement #336 adds a fourth balance occurrence
-        # (the hero-checks-note rule); #337 adds a fifth pretty
+        # (the hero-checks-note rule) and #386 a fifth (the audit
+        # short-lines rule); #337 adds a fifth pretty
         # occurrence (the wide-prose rule), #338 a sixth (the
         # bare-prose rule) and #341 a seventh (the home-intro
-        # rule), so the counts below are 4 and 7.
-        self.assertEqual(build.CSS.count("text-wrap:balance"), 4)
+        # rule), so the counts below are 5 and 7.
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 5)
         self.assertEqual(build.CSS.count("text-wrap:pretty"), 7)
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
@@ -15964,12 +15968,13 @@ class TestChecker(unittest.TestCase):
         # The selectors grew; no new text-wrap rule was added.
         # Checker-improvement #329 adds a third balance occurrence
         # (the /audit/ pay-note rule); #336 adds a fourth
-        # (the hero-checks-note rule), so the balance count below
-        # is 4. #337 adds a fifth pretty occurrence (the wide-prose
+        # (the hero-checks-note rule) and #386 a fifth (the audit
+        # short-lines rule), so the balance count below
+        # is 5. #337 adds a fifth pretty occurrence (the wide-prose
         # rule), #338 a sixth (the bare-prose rule) and #341 a
         # seventh (the home-intro rule), so the pretty count
         # below is 7.
-        self.assertEqual(build.CSS.count("text-wrap:balance"), 4)
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 5)
         self.assertEqual(build.CSS.count("text-wrap:pretty"), 7)
         balance = ("@media (min-width:641px){main p,main li,main .notice,"
                    "footer p{text-wrap:balance}}")
@@ -37021,6 +37026,59 @@ class TestChecker(unittest.TestCase):
         worker = build.worker_js(pages)
         self.assertEqual(worker.count('grown to 199 patterns (as of Nov 26, 2026)'), 2)
         self.assertEqual(worker.count('grown to 199 patterns.</span>'), 0)
+
+    def test_verdict386_audit_short_last_lines_use_balance(self):
+        # Checker-improvement #386 (2026-11-28, visual verdict #385
+        # items 2-3): the #192 pretty rule (0,1,1) beats the #258
+        # desktop balance rule (0,0,2) on /audit/, by design — and
+        # pretty only guards lone-word last lines. The verdict
+        # measured multi-word short tails pretty cannot fix
+        # (hidden_files/measure-verdict386.py, baseline #385, 1919px):
+        # hero lead "writeups on this site." 166px of 946px (0.18),
+        # pair right items 159px/148px of 341px (0.47/0.43), left
+        # item 3 "finding is found." 155px of 523px (0.30), report
+        # item 2 "checker model.)" 127px of 922px (0.14); at 360px
+        # 0.43-0.50 last lines plus one 0.33 middle line. One
+        # balance rule, scoped to the three spots, with selectors
+        # (0,2,1)/(0,2,1)/(1,0,2) that each beat the #192 pretty
+        # rule. The #192 rule itself stays (the track-record
+        # leads/details keep pretty). Copy unchanged. The pixel
+        # outcome (last-line ratios >= 0.50 at both widths,
+        # computed text-wrap balance on all nine elements) is pinned
+        # by hidden_files/verdict386-audit-balance-harness.mjs,
+        # not here.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        rule = (".audit-sales>p:first-of-type,.audit-pair-col li,"
+                "#report-examples~ul li{text-wrap:balance}")
+        self.assertIn(rule, build.CSS)
+        self.assertEqual(build.CSS.count(rule), 1)
+        # The fifth balance occurrence (h1, #258 query, #329
+        # pay-note, #336 hero-checks-note, this rule); pretty stays 7.
+        self.assertEqual(build.CSS.count("text-wrap:balance"), 5)
+        self.assertEqual(build.CSS.count("text-wrap:pretty"), 7)
+        # The #192 pretty rule is untouched.
+        self.assertIn(".audit-page p,.audit-page li,.audit-page .track-lead,"
+                      ".audit-page .track-detail{text-wrap:pretty}", build.CSS)
+        # Structural facts: the lead is the first <p> of the
+        # .audit-sales wrapper; the pair holds the two columns; the
+        # report list is the <ul> following the #report-examples h2
+        # (its <p> intro sits between them).
+        audit = dict((p, b) for p, t, d, k, b in build.PAGES)["/audit/"]
+        lead = audit.index("<p>A fixed-scope review")
+        self.assertLess(audit.index('<div class="audit-page audit-sales">'), lead)
+        self.assertLess(lead, audit.index('<p class="audit-hero-pay">'))
+        self.assertEqual(audit.count('<div class="audit-pair-col">'), 2)
+        self.assertEqual(audit.count("<h2 id=\"limits\">What you do not get</h2>"), 1)
+        rep = audit.index('<h2 id="report-examples">')
+        self.assertLess(rep, audit.index("<ul>", rep))
+        self.assertLess(audit.index("<ul>", rep),
+                        audit.index('<h2 id="track-record">'))
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(rule, worker)
 
 
 if __name__ == "__main__":
