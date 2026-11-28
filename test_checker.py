@@ -6369,6 +6369,79 @@ class TestChecker(unittest.TestCase):
         self.assertIn('(same address)</span>',
                       worker)
 
+    def test_verdict370_params_adjusted_notice(self):
+        # Checker-improvement #370 (2026-11-28): a supplied parameter
+        # that did not run as typed vanished silently — live-verified
+        # before the fix: /api/check?victim_usdc=abc ran as 100,000
+        # USDC, ?victim_usdc=0 ran as 1 base unit and FAILED the
+        # donation check, ?offset=300 ran as 30, ?fee_bps=20000 ran as
+        # 10000 — and the results page showed no hint. The API table
+        # has documented the ranges since 2026-11-22, but a run that
+        # actually adjusts a value still showed nothing where the
+        # verdict is read. Each adjustment now gets one plain sentence
+        # under the Parameters line (and in the API JSON): the raw value
+        # quoted as typed, the value actually run. Only supplied values
+        # are noted — defaults are normal, not adjustments.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        # parseParams collects the notes and returns them on both
+        # paths: the named-preset shortcut (no overrides, so none)
+        # and the general path.
+        self.assertIn('const notes = [];', worker)
+        self.assertIn('function adj(', worker)
+        self.assertIn('return { off: o, mn: m, fee: f, vic: 100000000000, '
+                      'va: 0, vs: 0, preset, notes: [] };', worker)
+        self.assertIn('preset: named ? preset : "custom", notes };', worker)
+        # One adj() call per parameter, with the API table's ranges.
+        self.assertIn('adj("Offset", get("offset"), off, base[0], '
+                      '(v) => String(v), "0–30", true, 0);', worker)
+        self.assertIn('adj("Performance fee", get("fee_bps", '
+                      '"perf_fee_bps"), fee, base[2], (v) => String(v), '
+                      '"0–10,000 basis points", true, 0);', worker)
+        self.assertIn('adj("Minimum deposit", get("min_usdc", '
+                      '"min_deposit_usdc"), mn, base[1], fmtU, '
+                      '"0–1,000,000,000 USDC", false, 1000000);', worker)
+        self.assertIn('adj("Victim deposit", get("victim_usdc", '
+                      '"victim_deposit_usdc"), vic, 100000000000, fmtU, '
+                      '"0.000001–1,000,000,000 USDC", false, 1000000);',
+                      worker)
+        self.assertIn('adj("Vault assets", q.get("vault_assets_usdc"), '
+                      'va, 0, fmtU, "0–1,000,000,000,000 USDC", false, '
+                      '1000000);', worker)
+        self.assertIn('adj("Vault shares", q.get("vault_shares"), vs, 0, '
+                      '(v) => v.toLocaleString(\'en-US\'), '
+                      '"0–1,000,000,000,000", true, 0);', worker)
+        # The three note kinds: not a number, not whole, out of range.
+        self.assertIn('is not a number — ran as \' + fmt(', worker)
+        self.assertIn('is not a whole number — ran as \' + fmt(', worker)
+        self.assertIn('is outside the \' + range + \' range', worker)
+        # The note prints under the Parameters line, escaped (a raw
+        # value is user-typed text), in the amber .params box; the
+        # /checker/ handler carries the notes into the page params and
+        # /api/check returns them as adjustments.
+        self.assertIn('"<p class=\'params params-adjusted\'>Parameters '
+                      'adjusted: " + esc(p.notes.join(" ")) + "</p>"',
+                      worker)
+        self.assertIn('.params-adjusted{background:#fffbeb;'
+                      'border-color:#f59e0b}', build.CSS)
+        self.assertIn('.params-adjusted{background:#fffbeb;'
+                      'border-color:#f59e0b}', worker)
+        self.assertEqual(worker.count(
+            'const { off, mn, fee, vic, va, vs, preset, notes } = '
+            'parseParams(u.searchParams);'), 2)
+        self.assertIn('const params = { off, mn, fee, vic, va, vs, '
+                      'preset, notes };', worker)
+        self.assertIn('adjustments: notes, all_pass:', worker)
+        # The static default page is built from valid parameters, so
+        # it carries the rule (in its <style>) but no note element.
+        body = build.checker_body()
+        self.assertNotIn("<p class='params params-adjusted'>", body)
+        self.assertNotIn('Parameters adjusted:', body)
+
     def test_verdict322_header_brand_mark_and_sticky(self):
         # Checker-improvement #322 (2026-11-27, visual verdict #322
         # item 2): the nav brand was plain ~20px "Hatch Worker" text
