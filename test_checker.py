@@ -17476,13 +17476,19 @@ class TestChecker(unittest.TestCase):
         # The pre still hugs its content (fit-content stays) and the
         # column to its right is occupied text. Below 640px the
         # columns stack, pre on top as before.
+        # Checker-improvement #378 (2026-11-28, visual verdict #375
+        # item 5): the 1fr notes track ran 645.3px against a 274.7px
+        # pre (29:71 in a 945.5px block) — the notes track is now
+        # capped at 32em (~544px at the 17px notes size, ~1:2), the
+        # rest of the rule verbatim. Geometry is pinned by
+        # hidden_files/verdict240-email-cols-harness.mjs (updated for
+        # the #378 cap) and hidden_files/verdict378-email-cols-cap-harness.mjs
+        # and hidden_files/measure-verdict378.py.
         # Alignment: the pre carries the UA 1em top margin plus 1em
         # padding, so its first code line sits ~2em below the row
         # top; the pre margin is zeroed and the first notes paragraph
         # gets margin-top:1em, so both first lines sit 1em below the
-        # row top. Geometry is pinned by
-        # hidden_files/verdict240-email-cols-harness.mjs and
-        # hidden_files/measure-verdict240.py.
+        # row top.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -17490,7 +17496,7 @@ class TestChecker(unittest.TestCase):
         # CSS: grid row + first-line alignment + mobile stack.
         self.assertIn(
             ".email-para .email-cols{display:grid;"
-            "grid-template-columns:max-content 1fr;gap:0 1.5em;"
+            "grid-template-columns:max-content minmax(0,32em);gap:0 1.5em;"
             "align-items:start}",
             build.CSS)
         self.assertIn(
@@ -17606,6 +17612,37 @@ class TestChecker(unittest.TestCase):
         self.assertIn(
             ".email-para .email-pre-col p:last-child{margin-top:auto;"
             "margin-bottom:0}",
+            worker)
+
+    def test_verdict378_email_notes_column_is_capped(self):
+        # Visual verdict #375 item 5 (2026-11-28, checker-improvement):
+        # the 'Prefer email?' columns were 29:71 at 1919px — pre
+        # 274.7px, notes 645.3px in a 945.5px block, every full notes
+        # line running the whole 645px column. The pre cannot grow
+        # honestly (#215/#240), so the notes track is capped at 32em
+        # (~544px at the 17px notes size, ~1:2 against the pre) and
+        # the old 1fr track is gone from both render paths. Geometry
+        # is pinned by hidden_files/verdict378-email-cols-cap-harness.mjs
+        # and hidden_files/measure-verdict378.py.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(
+            "grid-template-columns:max-content minmax(0,32em)",
+            build.CSS)
+        self.assertNotIn(
+            ".email-para .email-cols{display:grid;"
+            "grid-template-columns:max-content 1fr;",
+            build.CSS)
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn(
+            "grid-template-columns:max-content minmax(0,32em)",
+            worker)
+        self.assertNotIn(
+            ".email-para .email-cols{display:grid;"
+            "grid-template-columns:max-content 1fr;",
             worker)
 
     def test_api_curl_follows_the_run_in_the_worker(self):
