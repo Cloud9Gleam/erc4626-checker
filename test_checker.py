@@ -5511,27 +5511,34 @@ class TestChecker(unittest.TestCase):
     def test_verdict364_audit_after_pay_bottom_padding_balances(self):
         # Checker-improvement #364 (2026-11-28, visual verdict #362
         # item 3, re-measured by a real browser in #363): the Copy
-        # button (~131x40px) shares the first line of the
-        # .audit-after-pay box on desktop and stretches its line
-        # box, so the first glyph sits ~23px below the box top
-        # while the last glyph sits ~18px above the bottom -- a
-        # 5px asymmetry (the original verdict said 25/5-10px; the
-        # re-measure corrected the bottom figure). Headless
-        # measures 14.9/15.9 -- its fonts wrap the button onto its
-        # own line, so it cannot see this defect
-        # (measure-verdict364.py baseline). Desktop only:
-        # padding-bottom .7em -> 1em (+5.1px at 17px) evens the
-        # two gaps; mobile stays .7em, where the gaps measure
-        # symmetric (14.2/14.6). The button itself is untouched
-        # (#319/#321: inline Copy + nowrap link).
+        # button (~131x40px) used to share the first line of the
+        # .audit-after-pay box on desktop and stretch its line box,
+        # so the first glyph sat ~23px below the box top while the
+        # last glyph sat ~18px above the bottom -- a 5px asymmetry
+        # (the original verdict said 25/5-10px; the re-measure
+        # corrected the bottom figure). Headless measures 14.9/15.9
+        # -- its fonts wrap the button onto its own line, so it
+        # cannot see this defect (measure-verdict364.py baseline).
+        # Desktop only: padding-bottom .7em -> 1em (+5.1px at 17px)
+        # evens the two gaps; mobile stays .7em, where the gaps
+        # measure symmetric (14.2/14.6). Checker-improvement #376
+        # keeps the value: the button is now a flex item in the
+        # ~40px pay-row, so the top glyph still sits ~8px below the
+        # padding (row centering) while the bottom glyph sits on
+        # the padding -- the same +5.1px still roughly evens them.
+        # The button rule itself moves to the row selector (#376:
+        # solid-green fill, same size).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        # Base rule untouched: green callout, .7em padding, .9em margin.
+        # Base rule: green callout, .7em padding, .9em margin -- plus
+        # #376's flex column (the box is now two rows, not a <p> of
+        # text with <br> breaks).
         self.assertIn(
             ".audit-after-pay{background:#f0fdf4;border:1px solid #bbe0c6;"
-            "border-radius:8px;padding:.7em .9em;margin:0 0 .9em}",
+            "border-radius:8px;padding:.7em .9em;margin:0 0 .9em;"
+            "display:flex;flex-direction:column;gap:.3em}",
             build.CSS)
         # Exactly one desktop rule, after the base rule so it wins on
         # equal specificity (both single-class selectors).
@@ -5544,12 +5551,14 @@ class TestChecker(unittest.TestCase):
         # audit-after-pay padding inside max-width:640px.
         self.assertNotIn("@media (max-width:640px){.audit-after-pay",
                          build.CSS)
-        # Button override and nowrap link untouched.
+        # Button override on the row selector now (#376), nowrap link
+        # untouched.
         self.assertIn(
-            "#audit-order .audit-after-pay button{display:inline-block;width:auto;",
+            "#audit-order .audit-after-pay-row button{display:inline-block;width:auto;"
+            "flex-shrink:0;white-space:nowrap;",
             build.CSS)
         self.assertIn(
-            "#audit-order .audit-after-pay button:hover{background:#086623}",
+            "#audit-order .audit-after-pay-row button:hover{background:#086623}",
             build.CSS)
         self.assertIn(".audit-after-pay a{white-space:nowrap}", build.CSS)
 
@@ -5988,6 +5997,11 @@ class TestChecker(unittest.TestCase):
         # a Copy button, and a link to the full payment details.
         # The order is NOT flipped back (#299 stands: the form still
         # precedes the pay-box, Email first still reads first).
+        # Checker-improvement #376 (2026-11-28): the block is now a
+        # two-row flex pay strip (row 1: label + address + Copy +
+        # "(same as above)", row 2: the instruction sentence); the
+        # amount and chain left the box and live in the hero strip
+        # and the steps.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5996,7 +6010,8 @@ class TestChecker(unittest.TestCase):
         audit = pages["/audit/"]
         form = build.AUDIT_FORM
         # The block sits between the email field and the hash field.
-        self.assertIn('<p class="audit-after-pay"><strong>After you pay</strong>',
+        self.assertIn('<p class="audit-after-pay"><span class="audit-after-pay-row">'
+                      '<strong>After you pay</strong>',
                       form)
         self.assertLess(form.index('id="audit-email"'),
                         form.index('class="audit-after-pay"'))
@@ -6017,7 +6032,13 @@ class TestChecker(unittest.TestCase):
         self.assertIn('<span id="audit-pay-copy-status" role="status"></span>',
                       block)
         self.assertIn('<a href="#price">Price and payment</a>', block)
-        self.assertIn('50 USDC on Base', block)
+        # #376: the amount and chain left the box -- they are stated
+        # in the hero strip and in the steps just above, so the box
+        # repeats neither (the row budget is ~863px; the full phrase
+        # would push the row over a line).
+        self.assertNotIn('50 USDC on Base', block)
+        self.assertIn('Pay <strong>50 USDC</strong> on Base to', audit)
+        self.assertIn('<strong>Pay 50 USDC</strong> on Base', form)
         # The form's address is the full 42 chars, never shortened
         # (#230: no shortened display anywhere on the page).
         self.assertIn('<code id="audit-pay-addr">' + build.PAY_ADDR + '</code>',
@@ -6045,9 +6066,10 @@ class TestChecker(unittest.TestCase):
         # beats "#audit-order button" (display:block;width:100%).
         self.assertIn('.audit-after-pay{background:#f0fdf4;border:1px solid #bbe0c6',
                       build.CSS)
-        self.assertIn('#audit-order .audit-after-pay button{display:inline-block;width:auto;',
+        self.assertIn('#audit-order .audit-after-pay-row button{display:inline-block;width:auto;'
+                      'flex-shrink:0;white-space:nowrap;',
                       build.CSS)
-        self.assertIn('#audit-order .audit-after-pay button:hover{background:#086623}',
+        self.assertIn('#audit-order .audit-after-pay-row button:hover{background:#086623}',
                       build.CSS)
         # Worker copy: block, placeholder substituted, dual status.
         worker = build.worker_js(
@@ -6273,6 +6295,10 @@ class TestChecker(unittest.TestCase):
         # sentence fits on one line; both facts survive (the details
         # and the QR code live in the linked Price and payment
         # section). At 360px the block drops from 5 lines to 4.
+        # Checker-improvement #376 (2026-11-28): the first line is
+        # now a flex pay-row ("After you pay -- <address> <Copy>
+        # (same as above)") and "pay 50 USDC on Base to" left the
+        # box; the second sentence below is untouched.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -6287,10 +6313,11 @@ class TestChecker(unittest.TestCase):
                       block)
         self.assertNotIn('Full payment details, including the QR code, '
                          'are in', audit)
-        # The rest of the block is untouched: first sentence, address,
-        # copy button, link, nowrap rule.
+        # The rest of the block: first line (restructured by #376),
+        # address, copy button, link, nowrap rule.
         self.assertIn('<strong>After you pay</strong> &mdash; '
-                      'pay 50 USDC on Base to ', block)
+                      '<code id="audit-pay-addr">', block)
+        self.assertNotIn('pay 50 USDC on Base to', block)
         self.assertIn('onclick="copyPayAddr(this)">Copy address</button>',
                       block)
         self.assertIn('.audit-after-pay a{white-space:nowrap}', build.CSS)
@@ -6300,26 +6327,29 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn('Full payment details, including the QR code, '
                          'are in', worker)
 
-    def test_verdict369_audit_after_pay_button_on_own_line(self):
-        # Checker-improvement #369 (2026-11-28, visual verdict #369
-        # item 1): the same PAY_ADDR is shown three times on /audit/
-        # -- in the hero pay strip (#375), in the form's "After you
-        # pay" block (#319), and in the Price pay-row -- with a "Copy
-        # address" button each, and a payer could reasonably wonder
-        # which copy to use, or whether the copies are different
-        # addresses. The duplication stays (#319: the form asks for
+    def test_verdict376_audit_after_pay_is_pay_row(self):
+        # Checker-improvement #376 (2026-11-28, visual verdict #375
+        # item 2): the "After you pay" box was the site's most
+        # obvious visual defect -- a <p> with <br> breaks mixing a
+        # bold title, plain text and a mono address chip on line 1,
+        # a white-outline pill Copy button + "(same address)" using
+        # ~250px of an ~863px box (~68% blank) on line 2, and the
+        # "(same address)" note a semantic orphan (its "same" had no
+        # visible referent until the Price zone below). It is now a
+        # two-row flex pay strip mirroring .audit-hero-pay: row 1 is
+        # label + address + solid-green Copy + note, row 2 is the
+        # #327 instruction sentence. Two wording changes ride with
+        # it: "pay 50 USDC on Base to" leaves the box (stated in the
+        # hero strip, the steps and the Price zone), and "(same
+        # address)" becomes "(same as above)" -- the hero strip is
+        # now the explicit referent. The note stays a nowrap span:
+        # at 360px it drops to its own line rather than splitting
+        # mid-phrase. #369's <br> layout is retired by this test;
+        # the same PAY_ADDR is still shown three times on /audit/
+        # (hero strip, form block, Price pay-row) with a Copy button
+        # each, and the duplication stays (#319: the form asks for
         # the hash before the pay-box, so the address must be visible
-        # in the form), and the form block says "(same address)" right
-        # after its Copy button (#368), so either copy works without
-        # comparing 42 hex chars. The note is a nowrap span: at 360px
-        # it drops to its own line rather than splitting mid-phrase.
-        # #369's change: the button used to share line 1 with the
-        # font metrics allowed (a real browser measured address +
-        # button at ~864/866px of inner width, so the button
-        # squeezed onto line 1 flush to the box edge and the note
-        # orphaned onto line 2). The break is now in the markup:
-        # line 1 is intro + address, line 2 is button + status +
-        # note, line 3 is the second sentence.
+        # in the form).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -6328,31 +6358,32 @@ class TestChecker(unittest.TestCase):
         audit = pages["/audit/"]
         block = audit[audit.index('class="audit-after-pay"'):]
         block = block[:block.index('</p>')]
-        # The note is inside the block, after the button and its
-        # status span. The block has exactly two <br>s: one after
-        # the address (line 1 = intro + address, line 2 = button +
-        # status + note) and one before the second sentence.
-        self.assertIn('<span class="nowrap">(same address)</span>',
+        # Row 1 is one flex row: label, address, Copy button, status
+        # span, note -- in that order -- and the block has no <br>
+        # left (#369's layout is retired). Row 2 is the instruction
+        # sentence in its own span.
+        row = '<span class="audit-after-pay-row">'
+        self.assertIn(row + '<strong>After you pay</strong> &mdash; '
+                      '<code id="audit-pay-addr">' + build.PAY_ADDR +
+                      '</code> <button type="button" '
+                      'onclick="copyPayAddr(this)">Copy address</button> '
+                      '<span id="audit-pay-copy-status" role="status"></span> '
+                      '<span class="nowrap">(same as above)</span></span>',
                       block)
+        self.assertEqual(block.count('<br>'), 0)
+        self.assertNotIn('(same address)</span>', block)
+        self.assertNotIn('pay 50 USDC on Base to', block)
+        # Order inside the row: label < address < button < status < note.
+        self.assertLess(block.index('<strong>After you pay</strong>'),
+                        block.index('<code id="audit-pay-addr">'))
+        self.assertLess(block.index('<code id="audit-pay-addr">'),
+                        block.index('onclick="copyPayAddr(this)">Copy address</button>'))
         self.assertLess(
             block.index('onclick="copyPayAddr(this)">Copy address</button>'),
-            block.index('<span class="nowrap">(same address)</span>'))
+            block.index('<span class="nowrap">(same as above)</span>'))
         self.assertLess(
             block.index('<span id="audit-pay-copy-status" role="status"></span>'),
-            block.index('<span class="nowrap">(same address)</span>'))
-        self.assertEqual(block.count('<br>'), 2)
-        self.assertLess(
-            block.index('</code><br>'),
-            block.index('onclick="copyPayAddr(this)">Copy address</button>'))
-        self.assertLess(
-            block.index('</code><br>'),
-            block.index('<span class="nowrap">(same address)</span>'))
-        self.assertLess(
-            block.index('<span class="nowrap">(same address)</span>'),
-            block.index('Then paste the transaction hash below.'))
-        self.assertLess(
-            block.index('<span class="nowrap">(same address)</span>'),
-            block.rindex('<br>'))
+            block.index('<span class="nowrap">(same as above)</span>'))
         # The note's claim is true: both displayed addresses are the
         # same PAY_ADDR constant, and both buttons copy the same
         # #pay-addr data-full.
@@ -6363,19 +6394,34 @@ class TestChecker(unittest.TestCase):
         # fourth time, so no global count is pinned here).
         self.assertIn('<span id="pay-addr" data-full="' + build.PAY_ADDR +
                       '">' + build.PAY_ADDR + '</span>', audit)
-        # The rest of the block is untouched: #327's second sentence
-        # verbatim, #321's nowrap link, #319's button and status span.
-        self.assertIn('Then paste the transaction hash below. '
+        # Row 2 is #327's second sentence verbatim, in its own span;
+        # #321's nowrap link and #319's button and status span stay.
+        self.assertIn('<span>Then paste the transaction hash below. '
                       'Details and the QR code are in '
-                      '<a href="#price">Price and payment</a> below.',
+                      '<a href="#price">Price and payment</a> below.</span>',
                       block)
         self.assertIn('.audit-after-pay a{white-space:nowrap}', build.CSS)
-        # Worker copy carries the note (the /audit/ page is served by
-        # the worker, not a static file).
+        # The box is a flex column, the row is flex (mirroring
+        # .audit-hero-pay / .pay-row), the code breaks at 360px
+        # instead of overflowing, and the Copy button is solid green
+        # like the hero and Price buttons (same fill, white text).
+        self.assertIn('display:flex;flex-direction:column;gap:.3em}',
+                      build.CSS)
+        self.assertIn('.audit-after-pay-row{display:flex;align-items:center;gap:.6em;flex-wrap:wrap}',
+                      build.CSS)
+        self.assertIn('.audit-after-pay-row code{word-break:break-all}',
+                      build.CSS)
+        self.assertIn('background:#0a7d2c;color:#fff;border:1px solid #0a7d2c;',
+                      build.CSS)
+        self.assertIn('#audit-order .audit-after-pay-row button:hover{background:#086623}',
+                      build.CSS)
+        # Worker copy carries the row and the note (the /audit/ page
+        # is served by the worker, not a static file).
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
-        self.assertIn('(same address)</span>',
-                      worker)
+        self.assertIn('class=\\"audit-after-pay-row\\"', worker)
+        self.assertIn('(same as above)</span>', worker)
+        self.assertNotIn('(same address)</span>', worker)
 
     def test_verdict375_audit_hero_shows_pay_address(self):
         # Checker-improvement #375 (2026-11-28, visual verdict #375
