@@ -1883,7 +1883,7 @@ class TestChecker(unittest.TestCase):
                       src)
         self.assertIn("if(omitted.length&&!gauge)items.push(\"<strong>Not drawn:</strong>",
                       src)
-        self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;font-weight:600;"
+        self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;max-width:none;font-weight:600;"
                       "margin:0 0 .1em;display:flex;justify-content:space-between;"
                       "align-items:baseline;gap:.2em .7em;flex-wrap:wrap}", src)
         self.assertIn(".loss-chart--bare .loss-drawn{font-weight:400;font-size:.85em;"
@@ -14679,6 +14679,36 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-track{flex:1;height:1.7em;",
                       build.CSS)
 
+    def test_loss_chart_title_spans_full_chart_width(self):
+        # Checker-improvement #384 (2026-11-28, visual verdict
+        # #383 item 2): the drawn-rows chip was right-aligned to
+        # the title row, but the title row itself was not the
+        # chart's width — it is a <p> inside <main>, so the
+        # site-wide main p{max-width:80ch} cap held it at ~778px
+        # inside a ~903px chart (measured
+        # hidden_files/measure-verdict383-chip.py: title row
+        # 777.919px, chart 902.7px, chip right edge 124.9px left
+        # of the chart's right edge). The space-between flex was
+        # working; the row was just short. max-width:none lifts
+        # the cap, scoped to this one structural row.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;"
+                      "max-width:none;",
+                      build.CSS)
+        # The prose cap itself is untouched: ordinary paragraphs
+        # still wrap at 80ch, and the .loss-peak caption below the
+        # title keeps it too — it is prose, not a flex row.
+        self.assertIn("main p{max-width:80ch}", build.CSS)
+        self.assertNotIn(".loss-chart--bare .loss-peak{grid-column:1/-1;"
+                         "max-width:none",
+                         build.CSS)
+        self.assertIn(".loss-chart--bare .loss-peak{grid-column:1/-1;"
+                      "font-size:.92em;color:#374151;margin:0 0 .2em}",
+                      build.CSS)
+
     def test_loss_chart_key_column(self):
         # Visual verdict #172 (2026-11-24, checker-improvement):
         # the three-column grid retired — the label + value zone
@@ -14790,12 +14820,19 @@ class TestChecker(unittest.TestCase):
         self.assertIn(".loss-chart--bare .loss-head{grid-column:1/-1;"
                       "margin:.45em 0 0}",
                       build.CSS)
-        self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;"
+        self.assertIn(".loss-chart--bare .loss-title{grid-column:1/-1;max-width:none;"
                       # Checker-improvement #351 (2026-11-27, visual
                       # verdict #350 item 1): the title is a flex row
                       # now — it carries the "N of M drawn — the rest too small" chip
                       # at its right end. See test_verdict351 for the
                       # chip itself.
+                      # Checker-improvement #384 (2026-11-28, visual
+                      # verdict #383 item 2): the title row is a <p>,
+                      # so the site-wide main p{max-width:80ch} cap
+                      # held it at ~778px inside a ~903px chart and
+                      # the chip floated ~125px off the chart's
+                      # right edge. max-width:none lifts the cap,
+                      # scoped to this one row.
                       "font-weight:600;margin:0 0 .1em;display:flex;"
                       "justify-content:space-between;align-items:baseline;"
                       "gap:.2em .7em;flex-wrap:wrap}",
