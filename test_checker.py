@@ -5745,10 +5745,12 @@ class TestChecker(unittest.TestCase):
         # /audit/ payment flow lived in one paragraph -- email first,
         # pay, paste the hash -- so a visitor could pay first and
         # never paste the hash, leaving the payment unmatched. The
-        # pay-box now carries the sequence as a numbered 1-2-3 list,
-        # and the Start form repeats the three steps at its top as a
-        # real ordered list (checker-improvement #354, visual verdict
-        # #354 item 3 -- the repeat used to be one run-on paragraph).
+        # pay-box now carries the sequence as a numbered 1-2-3 list.
+        # Checker-improvement #379 (2026-11-28, visual verdict #379
+        # item 1) retires the Start form's repeat of the three steps
+        # -- the near-verbatim duplication read as a copy-paste error
+        # to a first-time visitor; the steps live once, in the
+        # pay-box, and the form keeps a one-line pointer to Price.
         # The 72-hour clock sentence stays its own line after the
         # list: the clock starts when the payment is confirmed
         # (step 2), not when the hash is pasted (step 3).
@@ -5790,34 +5792,32 @@ class TestChecker(unittest.TestCase):
         # The old single-paragraph form is gone from the audit box.
         self.assertNotIn('<p><strong>Email first</strong>', box)
         self.assertNotIn('Then pay to the address below', box)
-        # The Start form repeats the three steps at its top, before
-        # the first field, in the same order and amounts.
-        # Checker-improvement #319 (2026-11-27, visual verdict #318
-        # item 2): step 2 now signposts the address -- it sits in the
-        # form's own "After you pay" block below, so a visitor filling
-        # the form is never asked for a hash before seeing where to pay.
+        # The Start form keeps a one-line pointer at its top, before
+        # the first field -- the three steps named in one clause,
+        # linking to Price. No numbered list, no second clock
+        # sentence (checker-improvement #379).
         self.assertIn(
-            '<div class="audit-steps"><p>How it works:</p><ol>'
-            '<li><strong>Email first</strong> to confirm the scope fits.</li>'
-            '<li><strong>Pay 50 USDC</strong> on Base (address below, under '
-            "'After you pay').</li>"
-            '<li><strong>Paste the payment transaction hash</strong> below.</li>'
-            '</ol><p>The 72-hour clock starts when the payment is confirmed.</p></div>',
+            '<div class="audit-steps"><p>How it works: '
+            '<strong>Email first</strong> to confirm the scope fits, '
+            '<strong>Pay 50 USDC</strong> on Base, then '
+            '<strong>paste the payment transaction hash</strong> — the '
+            '<a href="#price">full sequence</a> is in '
+            'Price and payment below.</p></div>',
             build.AUDIT_FORM)
         self.assertLess(build.AUDIT_FORM.index('class="audit-steps"'),
                         build.AUDIT_FORM.index('id="audit-repo"'))
-        # CSS for both: numbered markers bold green; the form repeat
-        # reads as a green callout, same palette as the pay-box.
+        # CSS for both: numbered markers bold green in the pay-box;
+        # the form pointer reads as a green callout, same palette.
+        # The retired box's list rules are gone with the markup.
         self.assertIn('.pay-steps{margin:.2em 0 .6em;padding-left:1.5em}',
                       build.CSS)
         self.assertIn('.pay-steps li::marker{font-weight:700;color:#0a7d2c}',
                       build.CSS)
         self.assertIn('.audit-steps{background:#f0fdf4;border:1px solid #bbe0c6',
                       build.CSS)
-        self.assertIn('.audit-steps ol{margin:.2em 0 .6em;padding-left:1.5em}',
-                      build.CSS)
-        self.assertIn('.audit-steps li::marker{font-weight:700;color:#0a7d2c}',
-                      build.CSS)
+        self.assertNotIn('.audit-steps ol{', build.CSS)
+        self.assertNotIn('.audit-steps li{', build.CSS)
+        self.assertNotIn('.audit-steps li::marker', build.CSS)
         # The PoC box is untouched: still a paragraph, no steps list.
         # (The shared stylesheet inlines .pay-steps/.audit-steps into
         # every page, so the PoC assertions pin the HTML forms only.)
@@ -5832,17 +5832,18 @@ class TestChecker(unittest.TestCase):
         self.assertIn('.pay-steps li::marker{font-weight:700;color:#0a7d2c}',
                       worker)
 
-    def test_verdict354_audit_steps_are_a_list(self):
-        # Checker-improvement #354 (2026-11-28, visual verdict #354
-        # item 3): the Start form's "How it works" steps were one
-        # run-on paragraph -- three steps plus the clock sentence in
-        # two lines at 1919px (seven at 360px), step boundaries
-        # falling mid-line, only the numbers bold. The repeat is now
-        # a real ordered list in the same green box: lead line, three
-        # items with bold leads mirroring the pay-box list, clock
-        # sentence its own line after the list. The pay-box list
-        # stays exactly once (#296: the second instance guards the
-        # pay-without-hash failure); the old inline-number form is
+    def test_verdict379_audit_steps_appear_once(self):
+        # Checker-improvement #379 (2026-11-28, visual verdict #379
+        # item 1): the Start form repeated the three payment steps
+        # near-verbatim (~971px above the pay-box list at 1919px,
+        # clock sentence twice), and a first-time visitor reads that
+        # as a copy-paste error -- on a prepaid service it costs
+        # trust. The steps now live once, in the pay-box (#296's
+        # guard is untouched: a visitor jumping straight to #price
+        # still sees the full sequence before paying). The form
+        # keeps a one-line pointer naming the three steps in one
+        # clause and linking to Price -- no numbered list, no
+        # second clock sentence. The old inline-number form stays
         # gone from the page.
         import sys
         from pathlib import Path
@@ -5852,60 +5853,64 @@ class TestChecker(unittest.TestCase):
         audit = pages["/audit/"]
         poc = pages["/poc-packaging/"]
         form = build.AUDIT_FORM
-        # The box is a div now (a <p> cannot hold an <ol>), first in
-        # the form, before the first field.
+        # The box is a div, first in the form, before the first field.
         self.assertIn('<div class="audit-steps">', form)
         self.assertNotIn('<p class="audit-steps">', form)
         self.assertLess(form.index('class="audit-steps"'),
                         form.index('id="audit-repo"'))
         box = form[form.index('<div class="audit-steps">'):]
         box = box[:box.index('</div>') + len('</div>')]
-        # Lead, three items in order with bold leads, clock last.
-        self.assertIn('<p>How it works:</p>', box)
-        steps = [
-            '<li><strong>Email first</strong> to confirm the scope fits.</li>',
-            '<li><strong>Pay 50 USDC</strong> on Base (address below, under '
-            "'After you pay').</li>",
-            '<li><strong>Paste the payment transaction hash</strong> below.</li>',
-        ]
-        for step in steps:
-            self.assertIn(step, box)
-        self.assertLess(box.index(steps[0]), box.index(steps[1]))
-        self.assertLess(box.index(steps[1]), box.index(steps[2]))
-        self.assertIn('<p>The 72-hour clock starts when the payment is confirmed.</p>',
-                      box)
-        self.assertLess(box.index('</ol>'),
-                        box.index('The 72-hour clock starts when the payment is confirmed'))
-        # The old inline-number form is gone everywhere on the page.
+        # One paragraph: lead, three steps named in one clause,
+        # jump link to Price. No list, no clock sentence.
+        self.assertIn(
+            '<p>How it works: <strong>Email first</strong> to confirm '
+            'the scope fits, <strong>Pay 50 USDC</strong> on Base, then '
+            '<strong>paste the payment transaction hash</strong> '
+            '\u2014 the <a href="#price">full sequence</a> is in '
+            'Price and payment below.</p>',
+            box)
+        self.assertNotIn('<ol', box)
+        self.assertNotIn('<li>', box)
+        self.assertNotIn('72-hour clock', box)
+        # The old list form and the old inline-number form are gone
+        # everywhere on the page.
+        self.assertNotIn("(address below, under ", audit)
         self.assertNotIn('<strong>1.</strong> Email first', audit)
         self.assertNotIn('<strong>2.</strong> Pay 50 USDC', audit)
         self.assertNotIn('<strong>3.</strong> Paste the payment', audit)
+        # The clock sentence now appears exactly once on the page,
+        # in the pay-box, after its list.
+        self.assertEqual(
+            audit.count('The 72-hour clock starts when the payment is confirmed'),
+            1)
+        paybox = audit[audit.index('<div class="pay-box">'):]
+        paybox = paybox[:paybox.index('</div>') + len('</div>')]
+        self.assertIn('The 72-hour clock starts when the payment is confirmed',
+                      paybox)
         # The pay-box list is untouched and still the only pay-steps list.
         self.assertEqual(audit.count('<ol class="pay-steps">'), 1)
-        # CSS: the list inside the box mirrors the pay-box list
-        # (markers bold green); inner paragraphs are tightened and
-        # the first/last lose their outer margin so the box keeps
-        # its padding, not padding plus a paragraph margin.
-        self.assertIn('.audit-steps ol{margin:.2em 0 .6em;padding-left:1.5em}',
-                      build.CSS)
-        self.assertIn('.audit-steps li{margin:.3em 0}', build.CSS)
-        self.assertIn('.audit-steps li::marker{font-weight:700;color:#0a7d2c}',
+        # CSS: the box keeps its background and paragraph rules; the
+        # list rules for the retired box are gone.
+        self.assertIn('.audit-steps{background:#f0fdf4;border:1px solid #bbe0c6',
                       build.CSS)
         self.assertIn('.audit-steps p{margin:.3em 0}', build.CSS)
         self.assertIn('.audit-steps p:first-child{margin-top:0}', build.CSS)
         self.assertIn('.audit-steps p:last-child{margin-bottom:0}', build.CSS)
+        self.assertNotIn('.audit-steps ol{', build.CSS)
+        self.assertNotIn('.audit-steps li{', build.CSS)
+        self.assertNotIn('.audit-steps li::marker', build.CSS)
         # PoC page untouched: still its paragraph, no steps list, no form box.
         self.assertIn('<p><strong>Email first</strong> (below)', poc)
         self.assertNotIn('<ol class="pay-steps">', poc)
         self.assertNotIn('class="audit-steps"', poc)
-        # Worker copy: the list, the box, and the marker rule.
+        # Worker copy: the pointer, the box, and no list rules.
         worker = build.worker_js(
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn('class=\\"audit-steps\\"', worker)
         self.assertIn('How it works:', worker)
-        self.assertIn('<li><strong>Email first</strong>', worker)
-        self.assertIn('.audit-steps li::marker{font-weight:700;color:#0a7d2c}',
-                      worker)
+        self.assertIn('full sequence</a> is in Price and payment below', worker)
+        self.assertNotIn('.audit-steps ol{', worker)
+        self.assertNotIn('.audit-steps li::marker', worker)
 
     def test_verdict299_audit_start_form_precedes_payment(self):
         # Visual verdict #299 (2026-11-26, this run) item 1: the
@@ -5916,9 +5921,10 @@ class TestChecker(unittest.TestCase):
         # the form. The Start section now sits directly above Price
         # and payment: Scope -> Start (form) -> Price -> What you get
         # -> limits -> report examples -> Track record. The form's own
-        # audit-steps repeat is unchanged ("hash below" still points
-        # at the field below the repeat inside the form); the hero
-        # "Start an audit" CTA still jumps to #audit-order (the form
+        # pointer line is unchanged in position (#379: one clause
+        # naming the three steps, linking to Price -- "paste the
+        # hash" still points at the field below it inside the form);
+        # the hero "Start an audit" CTA still jumps to #audit-order (the form
         # itself moved with its anchor). Step 1 now reads "Start form
         # above"; step 2 "address below" still holds (the address is
         # below the list inside the pay-box). The PoC page is
@@ -5961,16 +5967,17 @@ class TestChecker(unittest.TestCase):
         self.assertIn('0xD07C76fa47C99C70917b6Db2E9215844f0b9dC64', box)
         self.assertIn('Double-check the address before sending', box)
         self.assertIn('<figure class="pay-qr">', audit)
-        # The form's own repeat is still first in the form, now a
-        # real list (#354); its step 2 still signposts the address
-        # (#319: in the form's "After you pay" block below).
+        # The form's pointer line is still first in the form (#379:
+        # one clause naming the three steps, linking to Price); the
+        # address still sits in the form's "After you pay" block
+        # below (#319).
         self.assertIn(
-            '<div class="audit-steps"><p>How it works:</p><ol>'
-            '<li><strong>Email first</strong> to confirm the scope fits.</li>'
-            '<li><strong>Pay 50 USDC</strong> on Base (address below, under '
-            "'After you pay').</li>"
-            '<li><strong>Paste the payment transaction hash</strong> below.</li>'
-            '</ol><p>The 72-hour clock starts when the payment is confirmed.</p></div>',
+            '<div class="audit-steps"><p>How it works: '
+            '<strong>Email first</strong> to confirm the scope fits, '
+            '<strong>Pay 50 USDC</strong> on Base, then '
+            '<strong>paste the payment transaction hash</strong> — the '
+            '<a href="#price">full sequence</a> is in '
+            'Price and payment below.</p></div>',
             build.AUDIT_FORM)
         # Hero CTA still jumps to the form.
         self.assertIn('<a class="cta" href="#audit-order">Start an audit', audit)
@@ -6001,7 +6008,7 @@ class TestChecker(unittest.TestCase):
         # two-row flex pay strip (row 1: label + address + Copy +
         # "(same as above)", row 2: the instruction sentence); the
         # amount and chain left the box and live in the hero strip
-        # and the steps.
+        # and the pointer line just above.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -6033,9 +6040,9 @@ class TestChecker(unittest.TestCase):
                       block)
         self.assertIn('<a href="#price">Price and payment</a>', block)
         # #376: the amount and chain left the box -- they are stated
-        # in the hero strip and in the steps just above, so the box
-        # repeats neither (the row budget is ~863px; the full phrase
-        # would push the row over a line).
+        # in the hero strip and in the pointer line just above, so
+        # the box repeats neither (the row budget is ~863px; the
+        # full phrase would push the row over a line).
         self.assertNotIn('50 USDC on Base', block)
         self.assertIn('Pay <strong>50 USDC</strong> on Base to', audit)
         self.assertIn('<strong>Pay 50 USDC</strong> on Base', form)
