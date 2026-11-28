@@ -14784,16 +14784,17 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertIn("@media (max-width:640px){.check-table tr{display:block}",
                       build.CSS)
-        # Row counts per preset: rounding renders as a plain sentence
-        # paragraph, not a table row (visual verdict #158); MVD 4 rows
+        # Row counts per preset: rounding now renders its three preview
+        # rows as a table (checker-improvement #371, visual verdict
+        # #371 item 1 -- the numberless sentence is retired); MVD 4 rows
         # on the default preset (floor-binds line) vs 3 on noprot;
         # preview 3; fee 1 line becomes 3 rows; share price 2
         # (checker-improvement #326: second probe row).
         for v, kwargs, n_rows in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
-                       perf_fee_bps=1000), {}, 12),
+                       perf_fee_bps=1000), {}, 15),
                 (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
-                 {"off": 0, "mn": 0, "fee": 0}, 11)):
+                 {"off": 0, "mn": 0, "fee": 0}, 14)):
             results = run_all(v)
             html = build.results_html(results, **kwargs)
             self.assertEqual(html.count("<p class='check-detail'>"), 0)
@@ -14803,15 +14804,13 @@ class TestChecker(unittest.TestCase):
                                   if r["name"] != "donation_inflation"]))
             self.assertEqual(html.count("<table class='check-table'>"),
                              len([r for r in results
-                                  if r["name"] not in
-                                  ("donation_inflation", "rounding")]))
+                                  if r["name"] != "donation_inflation"]))
             self.assertEqual(
                 html.count("<td class='check-label'>")
                 + html.count("<td class='check-sentence'"), n_rows)
-            # Visual verdict #158: the rounding card's single
-            # sentence is a paragraph, not a one-cell table row.
-            self.assertIn("<p class='check-sentence'>floor/ceil "
-                          "directions hold</p>", html)
+            # Checker-improvement #371: the rounding card's three
+            # preview rows are table rows now -- the sentence is gone.
+            self.assertNotIn("floor/ceil directions hold", html)
             self.assertNotIn("<td class='check-sentence'", html)
             # No bare <p> wraps a detail line any more: every string
             # detail line sits inside its block's table.
@@ -14915,50 +14914,88 @@ class TestChecker(unittest.TestCase):
             "padding:.1em .5em}.check-table td.check-value"
             "{text-align:right}.check-table tr+tr{border-top:1px "
             "solid #f3f4f6}}", build.CSS)
-        # Rendered markup: four small tables, one per non-donation,
-        # non-rounding card, both presets (rounding's single sentence
-        # is a paragraph now — visual verdict #158).
+        # Rendered markup: five small tables, one per non-donation
+        # card, both presets (rounding's three preview rows are a
+        # table now — checker-improvement #371 retires the #158
+        # sentence paragraph).
         for v in (Vault(decimals_offset=6, min_deposit=1_000_000,
                         perf_fee_bps=1000),
                   Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0)):
             html = build.results_html(run_all(v))
-            self.assertEqual(html.count("<table class='check-table'>"), 4)
+            self.assertEqual(html.count("<table class='check-table'>"), 5)
         self.assertIn("<table class='check-table'>",
                       build.checker_results_html_js())
 
-    def test_rounding_sentence_renders_without_table(self):
-        # Visual verdict #158 (2026-11-23, checker-improvement):
-        # the rounding card's single sentence ("floor/ceil directions
-        # hold") rendered as a full-width bordered table — a ~950px
-        # box holding a ~200px sentence, the ugliest thing on the
-        # site. It now renders as a plain paragraph inside the
-        # slate-accent details block; the other four non-donation
-        # cards keep their tables. Render-only: the model string,
-        # the splitter and the API JSON are untouched.
+    def test_verdict371_rounding_card_shows_preview_numbers(self):
+        # Checker-improvement #371 (visual verdict #371 item 1): the
+        # Rounding card was the only one of the six with no number on
+        # screen -- its whole evidence was the sentence "floor/ceil
+        # directions hold", a single short line floating in a
+        # full-width card. The model detail is now one row per tested
+        # amount (1 / 100 / 10,000 USDC): both previews against the
+        # exact ratio. The seeded vault's price is exactly 10**offset,
+        # so both previews land on the ratio and the number is stated
+        # once; the API JSON keeps the full integers, the page
+        # compacts them at render time (#174). The #158 all-sentence
+        # paragraph path is NOT deleted: a failing run's error lines
+        # ("deposit rounding off for ...") still take it.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
         import build
-        for v, kwargs in (
+        NB = "\u00a0"
+        for v, kwargs, worst, compact in (
                 (Vault(decimals_offset=6, min_deposit=1_000_000,
-                       perf_fee_bps=1000), {}),
+                       perf_fee_bps=1000), {}, "0.000900",
+                 ["<strong>1</strong> trillion shares",
+                  "<strong>100</strong> trillion shares",
+                  "<strong>10</strong> quadrillion shares"]),
                 (Vault(decimals_offset=0, min_deposit=0, perf_fee_bps=0),
-                 {"off": 0, "mn": 0, "fee": 0})):
-            html = build.results_html(run_all(v), **kwargs)
-            self.assertIn("<p class='check-sentence'>floor/ceil "
-                          "directions hold</p>", html)
+                 {"off": 0, "mn": 0, "fee": 0}, "0.909091",
+                 ["<strong>1,000,000</strong> shares",
+                  "<strong>100,000,000</strong> shares",
+                  "<strong>10</strong> billion shares"]),
+                (Vault(decimals_offset=18, min_deposit=1_000_000,
+                       perf_fee_bps=1000), {"off": 18}, "0.000000",
+                 ["\u00b2\u2074 shares"])):
+            results = run_all(v)
+            rounding = [r for r in results if r["name"] == "rounding"][0]
+            self.assertTrue(rounding["pass"])
+            mult = 10 ** v.decimals_offset
+            self.assertEqual(
+                rounding["detail"],
+                [f"{amt}{NB}USDC: deposit and withdraw previews "
+                 f"{a * mult:,}{NB}shares (exact ratio)"
+                 for amt, a in (("1.000000", 1_000_000),
+                                ("100.000000", 100_000_000),
+                                ("10,000.000000", 10_000_000_000))])
+            html = build.results_html(results, **kwargs)
+            self.assertNotIn("floor/ceil directions hold", html)
             self.assertNotIn("<td class='check-sentence'", html)
-            self.assertEqual(html.count("<table class='check-table'>"), 4)
+            self.assertEqual(html.count("<table class='check-table'>"), 5)
+            # Three rounding rows: amount labels, both previews, the
+            # exact-ratio qualifier; values compact at render time.
+            # Labels render through nbsp_units: the amount+unit pair
+            # is wrapped in a nowrap span with a plain space (#207),
+            # so the NBSP the model emits never reaches the page.
+            for a in ("1.000000", "100.000000", "10,000.000000"):
+                self.assertIn(
+                    f"<td class='check-label'><span class='nowrap'>{a} "
+                    f"USDC</span></td>", html)
+            for c in compact:
+                self.assertIn(c, html)
+            self.assertIn("deposit and withdraw previews", html)
+            self.assertIn("(exact ratio)", html)
             # The rounding card keeps its title, blurb, pass rule
-            # and guide link — only the table box is gone.
+            # and guide link.
             self.assertIn("Rounding directions", html)
             self.assertIn("/guides/erc4626-rounding-errors/", html)
             self.assertIn("<strong>Pass rule:</strong> Every preview "
                           "within 1 base unit", html)
-            # Numbers untouched by a render-only change.
-            self.assertIn("0.909091" if v.decimals_offset == 0
-                          else "0.000900", html)
-        # Worker-side template: same paragraph branch.
+            # Numbers untouched by the change.
+            self.assertIn(worst, html)
+        # Worker-side template: the all-sentence paragraph branch is
+        # still there -- it serves a failing run's error lines.
         js = build.checker_results_html_js()
         self.assertIn("<p class='check-sentence'>", js)
         self.assertIn("r.detail.every(function(line){return "
@@ -15015,8 +15052,26 @@ class TestChecker(unittest.TestCase):
             build.split_detail_line(
                 f"min-deposit floor binds: effective minimum 1.000000{NB}USDC"),
             [("min-deposit floor binds", f"1.000000{NB}USDC")])
-        self.assertIsNone(
-            build.split_detail_line("floor/ceil directions hold"))
+        # Checker-improvement #371: the rounding pass detail is now
+        # three splittable rows, one per amount -- the sentence is
+        # retired. The label is the deposit size; the value states
+        # both previews against the exact ratio.
+        self.assertEqual(
+            build.split_detail_line(
+                f"1.000000{NB}USDC: deposit and withdraw previews "
+                f"1,000,000,000,000{NB}shares (exact ratio)"),
+            [(f"1.000000{NB}USDC",
+              f"deposit and withdraw previews 1,000,000,000,000{NB}shares "
+              f"(exact ratio)")])
+        # The straddle form splits the same way.
+        self.assertEqual(
+            build.split_detail_line(
+                f"1.000000{NB}USDC: deposit preview 1,000,000,000,000"
+                f"{NB}shares, withdraw preview 1,000,000,000,001"
+                f"{NB}shares (within 1 base unit)"),
+            [(f"1.000000{NB}USDC",
+              f"deposit preview 1,000,000,000,000{NB}shares, withdraw "
+              f"preview 1,000,000,000,001{NB}shares (within 1 base unit)")])
         self.assertIsNone(
             build.split_detail_line("deposit rounding off for 1000000"))
         # The splitter is total over the live model: every string
@@ -16556,15 +16611,19 @@ class TestChecker(unittest.TestCase):
                 self.assertNotIn("<strong>", inner)
             sentences = re.findall(
                 r"<td class='check-sentence'[^>]*>(.*?)</td>", html)
-            # Visual verdict #158: the rounding sentence now renders
-            # as a paragraph, not a table cell — same bolding rule.
+            # Visual verdict #158: a sentence renders as a paragraph,
+            # not a table cell — same bolding rule. (Checker-improvement
+            # #371 retires the rounding sentence itself: its three
+            # preview rows are table rows now, so on a passing run this
+            # list is empty; a failing run's error lines still take
+            # this path.)
             sentences += re.findall(
                 r"<p class='check-sentence'>(.*?)</p>", html)
             for inner in sentences:
                 plain = re.sub(r"<[^>]+>", "", inner)
                 nums = re.findall(r"-?\d[\d,]*(?:\.\d+)?", plain)
-                # A sentence may carry no figure at all ("floor/ceil
-                # directions hold"); the count must still match.
+                # A sentence may carry no figure at all; the count
+                # must still match.
                 self.assertEqual(inner.count("<strong>"), len(nums))
                 self.assertEqual(inner.count("</strong>"), len(nums))
             # Spot check the long figures read as bold number + plain
@@ -16597,12 +16656,11 @@ class TestChecker(unittest.TestCase):
             "boldNumbers(nbspUnits(compactShares("
             "esc(shortValue(row[0],row[1])))))", js)
         self.assertIn("nbspUnits(esc(shortLabel(row[0])))", js)
-        # The same call survives for the sentence fallback — rounding's
-        # "floor/ceil directions hold" now renders as a
-        # <p class='check-sentence'>, with the <td> form kept for
-        # sentence rows inside mixed tables; the old per-line
-        # <p class='check-detail'> loop is gone (pinned in the
-        # block-structure test above).
+        # The same call survives for the sentence fallback — a failing
+        # run's error lines render as a <p class='check-sentence'>,
+        # with the <td> form kept for sentence rows inside mixed
+        # tables; the old per-line <p class='check-detail'> loop is
+        # gone (pinned in the block-structure test above).
         self.assertIn("boldNumbers(nbspUnits(compactShares(esc(line))))",
                       js)
 
