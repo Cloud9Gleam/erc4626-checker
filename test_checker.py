@@ -10579,9 +10579,15 @@ class TestChecker(unittest.TestCase):
         # the panel is now list + note only and the filled white CTA
         # on the left is the hero's single action.
         # Visual verdict #90 secondary observation: the left column
-        # also carries justify-content:space-between, so the column's
-        # slack spreads evenly instead of pooling into one dead band
-        # between the CTA and the stats strip.
+        # also carries justify-content:center (since visual verdict
+        # #373, 2026-11-28: space-between spread ~70px of slack
+        # over the column's three gaps, ~42px each, and the first
+        # screen read empty/unfinished — centring drops the gaps
+        # to plain paragraph margins and splits the slack evenly
+        # above the h1 and below the CTA instead of pooling it
+        # into one dead band under the CTA, the flex-start
+        # alternative). The #90 invariant — no single dead band —
+        # survives the change in this split form.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -10592,7 +10598,7 @@ class TestChecker(unittest.TestCase):
             build.CSS)
         self.assertIn(
             ".hero-top>div{flex:1;min-width:0;display:flex;"
-            "flex-direction:column;justify-content:space-between}",
+            "flex-direction:column;justify-content:center}",
             build.CSS)
         self.assertIn(
             ".hero-checks{flex:0 0 320px;background:rgba(255,255,255,.09);",
@@ -10746,15 +10752,19 @@ class TestChecker(unittest.TestCase):
         # margin-bottom 0 handing the gap to the hero's own .6em
         # bottom padding (#325: the flow moved out of the band;
         # #361: .9em -> .6em).
-        # The column keeps justify-content:space-between —
-        # it now spreads the intro/CTA slack across the column's gaps
-        # (measured 1919px at #173: left column 317.8 vs panel 305.6,
-        # the CTA ends 1.2px above the panel bottom; re-measured at
-        # #361: column 284.0 == panel 284.0, the CTA ends ~11px above
-        # the panel bottom — the #173 1.2px alignment was already
-        # gone before #361, when the lead/proof became one line each
-        # in #357, and #361 preserves the ~11px relationship). The
-        # base p margin rule is unchanged.
+        # The column centres its content since visual verdict
+        # #373 (2026-11-28): justify-content:center replaced
+        # space-between, which had spread ~70px of slack over the
+        # column's three gaps (h1->lead 42px, lead->proof 44px,
+        # proof->CTA 34px at 1919px — the first screen read
+        # empty/unfinished). Centred, the gaps fall back to plain
+        # paragraph margins (19px, 21px, 11px) and the slack
+        # splits evenly above the h1 and below the CTA (~35px
+        # above, ~46px below once the CTA paragraph's bottom
+        # margin is counted — measured
+        # hidden_files/measure-verdict373.py; the CTA ends ~46px
+        # above the panel bottom instead of the ~11px of the
+        # #361 era). The base p margin rule is unchanged.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -10763,7 +10773,8 @@ class TestChecker(unittest.TestCase):
         self.assertIn("p{margin:.65em 0}", build.CSS)
         col = build.CSS.index(".hero-top>div{")
         col_rule = build.CSS[col:build.CSS.index("}", col) + 1]
-        self.assertIn("justify-content:space-between", col_rule)
+        self.assertIn("justify-content:center", col_rule)
+        self.assertNotIn("justify-content:space-between", col_rule)
         start = build.CSS.index(".hero-stats{display:flex;")
         rule = build.CSS[start:build.CSS.index("}", start) + 1]
         self.assertNotIn("margin-top:auto", rule)
@@ -10792,21 +10803,25 @@ class TestChecker(unittest.TestCase):
         # aside closes, while the strip sits after it.
         self.assertLess(hero.index('<p class="hero-cta">'), col_end)
 
-    def test_verdict361_hero_rhythm_is_tight(self):
-        # Visual verdict #361 (2026-11-28, checker-improvement,
-        # measured hidden_files/measure-verdict361.py at 1919px):
-        # the hero's vertical rhythm was loose — h1->lead 53px,
-        # lead->proof 49px, proof->CTA 40px, CTA->compare 27px,
-        # compare->stats 15px, stats->intro 42px, band 559px tall.
-        # The trim is spacing values only: the checks panel gives
-        # back ~34px (padding, li/ul/strong/note margins), h1
-        # margin-bottom .4em->.25em, compare margin-top .9em->.6em,
-        # stats margin-top 1em->.7em and padding-top .9em->.7em,
-        # hero bottom padding .9em->.6em. Two invariants hold: the
-        # left column keeps justify-content:space-between (the slack
-        # still spreads evenly, it is only smaller now), and the
-        # compare label keeps min-height:2.5em (#297: the numbers
-        # stay aligned if the longest label wraps near 700px).
+    def test_verdict373_hero_column_is_centered(self):
+        # Visual verdict #373 (2026-11-28, checker-improvement,
+        # measured hidden_files/measure-verdict373.py at 1919px and
+        # a real-browser verdict the same morning): the hero's
+        # vertical rhythm was STILL loose after #361's trim — the
+        # left column's justify-content:space-between spread ~70px
+        # of free space over three gaps, so h1->lead ran 42px,
+        # lead->proof 44px, proof->CTA 34px (~2.5x line height).
+        # The column now centres its content: the three gaps fall
+        # back to plain paragraph margins (19px, 21px, 11px) and
+        # the slack splits evenly above and below the text block
+        # (~35px above the h1, ~46px below the CTA once the CTA
+        # paragraph's bottom margin is counted).
+        # #361's spacing trim is unchanged — every value it pinned
+        # still holds — only the distribution mechanism changes, so
+        # this test keeps the #361 value assertions and replaces
+        # the space-between invariant with center. The compare
+        # label keeps min-height:2.5em (#297: the numbers stay
+        # aligned if the longest label wraps near 700px).
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -10833,12 +10848,14 @@ class TestChecker(unittest.TestCase):
                 "border-top:1px solid rgba(255,255,255,.28);font-size:.9em;"
                 "color:#e6f5ea;max-width:1024px;margin:.7em auto 0}"):
             self.assertIn(rule, build.CSS)
-        # Kept invariants: the column still spreads its slack evenly
-        # (space-between), and the compare labels still reserve two
-        # lines so the numbers stay aligned near 700px (#297).
+        # Kept invariants: the column centres its content now
+        # (space-between is gone), and the compare labels still
+        # reserve two lines so the numbers stay aligned near 700px
+        # (#297).
         col = build.CSS.index(".hero-top>div{")
-        self.assertIn("justify-content:space-between",
-                      build.CSS[col:build.CSS.index("}", col) + 1])
+        col_rule = build.CSS[col:build.CSS.index("}", col) + 1]
+        self.assertIn("justify-content:center", col_rule)
+        self.assertNotIn("justify-content:space-between", col_rule)
         self.assertIn(
             ".hero-compare-label{display:block;font-size:.82em;"
             "color:#cfe8d6;min-height:2.5em;line-height:1.25}",
