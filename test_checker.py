@@ -6098,15 +6098,19 @@ class TestChecker(unittest.TestCase):
         self.assertNotIn(
             "var m2=document.getElementById('audit-pay-copy-status');",
             worker)
-        # Both buttons still call copyPayAddr(this); both spans still
-        # exist with role=status.
+        # Three buttons now call copyPayAddr(this) -- hero (#375),
+        # form, Price -- and all three spans still exist with
+        # role=status.
         self.assertEqual(
             audit.count('onclick="copyPayAddr(this)">Copy address</button>'),
-            2)
+            3)
         self.assertIn('<span id="pay-copy-status" role="status"></span>',
                       audit)
         self.assertIn(
             '<span id="audit-pay-copy-status" role="status"></span>', audit)
+        self.assertIn(
+            '<span id="audit-hero-pay-copy-status" role="status"></span>',
+            audit)
         # Each button's parent holds exactly one [role=status] span,
         # so the sibling lookup cannot land on the wrong one.
         row = audit[audit.index('<div class="pay-row">'):]
@@ -6117,6 +6121,10 @@ class TestChecker(unittest.TestCase):
         block = block[:block.index('</p>')]
         self.assertEqual(block.count('role="status"'), 1)
         self.assertIn('id="audit-pay-copy-status"', block)
+        hero = audit[audit.index('class="audit-hero-pay"'):]
+        hero = hero[:hero.index('</p>')]
+        self.assertEqual(hero.count('role="status"'), 1)
+        self.assertIn('id="audit-hero-pay-copy-status"', hero)
         # What is copied is unchanged: #pay-addr's data-full.
         self.assertIn('id="pay-addr" data-full="' + build.PAY_ADDR + '"',
                       audit)
@@ -6294,18 +6302,18 @@ class TestChecker(unittest.TestCase):
 
     def test_verdict369_audit_after_pay_button_on_own_line(self):
         # Checker-improvement #369 (2026-11-28, visual verdict #369
-        # item 1): the same PAY_ADDR is shown twice on /audit/ -- in
-        # the form's "After you pay" block (#319) and in the Price
-        # pay-row -- with a "Copy address" button each, and a payer
-        # could reasonably wonder which copy to use, or whether the
-        # two are different addresses. The duplication stays (#319:
-        # the form asks for the hash before the pay-box, so the
-        # address must be visible in the form), and the form block
-        # says "(same address)" right after its Copy button (#368),
-        # so either copy works without comparing 42 hex chars. The
-        # note is a nowrap span: at 360px it drops to its own line
-        # rather than splitting mid-phrase. #369's change: the
-        # button used to share line 1 with the address only when
+        # item 1): the same PAY_ADDR is shown three times on /audit/
+        # -- in the hero pay strip (#375), in the form's "After you
+        # pay" block (#319), and in the Price pay-row -- with a "Copy
+        # address" button each, and a payer could reasonably wonder
+        # which copy to use, or whether the copies are different
+        # addresses. The duplication stays (#319: the form asks for
+        # the hash before the pay-box, so the address must be visible
+        # in the form), and the form block says "(same address)" right
+        # after its Copy button (#368), so either copy works without
+        # comparing 42 hex chars. The note is a nowrap span: at 360px
+        # it drops to its own line rather than splitting mid-phrase.
+        # #369's change: the button used to share line 1 with the
         # font metrics allowed (a real browser measured address +
         # button at ~864/866px of inner width, so the button
         # squeezed onto line 1 flush to the box edge and the note
@@ -6368,6 +6376,70 @@ class TestChecker(unittest.TestCase):
             dict((p, b) for p, t, d, k, b in build.PAGES))
         self.assertIn('(same address)</span>',
                       worker)
+
+    def test_verdict375_audit_hero_shows_pay_address(self):
+        # Checker-improvement #375 (2026-11-28, visual verdict #375
+        # item 1): the payment address was buried -- a first-time
+        # visitor saw only "50 USDC, 72 hours" and the Start button,
+        # and the address first appeared ~1000px down, after four
+        # form fields, in the "After you pay" box. The hero now
+        # carries its own one-line pay strip (full address + Copy
+        # button), so who gets paid is visible in the first screen,
+        # before any decision. It sits between the intro and the
+        # Start CTA: what it is, what you pay and to whom, then the
+        # action. The strip reuses copyPayAddr(this) -- which reads
+        # #pay-addr's data-full -- and its parent holds exactly one
+        # [role=status] span (#348 rule).
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
+        import build
+        pages = dict((p, b) for p, t, d, k, b in build.PAGES)
+        audit = pages["/audit/"]
+        hero = audit[audit.index('class="audit-hero-pay"'):]
+        hero = hero[:hero.index('</p>')]
+        # Full address, not the shortened display (the #230 rule:
+        # hiding the address defeats the double-check warning).
+        self.assertIn('<code>' + build.PAY_ADDR + '</code>', hero)
+        self.assertNotIn(build.PAY_ADDR_SHORT, hero)
+        self.assertIn('Pay <strong>50 USDC</strong> on Base to ', hero)
+        self.assertIn(
+            'onclick="copyPayAddr(this)">Copy address</button>', hero)
+        self.assertEqual(hero.count('role="status"'), 1)
+        self.assertIn('id="audit-hero-pay-copy-status"', hero)
+        # Order: hero strip first, then the form block, then the
+        # Price pay-row -- the address is seen before any field.
+        self.assertLess(audit.index('class="audit-hero-pay"'),
+                        audit.index('class="audit-after-pay"'))
+        self.assertLess(audit.index('class="audit-hero-pay"'),
+                        audit.index('<div class="pay-row">'))
+        # Between the intro and the Start CTA, not after it.
+        self.assertLess(audit.index('class="audit-hero-pay"'),
+                        audit.index('<a class="cta" href="#audit-order">'))
+        self.assertGreater(audit.index('class="audit-hero-pay"'),
+                           audit.index('research writeups</a>'))
+        # CSS: flex + wrap like .pay-row, code breaks at 360px,
+        # solid-green button like the Price pay-row's.
+        self.assertIn(
+            ".audit-hero-pay{display:flex;align-items:center;"
+            "gap:.6em;flex-wrap:wrap;margin:.65em 0}", build.CSS)
+        self.assertIn(".audit-hero-pay code{word-break:break-all}",
+                      build.CSS)
+        self.assertIn(
+            ".audit-hero-pay button[type=button]{flex-shrink:0;"
+            "white-space:nowrap;background:#0a7d2c;color:#fff;"
+            "border:1px solid #0a7d2c}", build.CSS)
+        self.assertIn(
+            ".audit-hero-pay button[type=button]:hover"
+            "{background:#086623}", build.CSS)
+        # Worker copy (the /audit/ page is served by the worker).
+        # Quotes are JSON-escaped inside worker.js, so the class/id
+        # assertions use \\" like the other worker assertions.
+        worker = build.worker_js(
+            dict((p, b) for p, t, d, k, b in build.PAGES))
+        self.assertIn('class=\\"audit-hero-pay\\"', worker)
+        self.assertIn('<code>' + build.PAY_ADDR + '</code>', worker)
+        self.assertIn('id=\\"audit-hero-pay-copy-status\\"', worker)
 
     def test_verdict370_params_adjusted_notice(self):
         # Checker-improvement #370 (2026-11-28): a supplied parameter
