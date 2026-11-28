@@ -5884,15 +5884,12 @@ class TestChecker(unittest.TestCase):
         # The old single-paragraph form is gone from the audit box.
         self.assertNotIn('<p><strong>Email first</strong>', box)
         self.assertNotIn('Then pay to the address below', box)
-        # The Start form keeps a one-line pointer at its top, before
-        # the first field -- the three steps named in one clause,
-        # linking to Price. No numbered list, no second clock
-        # sentence (checker-improvement #379).
+        # The Start form keeps a one-line signpost at its top, before
+        # the first field -- no step names, just the link to Price.
+        # No numbered list, no second clock sentence
+        # (checker-improvement #379, #383).
         self.assertIn(
-            '<div class="audit-steps"><p>How it works: '
-            '<strong>Email first</strong> to confirm the scope fits, '
-            '<strong>Pay 50 USDC</strong> on Base, then '
-            '<strong>paste the payment transaction hash</strong> — the '
+            '<div class="audit-steps"><p>How it works: the '
             '<a href="#price">full sequence</a> is in '
             'Price and payment below.</p></div>',
             build.AUDIT_FORM)
@@ -5924,19 +5921,18 @@ class TestChecker(unittest.TestCase):
         self.assertIn('.pay-steps li::marker{font-weight:700;color:#0a7d2c}',
                       worker)
 
-    def test_verdict379_audit_steps_appear_once(self):
-        # Checker-improvement #379 (2026-11-28, visual verdict #379
-        # item 1): the Start form repeated the three payment steps
-        # near-verbatim (~971px above the pay-box list at 1919px,
-        # clock sentence twice), and a first-time visitor reads that
-        # as a copy-paste error -- on a prepaid service it costs
-        # trust. The steps now live once, in the pay-box (#296's
-        # guard is untouched: a visitor jumping straight to #price
-        # still sees the full sequence before paying). The form
-        # keeps a one-line pointer naming the three steps in one
-        # clause and linking to Price -- no numbered list, no
-        # second clock sentence. The old inline-number form stays
-        # gone from the page.
+    def test_verdict383_audit_pointer_is_a_signpost(self):
+        # Checker-improvement #383 (2026-11-28, visual verdict #383
+        # item 1): the #379 pointer still named all three steps in
+        # bold leads, so a fresh reader still read it as a second
+        # full list -- the verdict ranked the repetition the top
+        # trust issue again. The pointer is now a pure signpost
+        # (no step names); the steps live in exactly one place,
+        # the pay-box list (#296's guard is untouched: a visitor
+        # jumping straight to #price still sees the full sequence
+        # before paying). No numbered list, no second clock
+        # sentence. The old inline-number form stays gone from
+        # the page.
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path.home() / "workspace/taskmarket/site"))
@@ -5952,15 +5948,17 @@ class TestChecker(unittest.TestCase):
                         form.index('id="audit-repo"'))
         box = form[form.index('<div class="audit-steps">'):]
         box = box[:box.index('</div>') + len('</div>')]
-        # One paragraph: lead, three steps named in one clause,
-        # jump link to Price. No list, no clock sentence.
+        # One paragraph: a signpost, no step names -- the steps live
+        # in exactly one place, the pay-box list. Jump link to Price.
+        # No list, no clock sentence.
         self.assertIn(
-            '<p>How it works: <strong>Email first</strong> to confirm '
-            'the scope fits, <strong>Pay 50 USDC</strong> on Base, then '
-            '<strong>paste the payment transaction hash</strong> '
-            '\u2014 the <a href="#price">full sequence</a> is in '
+            '<p>How it works: the '
+            '<a href="#price">full sequence</a> is in '
             'Price and payment below.</p>',
             box)
+        self.assertNotIn('<strong>Email first</strong>', box)
+        self.assertNotIn('<strong>Pay 50 USDC</strong>', box)
+        self.assertNotIn('paste the payment transaction hash', box)
         self.assertNotIn('<ol', box)
         self.assertNotIn('<li>', box)
         self.assertNotIn('72-hour clock', box)
@@ -6013,9 +6011,9 @@ class TestChecker(unittest.TestCase):
         # the form. The Start section now sits directly above Price
         # and payment: Scope -> Start (form) -> Price -> What you get
         # -> limits -> report examples -> Track record. The form's own
-        # pointer line is unchanged in position (#379: one clause
-        # naming the three steps, linking to Price -- "paste the
-        # hash" still points at the field below it inside the form);
+        # pointer line is unchanged in position (#383: a pure signpost
+        # linking to Price, no step names -- the "paste the hash"
+        # field is still below it inside the form);
         # the hero "Start an audit" CTA still jumps to #audit-order (the form
         # itself moved with its anchor). Step 1 now reads "Start form
         # above"; step 2 "address below" still holds (the address is
@@ -6059,15 +6057,12 @@ class TestChecker(unittest.TestCase):
         self.assertIn('0xD07C76fa47C99C70917b6Db2E9215844f0b9dC64', box)
         self.assertIn('Double-check the address before sending', box)
         self.assertIn('<figure class="pay-qr">', audit)
-        # The form's pointer line is still first in the form (#379:
-        # one clause naming the three steps, linking to Price); the
+        # The form's pointer line is still first in the form (#383:
+        # a pure signpost linking to Price, no step names); the
         # address still sits in the form's "After you pay" block
         # below (#319).
         self.assertIn(
-            '<div class="audit-steps"><p>How it works: '
-            '<strong>Email first</strong> to confirm the scope fits, '
-            '<strong>Pay 50 USDC</strong> on Base, then '
-            '<strong>paste the payment transaction hash</strong> — the '
+            '<div class="audit-steps"><p>How it works: the '
             '<a href="#price">full sequence</a> is in '
             'Price and payment below.</p></div>',
             build.AUDIT_FORM)
@@ -6132,12 +6127,15 @@ class TestChecker(unittest.TestCase):
                       block)
         self.assertIn('<a href="#price">Price and payment</a>', block)
         # #376: the amount and chain left the box -- they are stated
-        # in the hero strip and in the pointer line just above, so
-        # the box repeats neither (the row budget is ~863px; the
-        # full phrase would push the row over a line).
+        # in the hero strip just above the form, so the box repeats
+        # neither (the row budget is ~863px; the full phrase would
+        # push the row over a line). #383: the pointer line no
+        # longer states them either (it is a pure signpost) -- the
+        # form itself carries no amount; the hero strip and the
+        # pay-box below are the two places that state it.
         self.assertNotIn('50 USDC on Base', block)
         self.assertIn('Pay <strong>50 USDC</strong> on Base to', audit)
-        self.assertIn('<strong>Pay 50 USDC</strong> on Base', form)
+        self.assertNotIn('50 USDC', form)
         # The form's address is the full 42 chars, never shortened
         # (#230: no shortened display anywhere on the page).
         self.assertIn('<code id="audit-pay-addr">' + build.PAY_ADDR + '</code>',
